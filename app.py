@@ -5245,7 +5245,6 @@ def view_document(doc_id):
     
     # Get document info
     if session['user_role'] == 'admin':
-        # Admin can view any document
         cursor.execute('''
             SELECT d.*, pl.agent_id, u.name as agent_name, pl.customer_name
             FROM documents d
@@ -5254,7 +5253,6 @@ def view_document(doc_id):
             WHERE d.id = ?
         ''', (doc_id,))
     else:
-        # Agent can only view their own documents
         cursor.execute('''
             SELECT d.*, pl.agent_id, u.name as agent_name, pl.customer_name
             FROM documents d
@@ -5269,8 +5267,11 @@ def view_document(doc_id):
     if not document:
         return "Document not found or access denied", 404
     
-    filepath = document[3]
-    filename = document[2]
+    # FILE PATH FIX: make it relative to app directory
+    filepath_db = document[3]  # original path from DB
+    app_root = os.path.dirname(os.path.abspath(__file__))
+    filepath = os.path.join(app_root, filepath_db)
+    filename = os.path.basename(filepath)
     
     # Check if file exists
     if not os.path.exists(filepath):
@@ -5294,7 +5295,6 @@ def view_document(doc_id):
     if file_extension in content_types:
         content_type = content_types[file_extension]
     
-    # Check if download parameter is specified
     download = request.args.get('download', '0')
     as_attachment = download == '1'
     
