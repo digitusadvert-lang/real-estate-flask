@@ -38,26 +38,6 @@ app.secret_key = secrets.token_hex(32)  # Generate secure random key
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# TEMPORARY: reset admin password
-@app.route("/reset-admin")
-def reset_admin():
-    from werkzeug.security import generate_password_hash
-    import sqlite3
-
-    # Connect to the live SQLite database
-    conn = sqlite3.connect("real_estate.db")
-    cursor = conn.cursor()
-
-    # Hash the new password
-    hashed_pw = generate_password_hash("admin456***")
-
-    # Update admin password using the admin email
-    cursor.execute("UPDATE users SET password=? WHERE email=?", (hashed_pw, "admin@example.com"))
-
-    conn.commit()
-    conn.close()
-    return "✅ Admin password updated!"
-
 # ============ ADD SECURITY CONFIGURATION HERE ============
 from datetime import timedelta
 
