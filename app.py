@@ -2828,13 +2828,14 @@ def create_agent_notification(agent_id, notification_type, title, message, relat
     
     return cursor.lastrowid
 
-def get_agent_notifications(agent_id, unread_only=True, limit=10):
+def get_agent_notifications(agent_id, unread_only=True, limit=20):
     """Get notifications for an agent - WITH DEBUG"""
     print(f"DEBUG get_agent_notifications: agent_id={agent_id}, unread_only={unread_only}")
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Build query
     query = '''
         SELECT * FROM agent_notifications 
         WHERE agent_id = ? AND (expires_at IS NULL OR expires_at > datetime('now'))
@@ -2856,9 +2857,13 @@ def get_agent_notifications(agent_id, unread_only=True, limit=10):
     
     conn.close()
     
-    # Format notifications
+    # Format notifications - ENHANCED with time_ago
     formatted_notifications = []
     for notif in notifications:
+        # Calculate time_ago
+        created_at = notif[9]  # created_at field
+        time_ago = get_time_ago(created_at) if 'get_time_ago' in globals() else created_at[:10] if created_at else ""
+        
         formatted_notifications.append({
             'id': notif[0],
             'agent_id': notif[1],
@@ -2871,10 +2876,56 @@ def get_agent_notifications(agent_id, unread_only=True, limit=10):
             'priority': notif[8],
             'created_at': notif[9],
             'read_at': notif[10],
-            'expires_at': notif[11]
+            'expires_at': notif[11],
+            'time_ago': time_ago,  # ADDED: For display
+            'unread': not bool(notif[7])  # ADDED: For compatibility with frontend
         })
     
     return formatted_notifications
+
+def get_time_ago(created_at):
+    """Convert datetime to 'time ago' string"""
+    from datetime import datetime
+    
+    if not created_at:
+        return "Recently"
+    
+    try:
+        if isinstance(created_at, str):
+            # Try different datetime formats
+            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d']:
+                try:
+                    dt = datetime.strptime(created_at, fmt)
+                    break
+                except:
+                    continue
+            else:
+                return created_at[:10] if len(created_at) >= 10 else created_at
+        else:
+            dt = created_at
+        
+        now = datetime.now()
+        diff = now - dt
+        
+        if diff.days > 365:
+            years = diff.days // 365
+            return f'{years} year{"s" if years > 1 else ""} ago'
+        elif diff.days > 30:
+            months = diff.days // 30
+            return f'{months} month{"s" if months > 1 else ""} ago'
+        elif diff.days > 0:
+            return f'{diff.days} day{"s" if diff.days > 1 else ""} ago'
+        elif diff.seconds > 3600:
+            hours = diff.seconds // 3600
+            return f'{hours} hour{"s" if hours > 1 else ""} ago'
+        elif diff.seconds > 60:
+            minutes = diff.seconds // 60
+            return f'{minutes} minute{"s" if minutes > 1 else ""} ago'
+        else:
+            return 'Just now'
+    except Exception as e:
+        print(f"Error calculating time_ago for {created_at}: {e}")
+        return created_at[:10] if created_at and len(created_at) >= 10 else "Recently"
 
 def get_unread_notification_count(agent_id):
     """Count unread notifications for an agent - WITH DEBUG"""
@@ -2895,18 +2946,46 @@ def get_unread_notification_count(agent_id):
     return count
 
 def mark_notification_read(notification_id):
-    """Mark a notification as read"""
+    """Mark a notification as read - WITH DEBUG"""
+    print(f"🔔 DEBUG mark_notification_read: Starting for notification #{notification_id}")
+    
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Check current status BEFORE update
+    cursor.execute('SELECT id, agent_id, is_read FROM agent_notifications WHERE id = ?', (notification_id,))
+    before = cursor.fetchone()
+    
+    if before:
+        print(f"🔔 DEBUG: Before update - ID: {before[0]}, Agent: {before[1]}, Is Read: {before[2]}")
+    else:
+        print(f"🔔 DEBUG: Notification #{notification_id} not found!")
+        conn.close()
+        return False
+    
+    # Update the notification
+    read_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     cursor.execute('''
         UPDATE agent_notifications 
         SET is_read = 1, read_at = ?
         WHERE id = ?
-    ''', (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), notification_id))
+    ''', (read_time, notification_id))
+    
+    rows_updated = cursor.rowcount
+    print(f"🔔 DEBUG: Rows updated: {rows_updated}")
+    
+    # Check status AFTER update
+    cursor.execute('SELECT is_read, read_at FROM agent_notifications WHERE id = ?', (notification_id,))
+    after = cursor.fetchone()
+    
+    if after:
+        print(f"🔔 DEBUG: After update - Is Read: {after[0]}, Read At: {after[1]}")
     
     conn.commit()
+    print(f"🔔 DEBUG: Changes committed")
     conn.close()
+    
+    return rows_updated > 0
 
 def mark_all_notifications_read(agent_id):
     """Mark all notifications as read for an agent"""
@@ -2921,22 +3000,6 @@ def mark_all_notifications_read(agent_id):
     
     conn.commit()
     conn.close()
-
-def get_unread_notification_count(agent_id):
-    """Count unread notifications for an agent"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT COUNT(*) FROM agent_notifications 
-        WHERE agent_id = ? AND is_read = 0 
-        AND (expires_at IS NULL OR expires_at > datetime('now'))
-    ''', (agent_id,))
-    
-    count = cursor.fetchone()[0]
-    conn.close()
-    
-    return count
 
 def check_agent_pending_tasks(agent_id):
     """Check for pending tasks and create notifications - ENHANCED VERSION"""
@@ -3727,10 +3790,15 @@ def agent_dashboard():
         'upline_payments_count': upline_payments_count
     }
     
-    # Skip notifications and incomplete submissions for now to simplify
-    notifications = []
-    incomplete_list = []
-    unread_count = 0
+    # ============ GET NOTIFICATIONS ============
+    notifications = get_agent_notifications(user_id, unread_only=True, limit=10)
+    unread_count = get_unread_notification_count(user_id)
+
+    # Get incomplete submissions (using your existing function)
+    incomplete_count = check_agent_pending_tasks(user_id)
+    # If you need the actual list of incomplete submissions, you might need to modify check_agent_pending_tasks
+    # For now, create an empty list if the template needs it
+    incomplete_list = []  # Or fetch actual incomplete submissions if needed
     
     # ============ RENDER TEMPLATE ============
     return render_template_string(DASHBOARD_TEMPLATE,
@@ -3743,7 +3811,7 @@ def agent_dashboard():
         recent_sales=recent_sales_list,
         recent_payments=recent_payments_list,
         project_sales_count=project_sales_count,
-        unique_projects_count=unique_projects_count,
+        unique_projects_count=unique_projects_count, 
         upline_info=upline_data,
         downline_agents=downline_list,
         downline_stats=downline_stats,
@@ -4528,6 +4596,218 @@ def agent_notifications_page():
 </html>'''
     
     return render_template_string(notification_template, notifications=notifications)
+
+# ============ BELL NOTIFICATION API ENDPOINTS ============
+
+@app.route('/api/agent/notifications')
+def api_get_agent_notifications():
+    """API endpoint for bell notifications (returns JSON)"""
+    if 'user_id' not in session or session['user_role'] != 'agent':
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    agent_id = session['user_id']
+    
+    # Get notifications using your existing function
+    notifications = get_agent_notifications(agent_id, unread_only=False, limit=10)
+    
+    # Get unread count using your existing function
+    unread_count = get_unread_notification_count(agent_id)
+    
+    return jsonify({
+        'notifications': notifications,
+        'unread_count': unread_count
+    })
+
+@app.route('/api/agent/notifications/<int:notification_id>/read', methods=['POST'])
+def api_mark_notification_read(notification_id):
+    """API endpoint to mark notification as read"""
+    if 'user_id' not in session or session['user_role'] != 'agent':
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    # Use your existing database function
+    mark_notification_read(notification_id)
+    
+    return jsonify({'success': True})
+
+@app.route('/api/agent/notifications/mark-all-read', methods=['POST'])
+def api_mark_all_notifications_read():
+    """API endpoint to mark all notifications as read"""
+    if 'user_id' not in session or session['user_role'] != 'agent':
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    agent_id = session['user_id']
+    
+    # Use your existing database function
+    mark_all_notifications_read(agent_id)
+    
+    return jsonify({'success': True})
+
+@app.route('/debug-notification/<int:notification_id>')
+def debug_notification(notification_id):
+    """Debug a specific notification"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, agent_id, title, is_read, read_at, expires_at, created_at
+        FROM agent_notifications WHERE id = ?
+    ''', (notification_id,))
+    
+    notif = cursor.fetchone()
+    conn.close()
+    
+    if notif:
+        return f'''
+        <h3>Notification #{notif[0]} Details:</h3>
+        <pre>
+        Agent ID: {notif[1]}
+        Title: {notif[2]}
+        Is Read: {notif[3]} (1 = read, 0 = unread)
+        Read At: {notif[4]}
+        Expires At: {notif[5]}
+        Created At: {notif[6]}
+        </pre>
+        <a href="/agent/dashboard">Back to Dashboard</a>
+        '''
+    else:
+        return "Notification not found"
+
+@app.route('/debug-notification-status')
+def debug_notification_status():
+    """Debug notification status"""
+    if 'user_id' not in session:
+        return redirect('/login')
+    
+    agent_id = session['user_id']
+    
+    # Get counts
+    total_count = len(get_agent_notifications(agent_id, unread_only=False, limit=100))
+    unread_count = get_unread_notification_count(agent_id)
+    read_count = total_count - unread_count
+    
+    # Get sample notifications
+    notifications = get_agent_notifications(agent_id, unread_only=False, limit=5)
+    
+    html = f'''
+    <h3>🔍 Notification Debug</h3>
+    <p>Agent ID: {agent_id}</p>
+    <p>Total Notifications: {total_count}</p>
+    <p>Unread Notifications: {unread_count}</p>
+    <p>Read Notifications: {read_count}</p>
+    
+    <h4>Sample Notifications (5):</h4>
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Is Read</th>
+            <th>Unread Flag</th>
+            <th>Created</th>
+        </tr>
+    '''
+    
+    for notif in notifications:
+        html += f'''
+        <tr>
+            <td>{notif['id']}</td>
+            <td>{notif['title'][:30]}...</td>
+            <td>{'✅' if notif['is_read'] else '❌'}</td>
+            <td>{'✅' if notif['unread'] else '❌'}</td>
+            <td>{notif['created_at'][:10]}</td>
+        </tr>
+        '''
+    
+    html += '''
+    </table>
+    
+    <h4>Actions:</h4>
+    <ul>
+        <li><a href="/reset-notifications">Reset All to Unread</a></li>
+        <li><a href="/agent/dashboard">Go to Dashboard</a></li>
+        <li><a href="/api/agent/notifications">View API Response</a></li>
+    </ul>
+    '''
+    
+    return html
+
+@app.route('/check-dashboard-notifications')
+def check_dashboard_notifications():
+    """Check what notifications are being shown on dashboard"""
+    if 'user_id' not in session:
+        return redirect('/login')
+    
+    user_id = session['user_id']
+    
+    # Get what the dashboard is showing
+    notifications = get_agent_notifications(user_id, unread_only=False, limit=10)
+    unread_count = get_unread_notification_count(user_id)
+    
+    result = f'''
+    <h3>Dashboard Notification Data</h3>
+    <p>Unread Count: {unread_count}</p>
+    <p>Total Notifications Returned: {len(notifications)}</p>
+    
+    <h4>Notifications List:</h4>
+    <ol>
+    '''
+    
+    for notif in notifications:
+        result += f'''
+        <li>
+            <strong>{notif['title']}</strong><br>
+            ID: {notif['id']}, 
+            Is Read: {notif['is_read']}, 
+            Unread Flag: {notif['unread']}<br>
+            Message: {notif['message'][:50]}...
+        </li>
+        '''
+    
+    result += '''
+    </ol>
+    <p><a href="/agent/dashboard">Back to Dashboard</a></p>
+    '''
+    
+    return result
+
+@app.route('/reset-notifications')
+def reset_notifications():
+    """Reset all notifications to unread (for testing)"""
+    if 'user_id' not in session:
+        return redirect('/login')
+    
+    agent_id = session['user_id']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Reset all notifications for this agent to unread
+    cursor.execute('''
+        UPDATE agent_notifications 
+        SET is_read = 0, read_at = NULL 
+        WHERE agent_id = ?
+    ''', (agent_id,))
+    
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    return f'Reset {rows_affected} notifications to unread. <a href="/agent/dashboard">Go to Dashboard</a>'
+
+@app.route('/create-test-notification')
+def create_test_notification():
+    """Create a test notification"""
+    if 'user_id' not in session:
+        return redirect('/login')
+    
+    create_agent_notification(
+        agent_id=session['user_id'],
+        notification_type='test',
+        title='🔔 Test Notification',
+        message='This is a test notification for the bell system.',
+        priority='normal'
+    )
+    
+    return redirect('/agent/dashboard')
 
 @app.route('/agent/submissions')
 def agent_submissions():
