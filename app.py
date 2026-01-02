@@ -5243,7 +5243,6 @@ def view_document(doc_id):
     conn = sqlite3.connect('real_estate.db')
     cursor = conn.cursor()
     
-    # Get document info
     if session['user_role'] == 'admin':
         cursor.execute('''
             SELECT d.*, pl.agent_id, u.name as agent_name, pl.customer_name
@@ -5267,43 +5266,34 @@ def view_document(doc_id):
     if not document:
         return "Document not found or access denied", 404
     
-    # FILE PATH FIX: make it relative to app directory
-    filepath_db = document[3]  # original path from DB
+    # -----------------------------
+    # FIX: normalize Windows paths for Linux
+    # -----------------------------
+    filepath_db = document[3].replace("\\", "/")
     app_root = os.path.dirname(os.path.abspath(__file__))
     filepath = os.path.join(app_root, filepath_db)
+    filepath = os.path.normpath(filepath)
     filename = os.path.basename(filepath)
     
-    # Check if file exists
     if not os.path.exists(filepath):
         return f"File not found: {filename}", 404
     
-    # Determine content type
+    # Content type
     content_type = 'application/octet-stream'
-    file_extension = filename.lower().split('.')[-1] if '.' in filename else ''
-    
-    content_types = {
-        'pdf': 'application/pdf',
-        'jpg': 'image/jpeg',
-        'jpeg': 'image/jpeg',
-        'png': 'image/png',
-        'gif': 'image/gif',
-        'doc': 'application/msword',
-        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'txt': 'text/plain'
+    ext = filename.lower().split('.')[-1] if '.' in filename else ''
+    types = {
+        'pdf':'application/pdf','jpg':'image/jpeg','jpeg':'image/jpeg',
+        'png':'image/png','gif':'image/gif','doc':'application/msword',
+        'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'txt':'text/plain'
     }
+    if ext in types:
+        content_type = types[ext]
     
-    if file_extension in content_types:
-        content_type = content_types[file_extension]
+    as_attachment = request.args.get('download','0')=='1'
     
-    download = request.args.get('download', '0')
-    as_attachment = download == '1'
-    
-    return send_file(
-        filepath,
-        mimetype=content_type,
-        as_attachment=as_attachment,
-        download_name=filename
-    )
+    return send_file(filepath, mimetype=content_type, as_attachment=as_attachment, download_name=filename)
+
 
 @app.route('/agent/documents/<int:listing_id>')
 def agent_view_documents(listing_id):
