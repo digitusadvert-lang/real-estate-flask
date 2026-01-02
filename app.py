@@ -15479,6 +15479,26 @@ def check_db_structure():
     conn.close()
     return result
 
+# TEMPORARY: reset admin password
+@app.route("/reset-admin")
+def reset_admin():
+    from werkzeug.security import generate_password_hash
+    import sqlite3
+
+    # Connect to the live SQLite database
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+
+    # Hash the new password
+    hashed_pw = generate_password_hash("admin456***")
+
+    # Update admin password using the admin email
+    cursor.execute("UPDATE users SET password=? WHERE email=?", (hashed_pw, "admin@example.com"))
+
+    conn.commit()
+    conn.close()
+    return "✅ Admin password updated!"
+
 # ============ RUN APPLICATION ============
 if __name__ == '__main__':
     print("🚀 Starting Real Estate Sales System...")
