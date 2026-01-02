@@ -1256,7 +1256,7 @@ LOGIN_TEMPLATE = '''
 </head>
 <body>
     <div class="login-box">
-        <h2>🏠 Real Estate System</h2>
+        <h2>🏠 WTP - Real Estate System</h2>
         <form method="POST">
             <input type="email" name="email" placeholder="Email" required>
             <input type="password" name="password" placeholder="Password" required>
@@ -1269,8 +1269,8 @@ LOGIN_TEMPLATE = '''
         
         <div class="test-accounts">
             <strong>Test Accounts:</strong><br>
-            Admin: admin@example.com / admin123<br>
-            Agent: agent@example.com / agent123
+            Admin: admin@xxxxx.com<br>
+            Admin will create agent login
         </div>
     </div>
 </body>
