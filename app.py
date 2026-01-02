@@ -575,7 +575,7 @@ def init_database():
             if 'admin@example.com' not in existing_emails:
                 print("➕ Creating admin user...")
                 from werkzeug.security import generate_password_hash
-                admin_password = generate_password_hash('admin123')
+                admin_password = generate_password_hash('admin456***')
                 cursor.execute(
                     "INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)",
                     ('admin@example.com', admin_password, 'Admin User', 'admin')
