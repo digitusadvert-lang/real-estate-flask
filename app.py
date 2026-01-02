@@ -3075,11 +3075,18 @@ def login():
         conn.close()
         
         if user and check_password_hash(user[2], password):
+            # -------------------------------
+            # Store session info
+            # -------------------------------
             session['user_id'] = user[0]
             session['user_email'] = user[1]
             session['user_name'] = user[3]
             session['user_role'] = user[4]
-            
+
+            # Make session permanent so PERMANENT_SESSION_LIFETIME is used
+            session.permanent = True  # <-- IMPORTANT
+
+            # Redirect based on role
             if user[4] == 'admin':
                 return redirect('/admin/dashboard')
             else:
@@ -3088,6 +3095,7 @@ def login():
             return render_template_string(LOGIN_TEMPLATE, error="Invalid email or password")
     
     return render_template_string(LOGIN_TEMPLATE)
+
 
 @app.route('/logout')
 def logout():
