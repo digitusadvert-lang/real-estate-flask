@@ -1,0 +1,293 @@
+<!-- templates/admin/dashboard.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <style>
+        /* CSS from your template - I'm keeping it all */
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .stats { display: flex; gap: 12px; margin: 15px 0; flex-wrap: wrap; }
+        .stat-card { background: white; padding: 12px; border-radius: 8px; flex: 1; min-width: 140px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .stat-card h3 { margin-top: 0; color: #555; font-size: 13px; margin-bottom: 8px; }
+        .stat-value { font-size: 1.5em; font-weight: bold; margin-bottom: 5px; }
+        .stat-card small { font-size: 11px; color: #666; line-height: 1.3; }
+        table { width: 100%; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 20px 0; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #2c3e50; color: white; }
+        .btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .nav { margin: 20px 0; padding: 15px; background: white; border-radius: 10px; }
+        .nav a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+        .neutral { color: #007bff; }
+        .quick-actions { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+        .action-btn { padding: 12px 20px; background: white; border-radius: 8px; text-decoration: none; color: #333; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .action-btn:hover { background: #f8f9fa; }
+        .filters { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .filter-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        select, input[type="text"] { padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; }
+        .badge-sales { background: #28a745; color: white; padding: 3px 8px; border-radius: 12px; font-size: 11px; }
+        .badge-rental { background: #17a2b8; color: white; padding: 3px 8px; border-radius: 12px; font-size: 11px; }
+        .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .status-draft { background: #6c757d; color: white; }
+        .status-submitted { background: #007bff; color: white; }
+        .status-approved { background: #28a745; color: white; }
+        .status-rejected { background: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>👑 Admin Dashboard</h1>
+        <p>Welcome, {{ admin_name }}! | <a href="/logout" style="color: #dc3545;">Logout</a></p>
+    </div>
+    
+    <div class="nav">
+        <a href="/admin/dashboard">📊 Dashboard</a>
+        <a href="/admin/projects">🏢 Projects</a>
+        <a href="/admin/create-project" style="background: #007bff; color: white; padding: 5px 10px; border-radius: 3px;">➕ Create Project</a>
+        <a href="/admin/agents">👥 Manage Agents</a>
+        <a href="/admin/commissions">💰 Commissions</a>
+        <a href="/admin/payments">💰 Payments</a>
+        <a href="/admin/sync-payments" style="background: #28a745; color: white; padding: 5px 10px; border-radius: 3px;">🔄 Sync Payments</a>
+        <a href="/admin/agent-performance">📈 Agent Performance</a>
+        <a href="/admin/export-data">📤 Export Data</a>
+        <a href="/admin/reports">📈 Reports</a>
+        <a href="/admin/settings">⚙️ Settings</a>
+    </div>
+    
+    <!-- ============ STATS SECTION ============ -->
+    <div class="stats">
+        <div class="stat-card">
+            <h3>Total Listings</h3>
+            <div class="stat-value">{{ stats.total_listings }}</div>
+            <small>Sales: {{ stats.sales_count }} | Rentals: {{ stats.rentals_count }}</small>
+        </div>
+        <div class="stat-card">
+            <h3>Total Sales Value</h3>
+            <div class="stat-value">RM{{ "{:,.2f}".format(stats.total_sales or 0) }}</div>
+            <small>Total property sales</small>
+        </div>
+        <div class="stat-card">
+            <h3>Total Rentals Value</h3>
+            <div class="stat-value">RM{{ "{:,.2f}".format(stats.total_rentals or 0) }}</div>
+            <small>Monthly rental value</small>
+        </div>
+        <div class="stat-card">
+            <h3>Total Commissions</h3>
+            <div class="stat-value" style="color: #007bff;">RM{{ "{:,.2f}".format(stats.total_commissions or 0) }}</div>
+            <small>Generated from all listings</small>
+        </div>
+        <div class="stat-card">
+            <h3>Pending Approval</h3>
+            <div class="stat-value" style="color: #ffc107;">{{ stats.pending }}</div>
+            <small>{{ pending_count }} need review</small>
+        </div>
+        <div class="stat-card">
+            <h3>Approved</h3>
+            <div class="stat-value" style="color: #28a745;">{{ stats.approved }}</div>
+            <small>Completed listings</small>
+        </div>
+        <div class="stat-card">
+            <h3>Rejected</h3>
+            <div class="stat-value" style="color: #dc3545;">{{ stats.rejected }}</div>
+            <small>Declined listings</small>
+        </div>
+        <div class="stat-card">
+            <h3>Drafts</h3>
+            <div class="stat-value">{{ stats.draft }}</div>
+            <small>Unsubmitted listings</small>
+        </div>
+    </div>
+    
+    <!-- ============ FILTERS SECTION ============ -->
+    <div class="filters">
+        <h3>Filter Submissions</h3>
+        <form method="GET" class="filter-group">
+            <select name="status">
+                <option value="all" {% if status_filter == "all" %}selected{% endif %}>All Status</option>
+                <option value="submitted" {% if status_filter == "submitted" %}selected{% endif %}>Pending ({{ stats.pending }})</option>
+                <option value="approved" {% if status_filter == "approved" %}selected{% endif %}>Approved ({{ stats.approved }})</option>
+                <option value="rejected" {% if status_filter == "rejected" %}selected{% endif %}>Rejected ({{ stats.rejected }})</option>
+                <option value="draft" {% if status_filter == "draft" %}selected{% endif %}>Drafts ({{ stats.draft }})</option>
+            </select>
+            
+            <select name="type">
+                <option value="all" {% if type_filter == "all" %}selected{% endif %}>All Types</option>
+                <option value="sales" {% if type_filter == "sales" %}selected{% endif %}>Sales ({{ stats.sales_count }})</option>
+                <option value="rental" {% if type_filter == "rental" %}selected{% endif %}>Rentals ({{ stats.rentals_count }})</option>
+            </select>
+            
+            <input type="text" name="search" placeholder="Search by customer, property, or agent..." value="{{ search_query }}">
+            
+            <button type="submit" class="btn" style="background: #007bff; color: white;">🔍 Filter</button>
+            <a href="/admin/dashboard" class="btn" style="background: #6c757d; color: white;">Clear</a>
+        </form>
+    </div>
+    
+    <!-- ============ SUBMISSIONS TABLE ============ -->
+    <h2>📋 All Submissions ({{ submissions_list|length }})</h2>
+    
+    {% if submissions_list %}
+    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 5px;">
+            <div style="width: 12px; height: 12px; background: #dc3545; border-radius: 50%;"></div>
+            <small>Incomplete Docs (0-2)</small>
+        </div>
+        <div style="display: flex; align-items: center; gap: 5px;">
+            <div style="width: 12px; height: 12px; background: #ffc107; border-radius: 50%;"></div>
+            <small>Minimum Docs (3)</small>
+        </div>
+        <div style="display: flex; align-items: center; gap: 5px;">
+            <div style="width: 12px; height: 12px; background: #28a745; border-radius: 50%;"></div>
+            <small>Complete Docs (4+)</small>
+        </div>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Agent</th>
+                <th>Customer</th>
+                <th>Property</th>
+                <th>Amount</th>
+                <th>Commission</th>
+                <th>Documents</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sub in submissions_list %}
+            <tr {% if sub.document_count <= 2 %}style="background: #fff5f5; border-left: 4px solid #dc3545;"{% elif sub.document_count == 3 %}style="background: #fff9e6; border-left: 4px solid #ffc107;"{% else %}style="background: #f0fff4; border-left: 4px solid #28a745;"{% endif %}>
+                <td>#{{ sub.id }}</td>
+                <td>
+                    {% if sub.sale_type == 'rental' %}
+                    <span class="badge-rental">RENTAL</span>
+                    {% else %}
+                    <span class="badge-sales">SALE</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ sub.agent_name }}
+                    <br>
+                    <small style="color: #666;">ID: {{ sub.agent_id }}</small>
+                </td>
+                <td>
+                    {{ sub.customer_name }}
+                    <br>
+                    <small style="color: #666;">{{ sub.customer_email }}</small>
+                    {% if sub.customer_phone %}
+                    <br>
+                    <small style="color: #666;">📱 {{ sub.customer_phone }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ (sub.property_address or '')[:25] }}{% if (sub.property_address or '')|length > 25 %}...{% endif %}
+                    {% if sub.project_id %}
+                    <br>
+                    <small style="background: #e8f4ff; color: #0066cc; padding: 2px 6px; border-radius: 3px; font-size: 11px;">Project: {{ sub.project_id }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if sub.sale_type == 'rental' %}
+                    RM{{ "{:,.2f}".format(sub.sale_price) }}/month
+                    {% else %}
+                    RM{{ "{:,.2f}".format(sub.sale_price) }}
+                    {% endif %}
+                </td>
+                <td>RM{{ "{:,.2f}".format(sub.commission_amount or 0) }}</td>
+                <td>
+                    {% if sub.document_count == 0 %}
+                        <span style="color: #dc3545; font-weight: bold;">❌ 0</span>
+                    {% elif sub.document_count == 1 %}
+                        <span style="color: #dc3545; font-weight: bold;">⚠️ 1</span>
+                    {% elif sub.document_count == 2 %}
+                        <span style="color: #ffc107; font-weight: bold;">⚠️ 2</span>
+                    {% elif sub.document_count == 3 %}
+                        <span style="color: #28a745; font-weight: bold;">✓ 3</span>
+                    {% else %}
+                        <span style="color: #28a745; font-weight: bold;">✅ {{ sub.document_count }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="status-badge status-{{ sub.status }}">
+                        {{ sub.status|upper }}
+                    </span>
+                    {% if sub.approved_at %}
+                    <br>
+                    <small style="color: #666;">{{ sub.approved_at[:10] }}</small>
+                    {% endif %}
+                </td>
+                <td>{{ (sub.submitted_at or '')[:10] if sub.submitted_at else 'N/A' }}</td>
+                <td>
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <a href="/admin/documents/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #6f42c1; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
+                            📎 Docs
+                        </a>
+                        
+                        {% if sub.status == 'submitted' %}
+                            {% if sub.document_count >= 3 %}
+                            <a href="/admin/approve/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #28a745; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
+                                ✅ Approve
+                            </a>
+                            {% else %}
+                            <button style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled>
+                                ❌ Incomplete
+                            </button>
+                            {% endif %}
+                            <a href="/admin/reject/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
+                                ❌ Reject
+                            </a>
+                        {% elif sub.status == 'draft' %}
+                            <button style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled>
+                                Draft
+                            </button>
+                        {% elif sub.status == 'approved' %}
+                            <button style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed;" disabled>
+                                ✅ Approved
+                            </button>
+                        {% elif sub.status == 'rejected' %}
+                            <button style="padding: 6px 12px; background: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed;" disabled>
+                                ❌ Rejected
+                            </button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="padding: 40px; text-align: center; background: white; border-radius: 10px;">
+        <h3>📭 No submissions found</h3>
+        <p>No submissions match your filters.</p>
+        <a href="/admin/dashboard" class="btn" style="background: #007bff; color: white; margin-top: 15px;">Show All Submissions</a>
+    </div>
+    {% endif %}
+    
+    <!-- ============ QUICK ACTIONS ============ -->
+    <h2>⚡ Quick Actions</h2>
+    <div class="quick-actions">
+        <a href="/admin/add-agent" class="action-btn">
+            <div style="font-size: 24px;">➕</div>
+            <div><strong>Add Agent</strong><br><small>Create new agent account</small></div>
+        </a>
+        <a href="/admin/commissions" class="action-btn">
+            <div style="font-size: 24px;">💰</div>
+            <div><strong>Commission Report</strong><br><small>View all commissions</small></div>
+        </a>
+        <a href="/admin/export-data" class="action-btn">
+            <div style="font-size: 24px;">📤</div>
+            <div><strong>Export Data</strong><br><small>Export to Excel/CSV</small></div>
+        </a>
+        <a href="/admin/agent-performance" class="action-btn">
+            <div style="font-size: 24px;">📊</div>
+            <div><strong>Agent Performance</strong><br><small>View agent statistics</small></div>
+        </a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pay Upline Commission {{ record_id }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+        .form-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #6f42c1; text-align: center; }
+        .commission-details { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 15px 0; 
+            border-left: 4px solid #6f42c1;
+        }
+        .amount { 
+            text-align: center; 
+            font-size: 28px; 
+            font-weight: bold; 
+            color: #6f42c1;
+            margin: 15px 0;
+        }
+        .detail-row { display: flex; justify-content: space-between; margin: 8px 0; }
+        .detail-label { font-weight: bold; color: #666; }
+        label { display: block; margin-top: 15px; font-weight: bold; color: #333; }
+        input, select, textarea { 
+            width: 100%; padding: 10px; margin: 5px 0 15px 0; 
+            border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box;
+        }
+        button { 
+            width: 100%; padding: 12px; background: #6f42c1; color: white; 
+            border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;
+            font-size: 16px; font-weight: bold;
+        }
+        button:hover { background: #59359a; }
+        .cancel-link { 
+            display: block; text-align: center; margin-top: 15px; 
+            color: #6c757d; text-decoration: none; padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-box">
+        <h2>💰 Pay Commission</h2>
+        <h3 style="text-align: center; color: #6f42c1; margin-bottom: 5px;">{{ record_id }}</h3>
+        
+        <div class="commission-details">
+            <div class="amount">RM{{ "{:,.2f}".format(amount or 0) }}</div>
+            
+            <div class="detail-row">
+                <span class="detail-label">Recipient:</span>
+                <span>{{ upline_name }} ({{ upline_email }})</span>
+            </div>
+            
+            {% if property_address %}
+            <div class="detail-row">
+                <span class="detail-label">Property:</span>
+                <span>{{ property_address }}</span>
+            </div>
+            {% endif %}
+            
+            {% if customer_name %}
+            <div class="detail-row">
+                <span class="detail-label">Customer:</span>
+                <span>{{ customer_name }}</span>
+            </div>
+            {% endif %}
+            
+            <div class="detail-row">
+                <span class="detail-label">Type:</span>
+                <span><strong>{{ payment_type }}</strong></span>
+            </div>
+        </div>
+        
+        <form method="POST" onsubmit="return confirm('Confirm payment of RM{{ "{:,.2f}".format(amount or 0) }} to {{ upline_name }}?')">
+            <label for="payment_method">Payment Method *</label>
+            <select name="payment_method" id="payment_method" required>
+                <option value="">-- Select Payment Method --</option>
+                <option value="bank_transfer">🏦 Bank Transfer</option>
+                <option value="cash">💵 Cash</option>
+                <option value="check">📄 Check</option>
+                <option value="online_payment">🌐 Online Payment</option>
+                <option value="other">📝 Other</option>
+            </select>
+            
+            <label for="transaction_id">Transaction/Reference ID</label>
+            <input type="text" name="transaction_id" id="transaction_id" placeholder="e.g., Bank Reference, Check Number">
+            
+            <label for="notes">Payment Notes (Optional)</label>
+            <textarea name="notes" id="notes" rows="2" placeholder="Any additional notes..."></textarea>
+            
+            <button type="submit">✅ CONFIRM & MARK AS PAID</button>
+            
+            <a href="/admin/payments" class="cancel-link">← Back to Payments</a>
+        </form>
+    </div>
+</body>
+</html>

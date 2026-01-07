@@ -1,0 +1,918 @@
+<!-- templates/agent/dashboard.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Agent Dashboard</title>
+    <style>
+        /* ============ EXISTING STYLES ============ */
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .stats { display: flex; gap: 12px; margin: 15px 0; flex-wrap: wrap; }
+        .stat-card { background: white; padding: 12px; border-radius: 8px; flex: 1; min-width: 140px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .stat-card h3 { margin-top: 0; color: #555; font-size: 13px; margin-bottom: 8px; }
+        .stat-value { font-size: 1.5em; font-weight: bold; margin-bottom: 5px; }
+        .stat-card small { font-size: 11px; color: #666; line-height: 1.3; }
+        .actions { margin: 30px 0; }
+        .btn { display: inline-block; padding: 12px 25px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin-right: 10px; }
+        .btn:hover { background: #0056b3; }
+        table { width: 100%; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: bold; color: #495057; }
+        .status-draft { background: #fff3cd; color: #856404; padding: 3px 8px; border-radius: 3px; }
+        .status-submitted { background: #cce5ff; color: #004085; padding: 3px 8px; border-radius: 3px; }
+        .status-approved { background: #d4edda; color: #155724; padding: 3px 8px; border-radius: 3px; }
+        .project-badge { background: #e8f4ff; color: #0066cc; padding: 3px 8px; border-radius: 3px; font-size: 12px; margin-top: 3px; display: inline-block; }
+        .unit-badge { background: #f0f8ff; color: #004d99; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 5px; }
+        
+        /* ============ UPLINE EARNINGS STYLE ============ */
+        .upline-earnings-card {
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+            border-left: 4px solid #28a745;
+            padding: 12px !important; /* Force same padding */
+        }
+        
+        .upline-earnings-card .stat-value {
+            color: #155724;
+            font-size: 1.5em !important; /* Force same font size */
+        }
+        
+        .upline-earnings-card h3 {
+            font-size: 13px !important; /* Force same header size */
+        }
+        
+        .upline-earnings-card small {
+            font-size: 11px !important; /* Force same small text size */
+        }
+        
+        /* ============ NETWORK STYLES ============ */
+        .network-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .network-section h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .network-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .network-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .network-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            height: 100%;
+        }
+        
+        .network-card h3 {
+            margin-top: 0;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .network-member {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #e0e0e0;
+            transition: transform 0.2s ease;
+        }
+        
+        .network-member:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-color: #007bff;
+        }
+        
+        .member-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: #e9ecef;
+        }
+        
+        .member-details {
+            flex: 1;
+        }
+        
+        .member-details strong {
+            display: block;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .member-meta {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .commission-badge {
+            background: #fff3cd;
+            color: #856404;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        
+        .network-stats {
+            margin-top: 15px;
+            padding: 8px;
+            background: #e8f4ff;
+            border-radius: 5px;
+            font-size: 11px;
+            color: #004085;
+            line-height: 1.4;
+        }
+        
+        .network-stats small {
+            font-size: 10px;
+        }
+        
+        .network-stats strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .empty-network {
+            padding: 30px;
+            text-align: center;
+            color: #666;
+        }
+        
+        .empty-network .icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .empty-network h4 {
+            margin: 10px 0;
+            color: #495057;
+        }
+        
+        .commission-flow {
+            background: #f0f9ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #007bff;
+        }
+        
+        .commission-flow h4 {
+            margin-top: 0;
+            color: #004085;
+        }
+        
+        .commission-flow p {
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        /* Add to existing .btn styles */
+        .btn-network {
+            background: #fd7e14;
+            color: white;
+        }
+        
+        .btn-network:hover {
+            background: #e96c00;
+        }
+        
+        /* ============ PAYMENT TYPE BADGES ============ */
+        .payment-type-badge {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        
+        .payment-type-own {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .payment-type-upline {
+            background: #cce5ff;
+            color: #004085;
+        }
+        
+        /* ============ NOTIFICATION STYLES ============ */
+        .notification-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #ffc107;
+        }
+
+        .notification-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .notifications-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .notification-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .priority-urgent {
+            background: #fff5f5;
+            border-color: #f5c6cb;
+            border-left: 4px solid #dc3545;
+        }
+
+        .priority-high {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+            border-left: 4px solid #ffc107;
+        }
+
+        .priority-normal {
+            background: #f8f9fa;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .notification-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            min-width: 30px;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .notification-time {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .notification-message {
+           margin: 5px 0 10px 0;
+            color: #333;
+        }
+
+        .notification-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+       }
+
+        .btn-small {
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            background: #007bff;
+            color: white;
+        }
+
+        .pending-tasks {
+          margin-top: 20px;
+          padding-top: 20px;
+          border-top: 1px solid #eee;
+       }
+
+       .incomplete-list {
+            margin-top: 10px;
+        }
+
+        .incomplete-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+        }
+
+        .doc-critical {
+            background: #fff5f5;
+            border-color: #f5c6cb;
+        }
+
+        .doc-warning {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+        }
+
+        .incomplete-icon {
+            font-size: 20px;
+            margin-right: 15px;
+            min-width: 30px;
+        }
+
+        .incomplete-details {
+            flex: 1;
+        }
+
+        .incomplete-details strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .incomplete-details p {
+            margin: 0;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .doc-status {
+            margin-top: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .doc-count {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .status-badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .status-badge.critical {
+            background: #dc3545;
+            color: white;
+       }
+
+        .status-badge.warning {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .status-badge.info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .incomplete-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .no-notifications {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+        }
+
+        .no-notifications-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        /* ============ INCOMPLETE SUBMISSIONS SECTION ============ */
+        .incomplete-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #ffc107;
+        }
+        
+        .incomplete-list {
+            margin-top: 15px;
+        }
+        
+        .incomplete-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+        }
+        
+        .incomplete-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .incomplete-icon {
+            font-size: 24px;
+            margin-right: 15px;
+            width: 40px;
+            text-align: center;
+        }
+        
+        .incomplete-meta {
+            font-size: 13px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .incomplete-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 10px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .doc-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .doc-count {
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .status-badge.critical {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .status-badge.warning {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .status-badge.info {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .incomplete-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            background: #007bff;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Agent Dashboard</h1>
+        <p>Welcome back, {{ user_name }}!
+            {% if unread_count > 0 %}
+            <span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 10px;">
+                {{ unread_count }} new notification{% if unread_count > 1 %}s{% endif %}
+            </span>
+            {% endif %}
+        </p>
+        <div>
+            <a href="/agent/notifications" class="btn" style="background: #ffc107; color: #000;">
+                🔔 Notifications {% if unread_count > 0 %}({{ unread_count }}){% endif %}
+            </a>
+            <a href="/logout" style="color: #dc3545; margin-left: 10px;">Logout</a>
+        </div>
+    </div>
+    
+    <!-- ============ NOTIFICATION SECTION ============ -->
+    {% if unread_count > 0 or incomplete_submissions %}
+    <div class="notification-section">
+        <div class="notification-header">
+            <h2 style="margin: 0;">🔔 Notifications & Pending Tasks ({{ unread_count + incomplete_submissions|length }})</h2>
+            {% if unread_count > 0 %}
+            <a href="/agent/mark-all-read" class="btn" style="background: #6c757d; color: white; padding: 5px 10px; font-size: 12px;">
+                Mark All as Read
+            </a>
+            {% endif %}
+        </div>
+    
+        <!-- Notifications -->
+        {% if notifications and notifications|length > 0 %}
+        <div class="notifications-list">
+            {% for notif in notifications %}
+            <div class="notification-item priority-{{ notif.priority }}">
+                <div class="notification-icon">
+                    {% if notif.type == 'incomplete_docs' %}📎
+                    {% elif notif.type == 'rejected_submission' %}❌
+                    {% elif notif.priority == 'urgent' %}🚨
+                    {% elif notif.priority == 'high' %}
+                    {% else %}📌
+                    {% endif %}
+                </div>
+                <div class="notification-content">
+                    <div class="notification-title">
+                        <strong>{{ notif.title }}</strong>
+                        <span class="notification-time">{{ notif.created_at[:10] }}</span>
+                    </div>
+                    <p class="notification-message">{{ notif.message }}</p>
+                    {% if notif.related_id and notif.related_type == 'listing' %}
+                    <div class="notification-actions">
+                        <a href="/agent/submission/{{ notif.related_id }}" class="btn-small">View Submission</a>
+                        <a href="/agent/reupload-documents/{{ notif.related_id }}" class="btn-small" style="background: #28a745;">Upload Documents</a>
+                        <a href="/agent/mark-notification-read/{{ notif.id }}" class="btn-small" style="background: #6c757d;">Mark as Read</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    
+        <!-- Incomplete Submissions -->
+        {% if incomplete_submissions %}
+        <div class="pending-tasks">
+            <h3 style="margin-top: 20px;">📋 Incomplete Submissions ({{ incomplete_submissions|length }})</h3>
+            <div class="incomplete-list">
+                {% for sub in incomplete_submissions %}
+                <div class="incomplete-item doc-{{ sub.doc_status }}">
+                    <div class="incomplete-icon">
+                        {% if sub.doc_status == 'critical' %}❌
+                        {% elif sub.doc_status == 'warning' %}
+                        {% else %}📝
+                        {% endif %}
+                    </div>
+                    <div class="incomplete-details">
+                        <strong>Submission #{{ sub.id }}</strong>
+                        <p>{{ sub.customer_name }} • Created: {{ sub.created_date }}</p>
+                        <div class="doc-status">
+                            <span class="doc-count">{{ sub.doc_count }}/3 documents</span>
+                            {% if sub.doc_count == 0 %}
+                            <span class="status-badge critical">CRITICAL: No documents</span>
+                            {% elif sub.doc_count == 1 %}
+                            <span class="status-badge warning">Very Incomplete</span>
+                            {% else %}
+                            <span class="status-badge info">Missing documents</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="incomplete-actions">
+                        <a href="/agent/reupload-documents/{{ sub.id }}" class="btn-small" style="background: #28a745;">Upload Now</a>
+                        <a href="/agent/submission/{{ sub.id }}" class="btn-small">View Details</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    
+        {% if unread_count == 0 and not incomplete_submissions %}
+        <div class="no-notifications">
+            <div class="no-notifications-icon">🎉</div>
+            <h3>All caught up!</h3>
+            <p>You have no pending tasks or notifications.</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- ============ STATS SECTION WITH UPLINE EARNINGS ============ -->
+    <div class="stats">
+        <div class="stat-card">
+            <h3>Total Commission</h3>
+            <div class="stat-value" style="color: #007bff;">RM{{ total_commission }}</div>
+            <small>From your own sales</small>
+        </div>
+        
+        <!-- ============ NEW: UPLINE EARNINGS CARD ============ -->
+        <div class="stat-card upline-earnings-card">
+            <h3>📈 Upline Earnings</h3>
+            <div class="stat-value" style="color: #155724;">RM{{ "{:,.2f}".format(upline_earnings or 0) }}</div>
+            <small>
+                From {{ downline_stats.upline_payments_count or 0 }} downline sale{% if downline_stats.upline_payments_count != 1 %}s{% endif %}
+                {% if downline_stats.count > 0 %}
+                <br>Across {{ downline_stats.count }} downline agent{% if downline_stats.count != 1 %}s{% endif %}
+                {% endif %}
+            </small>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Pending Approval</h3>
+            <div class="stat-value" style="color: #ffc107;">{{ pending_count }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Total Sales</h3>
+            <div class="stat-value" style="color: #6f42c1;">{{ total_sales }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Project Sales</h3>
+            <div class="stat-value" style="color: #fd7e14;">{{ project_sales_count }}</div>
+            <small>From {{ unique_projects_count }} projects</small>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Paid Out</h3>
+            <div class="stat-value" style="color: #28a745;">RM{{ "{:,.2f}".format(total_paid or 0) }}</div>
+            <small>Total commissions paid</small>
+        </div>
+    </div>
+    
+    <div class="actions">
+        <a href="/new-listing" class="btn">➕ New Sales Entry</a>
+        <a href="/agent/submissions" class="btn" style="background: #28a745;">📋 My Submissions</a>
+        <a href="/agent/commissions" class="btn" style="background: #17a2b8;">💰 Commissions</a>
+        <a href="/agent/projects" class="btn" style="background: #6f42c1;">🏢 My Projects</a>
+        <a href="/agent/notifications" class="btn" style="background: #ffc107; color: #000;">
+        🔔 Notifications {% if unread_count > 0 %}<span style="background: #dc3545; color: white; padding: 2px 6px; border-radius: 10px; font-size: 11px;">{{ unread_count }} new</span>{% endif %}
+        </a>
+        <a href="/agent/my-downline" class="btn btn-network">👥 My Downline</a>
+    </div>
+    
+    <!-- ============ NETWORK SECTION ============ -->
+    <div class="network-section">
+        <h2>👥 My Network</h2>
+        
+        <div class="commission-flow">
+            <h4>💰 How Commissions Work in Your Network</h4>
+            <p>• <strong>Your Sales:</strong> You earn commission from your own property sales</p>
+            <p>• <strong>Upline:</strong> Agent who supervises you (earns {{ upline_info.commission_rate if upline_info else 0 }}% of your commission)</p>
+            <p>• <strong>Downline:</strong> Agents you supervise (you earn commission from their sales)</p>
+            <p>• <strong>Your Upline Earnings:</strong> You have earned <strong>RM{{ "{:,.2f}".format(upline_earnings or 0) }}</strong> from your downline network</p>
+        </div>
+        
+        <div class="network-grid">
+            <!-- UPLINE CARD -->
+            <div class="network-card">
+                <h3><span style="font-size: 20px;">⬆️</span> My Upline</h3>
+                
+                {% if upline_info %}
+                <div class="network-member">
+                    <div class="member-icon">👑</div>
+                    <div class="member-details">
+                        <strong>{{ upline_info.name }}</strong>
+                        <div class="member-meta">
+                            <small>{{ upline_info.email }}</small>
+                            <div style="margin-top: 8px;">
+                                <span class="commission-badge">
+                                    Earns {{ upline_info.commission_rate }}% of your commissions
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="network-stats">
+                    <strong>📊 Commission Flow:</strong>
+                    <small>{{ upline_info.commission_rate }}% of your approved commissions goes to your upline</small>
+                </div>
+                {% else %}
+                <div class="empty-network">
+                    <span class="icon">👑</span>
+                    <h4>Top Level Agent</h4>
+                    <p>You don't have an upline assigned</p>
+                    <small>You keep 100% of your commissions</small>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- DOWNLINE CARD -->
+            <div class="network-card">
+                <h3><span style="font-size: 20px;">⬇️</span> My Downline ({{ downline_stats.count }})</h3>
+                
+                {% if downline_agents %}
+                <div style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;">
+                    {% for agent in downline_agents %}
+                    <div class="network-member">
+                        <div class="member-icon">👤</div>
+                        <div class="member-details">
+                            <strong>{{ agent.name }}</strong>
+                            <div class="member-meta">
+                                <small>{{ agent.email }}</small>
+                                <div style="margin-top: 5px;">
+                                    <span class="commission-badge">
+                                        Earn {{ agent.commission_rate }}% of their commissions
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="network-stats">
+                    <strong>📊 Downline Performance:</strong>
+                    <small>{{ downline_stats.count }} agent(s) under your supervision</small><br>
+                    <small>You have earned <strong>RM{{ "{:,.2f}".format(upline_earnings or 0) }}</strong> from downline</small><br>
+                    <small>Average rate: {{ "{:.1f}".format(downline_stats.total_commission_rate / downline_stats.count if downline_stats.count > 0 else 0) }}% per agent</small>
+                </div>
+                {% else %}
+                <div class="empty-network">
+                    <span class="icon">👥</span>
+                    <h4>No Downline Yet</h4>
+                    <p>You don't have any agents under your supervision</p>
+                    <small>Build your team to earn passive income!</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ INCOMPLETE SUBMISSIONS SECTION ============ -->
+    {% if incomplete_submissions %}
+    <div class="incomplete-section">
+        <h2>📋 Incomplete Submissions ({{ incomplete_submissions|length }})</h2>
+        <p style="color: #666; margin-bottom: 15px;">
+            These submissions are missing documents. Upload documents to submit for approval.
+        </p>
+        
+        <div class="incomplete-list">
+            {% for sub in incomplete_submissions %}
+            <div class="incomplete-item">
+                <div class="incomplete-header">
+                    <span class="incomplete-icon">
+                        {% if sub.doc_count == 0 %}🚨{% elif sub.doc_count == 1 %}{% else %}📝{% endif %}
+                    </span>
+                    <div>
+                        <strong>Submission #{{ sub.id }}</strong>
+                        <div class="incomplete-meta">
+                            Customer: {{ sub.customer_name }} | 
+                            Status: {{ sub.status|title }} | 
+                            Created: {{ sub.created_at[:10] }}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="incomplete-details">
+                    <div class="doc-status">
+                        <span class="doc-count">{{ sub.doc_count }}/3 documents</span>
+                        {% if sub.doc_count == 0 %}
+                        <span class="status-badge critical">CRITICAL: No documents</span>
+                        {% elif sub.doc_count == 1 %}
+                        <span class="status-badge warning">Very Incomplete</span>
+                        {% else %}
+                        <span class="status-badge info">Missing documents</span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="incomplete-actions">
+                        <a href="/agent/reupload-documents/{{ sub.id }}" class="btn-small" style="background: #28a745;">Upload Documents</a>
+                        <a href="/agent/submission/{{ sub.id }}" class="btn-small">View Details</a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div style="margin-top: 20px; text-align: center;">
+            <a href="/agent/submissions?status=draft" class="btn" style="background: #17a2b8;">
+                View All Incomplete Submissions →
+            </a>
+        </div>
+    </div>
+    {% endif %}
+    
+    <h2>Recent Sales</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Customer</th>
+                <th>Sale Price</th>
+                <th>Commission</th>
+                <th>Project</th>
+                <th>Status</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sale in recent_sales %}
+            <tr>
+                <td>#{{ sale.id }}</td>
+                <td>
+                    {{ sale.customer_name }}
+                    {% if sale.unit_type %}
+                    <br><small class="unit-badge">Unit: {{ sale.unit_type }}</small>
+                    {% endif %}
+                </td>
+                <td>RM{{ "%.2f"|format(sale.sale_price|float) }}</td>
+                <td>RM{{ "%.2f"|format(sale.commission_amount|float if sale.commission_amount else 0) }}</td>
+                <td>
+                    {% if sale.project_name %}
+                    <span class="project-badge">{{ sale.project_name }}</span>
+                    {% if sale.project_category %}
+                    <br><small style="color: #666;">{{ sale.project_category|title }}</small>
+                    {% endif %}
+                    {% else %}
+                    <span style="color: #999;">—</span>
+                    {% endif %}
+                </td>
+                <td><span class="status-{{ sale.status }}">{{ sale.status|title }}</span></td>
+                <td>{{ sale.created_at[:10] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <h2>Recent Payments</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Reference</th>
+                <th>Project</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for payment in recent_payments %}
+            <tr>
+                <td>{{ payment.payment_date or payment.created_at[:10] }}</td>
+                <td>RM{{ "%.2f"|format(payment.commission_amount|float) }}</td>
+                <td>
+                    {% if payment.is_upline_payment %}
+                        {% if payment.is_direct_upline %}
+                        <span class="payment-type-badge payment-type-upline">Upline</span>
+                        {% else %}
+                        <span class="payment-type-badge payment-type-upline">Indirect Upline</span>
+                        {% endif %}
+                        {% if payment.selling_agent_name %}
+                        <br><small style="font-size: 11px; color: #666;">From: {{ payment.selling_agent_name }}</small>
+                        {% endif %}
+                    {% else %}
+                    <span class="payment-type-badge payment-type-own">Own</span>
+                    {% endif %}
+                </td>
+                <td><span class="status-{{ payment.payment_status }}">{{ payment.payment_status|title }}</span></td>
+                <td>{{ payment.transaction_id or 'N/A' }}</td>
+                <td>
+                    {% if payment.project_name %}
+                    <span class="project-badge">{{ payment.project_name }}</span>
+                    {% else %}
+                    <span style="color: #999;">—</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align: center; color: #666;">No payment history yet</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mark Payment as Paid</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+        .form-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #28a745; text-align: center; }
+        .payment-info { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 15px 0; 
+            border-left: 4px solid #28a745;
+            font-size: 14px;
+            color: #555;
+        }
+        .payment-info strong { color: #28a745; }
+        label { display: block; margin-top: 15px; font-weight: bold; color: #333; }
+        input, select, textarea { 
+            width: 100%; 
+            padding: 10px; 
+            margin: 5px 0 15px 0; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        input:focus, select:focus, textarea:focus { 
+            border-color: #28a745; 
+            outline: none; 
+            box-shadow: 0 0 5px rgba(40, 167, 69, 0.2);
+        }
+        button { 
+            width: 100%; 
+            padding: 12px; 
+            background: #28a745; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin-top: 20px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        button:hover { background: #218838; }
+        .cancel-link { 
+            display: block; 
+            text-align: center; 
+            margin-top: 15px; 
+            color: #6c757d; 
+            text-decoration: none;
+            padding: 10px;
+        }
+        .cancel-link:hover { 
+            text-decoration: underline;
+        }
+        .required::after { 
+            content: " *"; 
+            color: #dc3545; 
+        }
+    </style>
+</head>
+<body>
+    <div class="form-box">
+        <h2>💰 Mark Payment as Paid</h2>
+        <h3 style="text-align: center; color: #333; margin-bottom: 20px;">Payment #{{ payment_id }}</h3>
+        
+        <div class="payment-info">
+            <p><strong>⚠️ Important:</strong> This action will:</p>
+            <ol>
+                <li>Mark payment #{{ payment_id }} as <strong style="color: #28a745;">PAID</strong></li>
+                <li>Update commission status in the original listing</li>
+                <li>Record payment date and method</li>
+                <li>This action cannot be undone</li>
+            </ol>
+        </div>
+        
+        <form method="POST" onsubmit="return confirm('Are you sure you want to mark Payment #{{ payment_id }} as PAID?')">
+            <label for="payment_method" class="required">Payment Method</label>
+            <select name="payment_method" id="payment_method" required>
+                <option value="">-- Select Payment Method --</option>
+                <option value="bank_transfer">🏦 Bank Transfer</option>
+                <option value="cash">💵 Cash</option>
+                <option value="check">📄 Check</option>
+                <option value="online_payment">🌐 Online Payment</option>
+                <option value="credit_card">💳 Credit Card</option>
+                <option value="other">📝 Other</option>
+            </select>
+            
+            <label for="transaction_id">Transaction/Reference ID</label>
+            <input type="text" name="transaction_id" id="transaction_id" 
+                   placeholder="e.g., BANK-REF-12345, Check #789, TxnID-ABC123">
+            
+            <label for="notes">Payment Notes (Optional)</label>
+            <textarea name="notes" id="notes" rows="3" 
+                      placeholder="Any additional notes about this payment..."></textarea>
+            
+            <button type="submit">
+                ✅ CONFIRM & MARK AS PAID
+            </button>
+            
+            <a href="/admin/payments" class="cancel-link">
+                ← Back to Payments
+            </a>
+        </form>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add placeholder hints based on payment method
+            const paymentMethod = document.getElementById('payment_method');
+            const transactionId = document.getElementById('transaction_id');
+            
+            paymentMethod.addEventListener('change', function() {
+                const method = this.value;
+                switch(method) {
+                    case 'bank_transfer':
+                        transactionId.placeholder = 'e.g., Bank Reference Number, Transaction ID';
+                        break;
+                    case 'check':
+                        transactionId.placeholder = 'e.g., Check Number, Bank Name';
+                        break;
+                    case 'online_payment':
+                        transactionId.placeholder = 'e.g., PayPal ID, Stripe Charge ID';
+                        break;
+                    case 'credit_card':
+                        transactionId.placeholder = 'e.g., Last 4 digits, Authorization Code';
+                        break;
+                    default:
+                        transactionId.placeholder = 'e.g., Reference Number, Transaction ID';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
