@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% if is_draft %}Draft Saved{% else %}Submission Successful{% endif %}</title>
+    <meta http-equiv="refresh" content="5;url=/agent/dashboard">
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px; 
+        }
+        .success-box { 
+            border: 2px solid {% if is_draft %}#ffc107{% else %}#28a745{% endif %}; 
+            padding: 30px; 
+            border-radius: 10px; 
+            text-align: center; 
+        }
+        h2 { 
+            color: {% if is_draft %}#ffc107{% else %}#28a745{% endif %}; 
+        }
+        .details { 
+            text-align: left; 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 20px 0; 
+        }
+        .redirect { 
+            margin-top: 20px; 
+            color: #666; 
+            font-size: 14px; 
+        }
+        .status-badge { 
+            display: inline-block; 
+            padding: 5px 15px; 
+            border-radius: 20px; 
+            font-weight: bold;
+            background-color: {% if is_draft %}#fff3cd{% else %}#d4edda{% endif %};
+            color: {% if is_draft %}#856404{% else %}#155724{% endif %};
+            border: 1px solid {% if is_draft %}#ffeaa7{% else %}#c3e6cb{% endif %};
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="success-box">
+        <h2>{% if is_draft %}💾 Draft Saved Successfully!{% else %}✅ Sale Submitted Successfully!{% endif %}</h2>
+        <p>Reference ID: <strong>#{{ listing_id }}</strong></p>
+        
+        <div class="status-badge">
+            Status: {{ 'PENDING APPROVAL' if not is_draft else 'DRAFT' }}
+        </div>
+        
+        <div class="details">
+            <p><strong>Agent ID:</strong> {{ agent_id }}</p>
+            <p><strong>{{ 'Submission' if not is_draft else 'Saved' }} Date:</strong> {{ current_date }}</p>
+            <p><strong>Customer:</strong> {{ customer_name }}</p>
+            <p><strong>Property:</strong> {{ property_address[:50] }}...</p>
+            <p><strong>Sale Price:</strong> RM{{ sale_price|format_currency }}</p>
+            <p><strong>Commission:</strong> <span style="color: #28a745; font-weight: bold;">
+            RM{{ commission|format_currency }}</span></p>
+            <p><strong>Folder Structure:</strong> agent_{{ agent_id }}/{{ current_date_folder }}/listing_{{ listing_id }}/</p>
+            {{ upload_message|safe }}
+        </div>
+        
+        <p>{% if is_draft %}Your draft has been saved. You can submit it for approval later.{% else %}Your submission is now pending admin approval.{% endif %}</p>
+        
+        <div class="redirect">
+            Redirecting to dashboard in 5 seconds...
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <a href="/new-listing" style="background: #007bff; color: white; padding: 10px 20px; 
+               text-decoration: none; border-radius: 5px; margin-right: 10px;">➕ New Sale</a>
+            <a href="/agent/dashboard" style="background: #6c757d; color: white; padding: 10px 20px; 
+               text-decoration: none; border-radius: 5px;">📊 Go to Dashboard</a>
+            {% if is_draft %}
+            <a href="/edit-listing/{{ listing_id }}" style="background: #17a2b8; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">✏️ Edit Draft</a>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

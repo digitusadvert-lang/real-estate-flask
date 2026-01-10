@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manage Agents</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .nav a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
+        table { width: 100%; background: white; border-radius: 10px; overflow: hidden; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #2c3e50; color: white; }
+        .btn { padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 12px; }
+        .btn-edit { background: #17a2b8; color: white; }
+        .btn-delete { background: #dc3545; color: white; }
+        .upline-info { font-size: 12px; color: #666; }
+        .commission-rate { 
+            background: #fff3cd; 
+            padding: 2px 6px; 
+            border-radius: 3px; 
+            font-size: 11px;
+            color: #856404;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .commission-rate-2 { 
+            background: #d1ecf1; 
+            padding: 2px 6px; 
+            border-radius: 3px; 
+            font-size: 11px;
+            color: #0c5460;
+            display: inline-block;
+        }
+        .commission-rate-3 { 
+            background: #f8d7da; 
+            padding: 2px 6px; 
+            border-radius: 3px; 
+            font-size: 11px;
+            color: #721c24;
+            display: inline-block;
+        }
+        .hierarchy-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .level-1 { background: #007bff; color: white; }
+        .level-2 { background: #28a745; color: white; }
+        .level-3 { background: #6f42c1; color: white; }
+        .multi-level-info {
+            font-size: 11px;
+            color: #6c757d;
+            margin-top: 3px;
+        }
+        .agent-level {
+            font-size: 11px;
+            font-weight: bold;
+            padding: 1px 6px;
+            border-radius: 3px;
+            background: #f8f9fa;
+            color: #495057;
+        }
+        .commission-system {
+            background: white; 
+            padding: 15px; 
+            border-radius: 10px; 
+            margin-bottom: 20px;
+        }
+        .fund-badge {
+            background: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+        .commission-structure {
+            font-size: 10px;
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-top: 3px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>👥 Manage Agents</h1>
+        <div class="nav">
+            <a href="/admin/dashboard">← Dashboard</a>
+            <a href="/admin/add-agent">➕ Add New Agent</a>
+            <a href="/admin/agent-hierarchy">📊 View Hierarchy</a>
+            <a href="/logout">Logout</a>
+        </div>
+    </div>
+    
+    <div class="commission-system">
+        <h3>📋 Fund-Based Commission System:</h3>
+        <div style="display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap;">
+            <div>
+                <span class="hierarchy-badge level-1">FUND</span> Total Commission Fund<br>
+                <small>2.0% of sale price</small>
+            </div>
+            <div>
+                <span class="hierarchy-badge level-2">AGENT</span> Agent's Share<br>
+                <small>80.0% of fund</small>
+            </div>
+            <div>
+                <span class="hierarchy-badge level-3">UPLINE 1</span> Direct Upline<br>
+                <small>10.0% of fund</small>
+            </div>
+            <div>
+                <span class="hierarchy-badge" style="background: #fd7e14; color: white;">UPLINE 2</span> Indirect Upline<br>
+                <small>5.0% of fund</small>
+            </div>
+            <div>
+                <span class="hierarchy-badge" style="background: #6c757d; color: white;">COMPANY</span> Company Balance<br>
+                <small>5.0% of fund</small>
+            </div>
+        </div>
+        <div style="font-size: 12px; color: #666; margin-top: 10px;">
+            <strong>Example for RM1,000,000 sale:</strong><br>
+            • Total fund: RM1,000,000 × 2.0% = RM20,000<br>
+            • Agent: RM20,000 × 80.0% = RM16,000<br>
+            • Direct upline: RM20,000 × 10.0% = RM2,000<br>
+            • Indirect upline: RM20,000 × 5.0% = RM1,000<br>
+            • Company: RM20,000 × 5.0% = RM1,000
+        </div>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Agent</th>
+                <th>Uplines</th>
+                <th>Commission Structure</th>
+                <th>Commission Rates</th>
+                <th>Total Listings</th>
+                <th>Total Commission</th>
+                <th>Approved Comm</th>
+                <th>Joined</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for agent in agents %}
+            <tr>
+                <td>{{ agent.id }}</td>
+                <td>
+                    <strong>{{ agent.name }}</strong><br>
+                    <small>{{ agent.email }}</small><br>
+                    {% if agent.upline_id %}
+                        {% if not agent.upline2_id %}
+                            <span class="hierarchy-badge level-2">L2</span>
+                            <span class="agent-level">Middle Level</span>
+                        {% else %}
+                            <span class="hierarchy-badge level-3">L3</span>
+                            <span class="agent-level">Bottom Level</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="hierarchy-badge level-1">L1</span>
+                        <span class="agent-level">Top Level</span>
+                    {% endif %}
+                    <br>
+                    <span class="commission-structure">
+                        {% if agent.commission_structure == 'fund_based' %}
+                        💰 Fund-Based
+                        {% else %}
+                        ⚡ Legacy
+                        {% endif %}
+                    </span>
+                </td>
+                <td>
+                    {% if agent.upline_name %}
+                        <strong>Direct:</strong> {{ agent.upline_name }}<br>
+                        <small class="upline-info">{{ agent.upline_email }}</small><br>
+                    {% else %}
+                        <span style="color: #999;">No direct upline</span><br>
+                    {% endif %}
+                    
+                    {% if agent.upline2_name %}
+                        <strong>Indirect:</strong> {{ agent.upline2_name }}<br>
+                        <small class="upline-info">{{ agent.upline2_email }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="font-size: 11px;">
+                        {% if agent.commission_structure == 'fund_based' %}
+                            <span class="fund-badge">FUND</span> {{ agent.total_commission_fund_pct or 2.0 }}%<br>
+                            <span class="commission-rate">{{ agent.agent_fund_pct or 80.0 }}%</span> Agent<br>
+                            <span class="commission-rate-2">{{ agent.upline_fund_pct or 10.0 }}%</span> Direct Upline<br>
+                            <span class="commission-rate-3">{{ agent.upline2_fund_pct or 5.0 }}%</span> Indirect Upline<br>
+                            <span style="background: #6c757d; color: white; padding: 1px 5px; border-radius: 3px; font-size: 10px;">
+                                {{ agent.company_fund_pct or 5.0 }}% Company
+                            </span>
+                        {% else %}
+                            <!-- Legacy structure display -->
+                            <span class="commission-rate">{{ agent.upline_commission_rate or 5.0 }}%</span> to direct upline<br>
+                            <span class="commission-rate-2">{{ agent.upline2_commission_rate or 2.5 }}%</span> to indirect upline<br>
+                            <div class="multi-level-info">
+                                Own rate: {{ agent.commission_rate or 10.0 }}%
+                            </div>
+                        {% endif %}
+                    </div>
+                </td>
+                <td>{{ agent.total_listings or 0 }}</td>
+                <td>RM{{ "%.2f"|format(agent.total_commission or 0) }}</td>
+                <td>RM{{ "%.2f"|format(agent.approved_commission or 0) }}</td>
+                <td>{{ agent.created_at[:10] if agent.created_at else 'N/A' }}</td>
+                <td>
+                    <a href="/admin/edit-agent/{{ agent.id }}" class="btn btn-edit">✏️ Edit</a>
+                    <a href="/admin/delete-agent/{{ agent.id }}" class="btn btn-delete" onclick="return confirm('Are you sure you want to delete agent {{ agent.name }}?')">🗑️ Delete</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

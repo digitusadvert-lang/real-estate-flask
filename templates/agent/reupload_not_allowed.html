@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cannot Add Documents</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px; 
+            background: #f5f5f5; 
+        }
+        .error-box { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 10px; 
+            text-align: center; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            border: 2px solid #ffc107;
+        }
+        h2 { 
+            margin-top: 0; 
+            color: #856404; 
+        }
+        .status-badge { 
+            padding: 8px 16px; 
+            border-radius: 20px; 
+            font-weight: bold; 
+            font-size: 14px; 
+            margin: 10px 0; 
+            display: inline-block;
+        }
+        .status-submitted { background: #cce5ff; color: #004085; }
+        .status-approved { background: #d4edda; color: #155724; }
+        .btn { 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            text-decoration: none; 
+            display: inline-block; 
+            margin: 10px 5px;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-info { background: #17a2b8; color: white; }
+        .info-box { 
+            background: #e8f4ff; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 20px 0; 
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-box">
+        <h2> Cannot Add Documents to This Submission</h2>
+        
+        <div style="margin: 20px 0;">
+            <div class="status-badge status-{{ status }}">
+                {{ status|upper }}
+            </div>
+            <p>Submission #{{ listing_id }} is currently <strong>{{ status }}</strong>.</p>
+        </div>
+        
+        <div class="info-box">
+            <h4 style="margin-top: 0;">📋 Document Upload Rules:</h4>
+            <ul>
+                <li><strong>Draft/Rejected:</strong> Can add/replace documents freely</li>
+                <li><strong>Submitted:</strong> Under admin review - cannot modify documents</li>
+                <li><strong>Approved:</strong> Completed - cannot modify documents</li>
+            </ul>
+        </div>
+        
+        {% if status == 'submitted' %}
+        <div style="margin: 20px 0; padding: 15px; background: #fff3cd; border-radius: 5px;">
+            <h4 style="margin-top: 0;">⏳ Submission Under Review</h4>
+            <p>Your submission is currently being reviewed by the admin team. Once the review is complete, you will be notified of the outcome.</p>
+            <p><strong>If you need to add urgent documents:</strong> Contact the admin team directly.</p>
+        </div>
+        {% endif %}
+        
+        {% if status == 'approved' %}
+        <div style="margin: 20px 0; padding: 15px; background: #d4edda; border-radius: 5px;">
+            <h4 style="margin-top: 0;">✅ Submission Approved</h4>
+            <p>Your submission has been approved! The commission process has begun.</p>
+            <p><strong>Need to make changes?</strong> Contact the admin team if there are any issues.</p>
+        </div>
+        {% endif %}
+        
+        <div style="margin-top: 30px;">
+            <a href="/agent/submission/{{ listing_id }}" class="btn btn-primary">📄 View Submission Details</a>
+            <a href="/agent/documents/{{ listing_id }}" class="btn btn-info">📎 View Existing Documents</a>
+            <a href="/agent/submissions" class="btn btn-secondary">📋 Back to My Submissions</a>
+        </div>
+    </div>
+</body>
+</html>

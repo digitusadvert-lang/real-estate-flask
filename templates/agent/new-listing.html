@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>New {{ "Rental" if transaction_type == "rental" else "Sales" }} Entry</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 20px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .agent-info { background: #e8f4ff; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+        .commission-preview { background: #f0f8ff; padding: 15px; border-left: 4px solid #007bff; margin: 20px 0; border-radius: 5px; }
+        .form-section { border: 1px solid #e0e0e0; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        .required:after { content: " *"; color: red; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        input:focus, select:focus, textarea:focus { border-color: #007bff; outline: none; box-shadow: 0 0 5px rgba(0,123,255,0.3); }
+        .btn { padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-right: 10px; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #545b62; }
+        .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .file-upload { border: 2px dashed #ddd; padding: 20px; text-align: center; border-radius: 5px; }
+        .file-upload:hover { border-color: #007bff; background: #f8f9fa; }
+        .checklist { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-top: 20px; }
+        .project-info { background: #f0fdf4; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745; display: none; }
+        .unit-info { background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px; }
+        .transaction-badge { 
+            background-color: {% if transaction_type == "rental" %}#17a2b8{% else %}#28a745{% endif %}; 
+            color: white; 
+            padding: 5px 15px; 
+            border-radius: 20px; 
+            font-size: 0.9em; 
+            display: inline-block;
+            margin-left: 10px;
+        }
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .btn-grey { 
+            background: #6c757d; 
+            color: white; 
+            padding: 12px 25px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            text-decoration: none; 
+            display: inline-block;
+            margin-left: 10px;
+        }
+        .btn-grey:hover { 
+            background: #545b62; 
+            color: white;
+        }
+        
+        /* OR if you prefer the outline style: */
+        .btn-outline {
+            background: transparent;
+            color: #6c757d;
+            padding: 11px 25px;
+            border: 1px solid #6c757d;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-outline:hover {
+            background: #6c757d;
+            color: white;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>
+            {% if transaction_type == "rental" %}
+                📝 New Rental Entry
+            {% else %}
+                📝 New Sales Entry
+            {% endif %}
+            <span class="transaction-badge">
+                {% if transaction_type == "rental" %}
+                    RENTAL
+                {% else %}
+                    SALES
+                {% endif %}
+            </span>
+        </h1>
+        
+        <div class="agent-info">
+            <strong>Agent:</strong> {{ agent_name }} | 
+            <strong>ID:</strong> {{ agent_id }}
+        </div>
+        
+        {% if success %}
+        <div class="success">
+            ✅ {% if transaction_type == "rental" %}Rental{% else %}Sale{% endif %} submitted successfully! Commission: RM{{ commission|default('0.00') }}
+        </div>
+        {% endif %}
+
+        <div class="transaction-buttons" style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
+            <h3 style="margin-top: 0; color: #495057;">📊 Select Transaction Type</h3>
+            
+            <div style="display: flex; gap: 20px; justify-content: center; margin: 20px 0;">
+                <a href="{{ url_for('new_listing', type='sales') }}" 
+                   style="text-decoration: none; flex: 0 1 200px;">
+                    <div style="padding: 20px; border-radius: 10px; 
+                               background: {% if transaction_type == 'sales' %}#28a745{% else %}#ffffff{% endif %}; 
+                               border: 3px solid {% if transaction_type == 'sales' %}#28a745{% else %}#dee2e6{% endif %}; 
+                               color: {% if transaction_type == 'sales' %}#ffffff{% else %}#495057{% endif %}; 
+                               transition: all 0.3s;">
+                        <div style="font-size: 32px;">💰</div>
+                        <div style="font-weight: bold; font-size: 18px; margin: 10px 0;">Sales</div>
+                        <div style="font-size: 14px; opacity: 0.8;">Property Purchase</div>
+                    </div>
+                </a>
+                
+                <a href="{{ url_for('new_listing', type='rental') }}" 
+                   style="text-decoration: none; flex: 0 1 200px;">
+                    <div style="padding: 20px; border-radius: 10px; 
+                               background: {% if transaction_type == 'rental' %}#17a2b8{% else %}#ffffff{% endif %}; 
+                               border: 3px solid {% if transaction_type == 'rental' %}#17a2b8{% else %}#dee2e6{% endif %}; 
+                               color: {% if transaction_type == 'rental' %}#ffffff{% else %}#495057{% endif %}; 
+                               transition: all 0.3s;">
+                        <div style="font-size: 32px;">🏠</div>
+                        <div style="font-weight: bold; font-size: 18px; margin: 10px 0;">Rental</div>
+                        <div style="font-size: 14px; opacity: 0.8;">Property Rental</div>
+                    </div>
+                </a>
+            </div>
+            
+            <div style="padding: 10px; background: #e8f4ff; border-radius: 5px; display: inline-block;">
+                <strong>Currently viewing:</strong> 
+                <span style="color: {% if transaction_type == 'sales' %}#28a745{% else %}#17a2b8{% endif %}; font-weight: bold;">
+                    {{ 'Sales' if transaction_type == 'sales' else 'Rental' }} Projects
+                </span>
+                • {{ projects|length }} projects available
+            </div>
+        </div>
+        
+        <div class="commission-preview">
+            <h3>💵 Estimated Commission: <span id="estCommission">RM0.00</span></h3>
+            <p id="commissionBreakdown">
+                {% if transaction_type == "rental" %}
+                    Enter rental price to see calculation
+                {% else %}
+                    Enter sale price to see calculation
+                {% endif %}
+            </p>
+            <div id="projectCommissionInfo" style="display: none; margin-top: 10px; padding: 10px; background: #e8f4ff; border-radius: 5px;">
+                <strong>Project Commission:</strong> <span id="projectCommissionRate">0%</span>
+            </div>
+        </div>
+        
+        <form method="POST" action="{{ url_for('submit_listing') }}" enctype="multipart/form-data" id="listingForm">
+            <input type="hidden" name="sale_type" value="{{ transaction_type }}">
+            
+            <!-- Project Selection -->
+            <div class="form-section">
+                <h2>🏢 Select Project</h2>
+                <div class="form-group">
+                    <label>Select Project (Optional)</label>
+                    <select name="project_id" id="projectSelect" onchange="loadProjectDetails()">
+                        <option value="">-- Select a Project --</option>
+                        {% for project in projects %}
+                        <option value="{{ project.id }}" 
+                                data-category="{{ project.category }}" 
+                                data-type="{{ project.project_type }}" 
+                                data-commission="{{ project.commission_rate or '' }}"
+                                data-sale-type="{{ project.project_sale_type if project.project_sale_type is defined else 'sales' }}">
+                            {{ project.project_name }} ({{ project.category|title }} - {{ project.project_type|title }} - {{ (project.project_sale_type if project.project_sale_type is defined else 'sales')|title }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <small>Selecting a project will auto-fill property type and commission rate</small>
+                </div>
+                
+                <div id="projectDetails" class="project-info">
+                    <h4 style="margin-top: 0;">📋 Selected Project Details</h4>
+                    <div id="projectInfoContent"></div>
+                </div>
+                
+                <div id="unitSelection" style="display: none;">
+                    <div class="form-group">
+                        <label>Select Unit Type</label>
+                        <select name="unit_id" id="unitSelect" onchange="updateUnitDetails()">
+                            <option value="">-- Select Unit Type --</option>
+                        </select>
+                    </div>
+                    
+                    <div id="unitDetails" class="unit-info">
+                        <!-- Unit details will be populated here -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Customer Information -->
+            <div class="form-section">
+                <h2>👤 Customer Information</h2>
+                <div class="form-group">
+                    <label class="required">Customer Name</label>
+                    <input type="text" name="customer_name" required>
+                </div>
+                <div class="form-group">
+                    <label class="required">Customer Email</label>
+                    <input type="email" name="customer_email" required>
+                </div>
+                <div class="form-group">
+                    <label>Customer Phone</label>
+                    <input type="tel" name="customer_phone">
+                </div>
+            </div>
+            
+            <!-- Property Details -->
+            <div class="form-section">
+                <h2>🏠 Property Details</h2>
+                <div class="form-group">
+                    <label class="required">Property Address</label>
+                    <textarea name="property_address" id="propertyAddress" rows="3" required></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="required">
+                        {% if transaction_type == "rental" %}
+                            Monthly Rental Price (RM)
+                        {% else %}
+                            Sale Price (RM)
+                        {% endif %}
+                    </label>
+                    <input type="number" name="sale_price" id="salePrice" 
+                           min="0" step="1000" required 
+                           oninput="updateCommission()" 
+                           placeholder="{% if transaction_type == 'rental' %}e.g., 2500{% else %}e.g., 500000{% endif %}">
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        {% if transaction_type == "rental" %}
+                            Available From
+                        {% else %}
+                            Closing Date
+                        {% endif %}
+                    </label>
+                    <input type="date" name="closing_date">
+                </div>
+                
+                <!-- Rental Specific Fields -->
+                {% if transaction_type == "rental" %}
+                <div style="border-top: 1px solid #e0e0e0; padding-top: 15px; margin-top: 15px;">
+                    <h4 style="color: #17a2b8;">🏠 Rental Specific Details</h4>
+                    
+                    <div class="form-group">
+                        <label>Security Deposit (RM)</label>
+                        <input type="number" name="deposit" min="0" step="100" placeholder="e.g., 2500 (usually 1-2 months rent)">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Minimum Tenancy Period (months)</label>
+                        <input type="number" name="minimum_tenancy" min="1" placeholder="e.g., 12 months">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Furnishing Type</label>
+                        <select name="furnishing_type">
+                            <option value="">-- Select Furnishing --</option>
+                            <option value="fully_furnished">Fully Furnished</option>
+                            <option value="partially_furnished">Partially Furnished</option>
+                            <option value="unfurnished">Unfurnished</option>
+                        </select>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Document Upload -->
+            <div class="form-section">
+                <h2>📎 Upload Documents</h2>
+                <p style="color: #666; margin-bottom: 15px;">
+                    <strong>IMPORTANT:</strong> Upload required documents only. Other fields are optional.
+                </p>
+                
+                <!-- Required Main Document -->
+                <div class="form-group">
+                    <label class="required">
+                        {% if transaction_type == "rental" %}
+                            📋 Tenancy Agreement (Required)
+                        {% else %}
+                            📋 Sales & Purchase Agreement (Required)
+                        {% endif %}
+                    </label>
+                    <div class="file-upload" style="background: #fff3cd; border-color: #ffc107; border-width: 2px;">
+                        <input type="file" name="main_document" id="mainDocument" accept=".pdf" required>
+                        <small style="color: #856404; font-weight: bold;">
+                            ⚠️ <strong>REQUIRED:</strong> Upload your main agreement document (PDF only, max 10MB)
+                            <br>
+                            {% if transaction_type == "rental" %}
+                                Signed tenancy agreement between landlord and tenant
+                            {% else %}
+                                Signed agreement between buyer and seller
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Optional Additional Documents -->
+                <div class="form-group">
+                    <label>📎 Additional Supporting Documents (Optional)</label>
+                    <div class="file-upload">
+                        <input type="file" name="additional_docs" id="additionalDocs" multiple 
+                               accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                        <small>
+                            You can upload multiple supporting files if needed (hold CTRL to select)
+                            <br>
+                            <span style="color: #6c757d; font-size: 0.9em;">
+                                Examples: ID proof, property documents, photos, etc.
+                            </span>
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Document Checklist (Updated) -->
+                <div class="checklist" style="background: #d4edda; border-color: #c3e6cb;">
+                    <h4 style="margin-top: 0; color: #155724;">✅ Document Requirements:</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <h5 style="margin: 10px 0 5px 0; color: #0c5460;">Required:</h5>
+                            <ul style="margin: 0; padding-left: 20px;">
+                                {% if transaction_type == "rental" %}
+                                    <li>Signed Tenancy Agreement <strong>(MUST UPLOAD)</strong></li>
+                                {% else %}
+                                    <li>Sales & Purchase Agreement <strong>(MUST UPLOAD)</strong></li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                        <div>
+                            <h5 style="margin: 10px 0 5px 0; color: #0c5460;">Optional:</h5>
+                            <ul style="margin: 0; padding-left: 20px;">
+                                <li>Customer ID Proof</li>
+                                <li>Property Documents</li>
+                                <li>Supporting Photos</li>
+                                <li>Other Related Documents</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <p style="margin: 10px 0 0 0; color: #155724; font-size: 0.9em;">
+                        <strong>Note:</strong> Only the main agreement is required. Upload additional documents only if available.
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Additional Information -->
+            <div class="form-section">
+                <h2>📋 Additional Information</h2>
+                <div class="form-group">
+                    <label>Special Notes</label>
+                    <textarea name="notes" rows="4" 
+                              placeholder="Any special conditions, requirements, or notes..."></textarea>
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    {% if transaction_type == "rental" %}
+                        ✅ Submit Rental for Approval
+                    {% else %}
+                        ✅ Submit Sale for Approval
+                    {% endif %}
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="saveDraft()">💾 Save as Draft</button>
+                <a href="{{ url_for('agent_dashboard') }}" class="btn btn-grey">← Back to Dashboard</a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+    // ============ SALES/RENTAL FILTERING ============
+    function filterProjectsByType(selectedType) {
+        console.log(`🎯 filterProjectsByType called with: ${selectedType}`);
+        
+        const projectSelect = document.getElementById('projectSelect');
+        if (!projectSelect) {
+            console.error('❌ projectSelect element not found!');
+            return;
+        }
+        
+        const options = projectSelect.options;
+        console.log(`📋 Total options: ${options.length}`);
+        
+        // Show/hide options based on saleType
+        let shownCount = 0;
+        let hiddenCount = 0;
+        
+        for (let i = 0; i < options.length; i++) {
+            const option = options[i];
+            const saleType = option.dataset.saleType || 'sales'; // Default to sales
+            
+            console.log(`  Option ${i}: "${option.text.substring(0, 30)}..." - saleType: "${saleType}"`);
+            
+            if (i === 0) {
+                // First option is "Select a Project" - always show
+                option.style.display = '';
+                option.disabled = false;
+                shownCount++;
+            } else if (selectedType === 'all' || saleType === selectedType) {
+                option.style.display = '';
+                option.disabled = false;
+                shownCount++;
+            } else {
+                option.style.display = 'none';
+                option.disabled = true;
+                hiddenCount++;
+            }
+        }
+        
+        console.log(`✅ Result: ${shownCount} shown, ${hiddenCount} hidden`);
+        
+        // Reset selection if current selection is hidden
+        const selectedOption = projectSelect.options[projectSelect.selectedIndex];
+        if (selectedOption && selectedOption.disabled) {
+            console.log('🔄 Resetting selection');
+            projectSelect.selectedIndex = 0;
+            
+            // Update commission calculation
+            if (typeof updateCommission === 'function') {
+                updateCommission();
+            }
+        }
+    }
+
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('🚀 Page loaded, initializing filter...');
+        
+        // Set filter based on current transaction type
+        const currentType = "{{ transaction_type }}";
+        filterProjectsByType(currentType);
+        
+        // Update price label based on transaction type
+        updatePriceLabel(currentType);
+        
+        // Clear file inputs on page load
+        clearFileInputs();
+    });
+
+    function updatePriceLabel(transactionType) {
+        const priceInput = document.getElementById('salePrice');
+        if (!priceInput) return;
+        
+        // Update placeholder based on transaction type
+        if (transactionType === 'rental') {
+            priceInput.placeholder = 'e.g., 2500 (monthly rent)';
+        } else {
+            priceInput.placeholder = 'e.g., 500000 (sale price)';
+        }
+    }
+
+    // Store project data
+    let projectsData = {{ projects_json|safe }};
+    let unitsData = {};
+    
+    function loadProjectDetails() {
+        const projectSelect = document.getElementById('projectSelect');
+        const projectId = projectSelect.value;
+        const projectDetails = document.getElementById('projectDetails');
+        const unitSelection = document.getElementById('unitSelection');
+        const projectInfoContent = document.getElementById('projectInfoContent');
+        
+        // Reset
+        projectDetails.style.display = 'none';
+        unitSelection.style.display = 'none';
+        document.getElementById('unitSelect').innerHTML = '<option value="">-- Select Unit Type --</option>';
+        document.getElementById('unitDetails').innerHTML = '';
+        
+        if (!projectId) return;
+        
+        // Find selected project
+        const project = projectsData.find(p => p.id == projectId);
+        if (!project) return;
+        
+        // Show project details
+        projectDetails.style.display = 'block';
+        projectInfoContent.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                    <strong>Category:</strong> ${project.category.toUpperCase()}<br>
+                    <strong>Type:</strong> ${project.project_type.toUpperCase()}<br>
+                    <strong>Location:</strong> ${project.location || 'Not specified'}
+                </div>
+                <div>
+                    <strong>Commission Rate:</strong> ${project.commission_rate || 'N/A'}%<br>
+                    <strong>Status:</strong> ${project.status.toUpperCase()}<br>
+                    ${project.description ? `<strong>Description:</strong> ${project.description.substring(0, 100)}...` : ''}
+                </div>
+            </div>
+        `;
+        
+        // Auto-fill property address with project location if empty
+        const propertyAddress = document.getElementById('propertyAddress');
+        if (!propertyAddress.value.trim() && project.location) {
+            propertyAddress.value = project.location;
+        }
+        
+        // Show commission info
+        if (project.commission_rate) {
+            document.getElementById('projectCommissionInfo').style.display = 'block';
+            document.getElementById('projectCommissionRate').textContent = project.commission_rate + '%';
+        }
+        
+        // Load units if available
+        if (project.units && project.units.length > 0) {
+            unitSelection.style.display = 'block';
+            const unitSelect = document.getElementById('unitSelect');
+            unitSelect.innerHTML = '<option value="">-- Select Unit Type --</option>';
+            
+            project.units.forEach(unit => {
+                const option = document.createElement('option');
+                option.value = unit.id;
+                // Use appropriate price based on transaction type
+                const transactionType = "{{ transaction_type }}";
+                const price = (transactionType === 'rental') ? 
+                              (unit.rental_price || unit.base_price || 0) : 
+                              (unit.base_price || unit.rental_price || 0);
+                option.textContent = `${unit.unit_type} (${unit.square_feet || 'N/A'} sqft) - RM${price.toLocaleString()}`;
+                option.setAttribute('data-price', price);
+                option.setAttribute('data-sale-type', project.project_sale_type || 'sales');
+                option.setAttribute('data-commission', unit.commission_rate || project.commission_rate || 0);
+                option.setAttribute('data-sqft', unit.square_feet || '');
+                unitSelect.appendChild(option);
+            });
+            
+            // Store units data for this project
+            unitsData[projectId] = project.units;
+        }
+        
+        updateCommission();
+    }
+    
+    function updateUnitDetails() {
+        const unitSelect = document.getElementById('unitSelect');
+        const unitId = unitSelect.value;
+        const unitDetails = document.getElementById('unitDetails');
+        const salePriceInput = document.getElementById('salePrice');
+        
+        if (!unitId) {
+            unitDetails.innerHTML = '';
+            return;
+        }
+        
+        const projectId = document.getElementById('projectSelect').value;
+        const units = unitsData[projectId];
+        const unit = units.find(u => u.id == unitId);
+        
+        if (!unit) return;
+        
+        // Get appropriate price based on transaction type
+        const transactionType = "{{ transaction_type }}";
+        const price = (transactionType === 'rental') ? 
+                      (unit.rental_price || unit.base_price || 0) : 
+                      (unit.base_price || unit.rental_price || 0);
+        const priceLabel = (transactionType === 'rental') ? 'Monthly Rent' : 'Price';
+        
+        unitDetails.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                    <strong>Unit Type:</strong> ${unit.unit_type}<br>
+                    <strong>Size:</strong> ${unit.square_feet || 'N/A'} sqft<br>
+                    <strong>Status:</strong> ${unit.status.toUpperCase()}
+                </div>
+                <div>
+                    <strong>${priceLabel}:</strong> RM${price.toLocaleString()}<br>
+                    <strong>Commission:</strong> ${unit.commission_rate || projectsData.find(p => p.id == projectId).commission_rate || 'N/A'}%<br>
+                    <strong>Quantity Available:</strong> ${unit.quantity || 0}
+                </div>
+            </div>
+        `;
+        
+        // Auto-fill sale/rental price
+        if (price > 0) {
+            salePriceInput.value = price;
+            updateCommission();
+        }
+    }
+    
+    function updateCommission() {
+        const salePrice = parseFloat(document.getElementById('salePrice').value) || 0;
+        const projectSelect = document.getElementById('projectSelect');
+        const projectId = projectSelect.value;
+        const selectedOption = projectSelect.options[projectSelect.selectedIndex];
+        const unitSelect = document.getElementById('unitSelect');
+        const unitId = unitSelect.value;
+        
+        // Get transaction type from template
+        const transactionType = "{{ transaction_type }}";
+        const isRental = transactionType === 'rental';
+
+        let commissionRate = 0;
+
+        // Check for unit-specific commission
+        if (unitId && unitsData[projectId]) {
+            const unit = unitsData[projectId].find(u => u.id == unitId);
+            if (unit && unit.commission_rate) {
+                commissionRate = unit.commission_rate / 100;
+            }
+        }
+
+        // Check for project commission
+        if (!commissionRate && selectedOption && selectedOption.dataset.commission) {
+            commissionRate = parseFloat(selectedOption.dataset.commission) / 100;
+        }
+
+        // Use default rate if no project/unit commission
+        if (!commissionRate) {
+            commissionRate = 0.03; // Default 3% commission for sales
+            // For rentals, typically 1 month rent commission
+            if (isRental) {
+                commissionRate = 1; // 1 month rent
+            }
+        }
+
+        let commission = 0;
+        let breakdown = '';
+        
+        if (isRental) {
+            // For rentals: commission is typically 1 month's rent
+            commission = salePrice; // 1 month rent as commission
+            breakdown = `Rental: RM${salePrice.toLocaleString()} × 1 month = RM${commission.toLocaleString()}`;
+        } else {
+            // For sales: percentage of sale price
+            commission = salePrice * commissionRate;
+            
+            // Apply caps (RM1,000 - RM50,000)
+            commission = Math.max(1000, Math.min(commission, 50000));
+            
+            breakdown = `Sale Price: RM${salePrice.toLocaleString()} × ${(commissionRate*100).toFixed(1)}%`;
+        }
+
+        // Update display
+        document.getElementById('estCommission').textContent = 
+            'RM' + commission.toLocaleString('en-US', {minimumFractionDigits: 2});
+
+        if (projectId) {
+            breakdown += ` (Project Rate)`;
+        } else {
+            breakdown += ` (Default Rate)`;
+        }
+
+        document.getElementById('commissionBreakdown').innerHTML = breakdown;
+    }
+    
+    function saveDraft() {
+        alert('Draft saved! You can continue later.');
+        // In real implementation, save via AJAX
+    }
+    
+    // ============ FILE INPUT CLEANUP ============
+    function clearFileInputs() {
+        console.log('🧹 Clearing file inputs...');
+        const fileInputs = document.querySelectorAll('input[type="file"]');
+        
+        fileInputs.forEach((input, index) => {
+            console.log(`Input ${index} (${input.name}): ${input.files.length} file(s)`);
+            
+            // Clear the input value
+            input.value = '';
+            
+            // If there were files, log them
+            if (input.files && input.files.length > 0) {
+                console.log(`  Cleared: ${Array.from(input.files).map(f => f.name).join(', ')}`);
+            }
+        });
+    }
+
+    // Clear when switching between sales/rental
+    document.querySelectorAll('a[href*="new-listing"]').forEach(link => {
+        link.addEventListener('click', function() {
+            console.log('🔄 Switching transaction type, clearing files');
+            setTimeout(clearFileInputs, 50);
+        });
+    });
+    
+    // Clear on form reset
+    const form = document.getElementById('listingForm');
+    if (form) {
+        form.addEventListener('reset', function() {
+            console.log('🔄 Form reset, clearing files');
+            setTimeout(clearFileInputs, 50);
+        });
+        
+        // Debug logging before form submission
+        form.addEventListener('submit', function(e) {
+            console.log('🚀 Form submitting - File count check:');
+            const fileInputs = document.querySelectorAll('input[type="file"]');
+            let totalFiles = 0;
+            
+            fileInputs.forEach((input, index) => {
+                const fileCount = input.files ? input.files.length : 0;
+                console.log(`  ${input.name}: ${fileCount} file(s)`);
+                
+                if (fileCount > 0) {
+                    Array.from(input.files).forEach(file => {
+                        console.log(`    - ${file.name} (${file.size} bytes)`);
+                    });
+                }
+                
+                totalFiles += fileCount;
+            });
+            
+            console.log(`📊 TOTAL files to upload: ${totalFiles}`);
+            
+            // Alert if too many files
+            if (totalFiles > 3) {
+                const proceed = confirm(`⚠️ You are uploading ${totalFiles} files. Continue?`);
+                if (!proceed) {
+                    e.preventDefault();
+                    console.log('❌ Submission cancelled by user');
+                    return false;
+                }
+            }
+        });
+    }
+    </script>
+</body>
+</html>

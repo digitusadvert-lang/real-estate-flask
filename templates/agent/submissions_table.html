@@ -1,0 +1,56 @@
+{% if submissions %}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Customer</th>
+            <th>Property</th>
+            <th>Sale Price</th>
+            <th>Commission</th>
+            <th>Documents</th>
+            <th>Status</th>
+            <th>Submitted</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for sub in submissions %}
+        <tr>
+            <td>#{{ sub[0] }}</td>
+            <td>{{ sub[2] or '' }}</td>
+            <td>{{ (sub[3] or '')[:30] }}{% if (sub[3] or '')|length > 30 %}...{% endif %}</td>
+            <td>RM{{ "%.2f"|format(sub[4] or 0) }}</td>
+            <td>RM{{ "%.2f"|format(sub[5] or 0) }}</td>
+            <td>
+                {% if sub[9] == 0 %}
+                <span class="doc-status doc-status-none">❌ No Docs</span>
+                {% elif sub[9] < 3 %}
+                <span class="doc-status doc-status-partial">⚠️ {{ sub[9] }}/3</span>
+                {% else %}
+                <span class="doc-status doc-status-complete">✅ {{ sub[9] }}</span>
+                {% endif %}
+            </td>
+            <td>
+                <span class="status-badge status-{{ sub[1] or 'draft' }}">
+                    {{ (sub[1] or 'draft')|title }}
+                </span>
+                {% if sub[8] and sub[1] == 'approved' %}
+                <br><small>Approved: {{ sub[8][:10] }}</small>
+                {% endif %}
+            </td>
+            <td>{{ sub[7][:10] if sub[7] else 'Not submitted' }}</td>
+            <td>
+                <a href="/agent/submission/{{ sub[0] }}" class="action-btn btn-view">👁️ View</a>
+                <a href="/agent/documents/{{ sub[0] }}" class="action-btn btn-docs">📎 Docs</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <h3>No submissions found</h3>
+    <p>{{ empty_message }}</p>
+    <a href="/new-listing" class="btn" style="background: #28a745; margin-top: 15px;">Create Your First Submission</a>
+</div>
+{% endif %}

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Error - Real Estate System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .error-box {
+            border: 2px solid #dc3545;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            background-color: white;
+        }
+        h2 {
+            color: #dc3545;
+        }
+        .error-details {
+            text-align: left;
+            background: #f8d7da;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            color: #721c24;
+        }
+        .actions {
+            margin-top: 30px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 0 10px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-box">
+        <h2>❌ Error Occurred</h2>
+        
+        <div class="error-details">
+            <p><strong>Error:</strong> {{ error_message }}</p>
+            {% if error_details %}
+            <p><strong>Details:</strong> {{ error_details }}</p>
+            {% endif %}
+        </div>
+        
+        <div class="actions">
+            <a href="javascript:history.back()" class="btn btn-primary">⬅️ Go Back</a>
+            <a href="/agent/dashboard" class="btn btn-secondary">📊 Dashboard</a>
+        </div>
+        
+        {% if support_email %}
+        <p style="margin-top: 20px; color: #666; font-size: 14px;">
+            If the problem persists, contact support at: {{ support_email }}
+        </p>
+        {% endif %}
+    </div>
+</body>
+</html>

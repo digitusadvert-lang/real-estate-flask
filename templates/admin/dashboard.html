@@ -34,6 +34,10 @@
         .status-submitted { background: #007bff; color: white; }
         .status-approved { background: #28a745; color: white; }
         .status-rejected { background: #dc3545; color: white; }
+        
+        /* Temporary style to handle missing sale_type column */
+        .sale-info { font-size: 12px; color: #666; }
+        .temp-note { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -54,6 +58,11 @@
         <a href="/admin/export-data">📤 Export Data</a>
         <a href="/admin/reports">📈 Reports</a>
         <a href="/admin/settings">⚙️ Settings</a>
+    </div>
+    
+    <!-- Temporary note about missing sale_type -->
+    <div class="temp-note">
+        ⚠️ <strong>Note:</strong> Sales/Rental type filtering is temporarily disabled as the database is being updated. All listings are treated as sales for now.
     </div>
     
     <!-- ============ STATS SECTION ============ -->
@@ -112,11 +121,14 @@
                 <option value="draft" {% if status_filter == "draft" %}selected{% endif %}>Drafts ({{ stats.draft }})</option>
             </select>
             
+            <!-- Temporarily commented out type filter -->
+            <!--
             <select name="type">
                 <option value="all" {% if type_filter == "all" %}selected{% endif %}>All Types</option>
                 <option value="sales" {% if type_filter == "sales" %}selected{% endif %}>Sales ({{ stats.sales_count }})</option>
                 <option value="rental" {% if type_filter == "rental" %}selected{% endif %}>Rentals ({{ stats.rentals_count }})</option>
             </select>
+            -->
             
             <input type="text" name="search" placeholder="Search by customer, property, or agent..." value="{{ search_query }}">
             
@@ -165,11 +177,10 @@
             <tr {% if sub.document_count <= 2 %}style="background: #fff5f5; border-left: 4px solid #dc3545;"{% elif sub.document_count == 3 %}style="background: #fff9e6; border-left: 4px solid #ffc107;"{% else %}style="background: #f0fff4; border-left: 4px solid #28a745;"{% endif %}>
                 <td>#{{ sub.id }}</td>
                 <td>
-                    {% if sub.sale_type == 'rental' %}
-                    <span class="badge-rental">RENTAL</span>
-                    {% else %}
+                    <!-- Default to SALES since we don't have sale_type column -->
                     <span class="badge-sales">SALE</span>
-                    {% endif %}
+                    <br>
+                    <small class="sale-info">(Default)</small>
                 </td>
                 <td>
                     {{ sub.agent_name }}
@@ -193,11 +204,8 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if sub.sale_type == 'rental' %}
-                    RM{{ "{:,.2f}".format(sub.sale_price) }}/month
-                    {% else %}
-                    RM{{ "{:,.2f}".format(sub.sale_price) }}
-                    {% endif %}
+                    <!-- Always show as sale price since we don't have rental type -->
+                    RM{{ "{:,.2f}".format(sub.sale_price or 0) }}
                 </td>
                 <td>RM{{ "{:,.2f}".format(sub.commission_amount or 0) }}</td>
                 <td>
@@ -289,5 +297,6 @@
             <div><strong>Agent Performance</strong><br><small>View agent statistics</small></div>
         </a>
     </div>
+    
 </body>
 </html>

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Payment Management</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1800px; margin: 0 auto; }
+        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
+        .stat-value { font-size: 24px; font-weight: bold; margin: 10px 0; }
+        .filter-card { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .filter-form { display: grid; grid-template-columns: auto auto auto 1fr; gap: 10px; align-items: center; }
+        select, input { padding: 8px; border: 1px solid #ddd; border-radius: 5px; }
+        .btn { background: #007bff; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn:hover { background: #0056b3; }
+        .table-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: bold; }
+        tr:hover { background: #f8f9fa; }
+        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .status-pending { background: #fff3cd; color: #856404; }
+        .status-paid { background: #d4edda; color: #155724; }
+        .status-processing { background: #cce5ff; color: #004085; }
+        .actions { display: flex; gap: 5px; }
+        .action-btn { padding: 4px 8px; border-radius: 4px; text-decoration: none; font-size: 12px; }
+        .view-btn { background: #17a2b8; color: white; }
+        .pay-btn { background: #28a745; color: white; }
+        .payment-type { font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 5px; }
+        .agent-payment { background: #e3f2fd; color: #1565c0; }
+        .upline-payment { background: #f3e5f5; color: #7b1fa2; }
+        .upline-direct { background: #e3f2fd; color: #1565c0; }
+        .upline-indirect { background: #fff3cd; color: #856404; }
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .section-title { display: flex; align-items: center; gap: 10px; }
+        .badge-count { background: #6c757d; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+        .database-info { background: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 12px; color: #004085; }
+        .info-message { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #c3e6cb; }
+        .success-message { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #bee5eb; }
+        .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #f5c6cb; }
+        .header-links { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
+        .listing-info { font-size: 12px; color: #666; }
+        .project-name { font-weight: bold; color: #0056b3; }
+        .empty-state { background: #f8f9fa; padding: 20px; border-radius: 5px; text-align: center; }
+        .empty-state ul { text-align: left; display: inline-block; color: #666; margin-bottom: 20px; }
+        .no-data { padding: 20px; text-align: center; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Payment Management</h1>
+            <div class="header-links">
+                <a href="/admin/dashboard" class="btn" style="background: #6c757d;">← Dashboard</a>
+                <a href="/admin/export-data?type=payments" class="btn" style="background: #20c997;">📤 Export</a>
+                <a href="/admin/sync-payments" class="btn" style="background: #17a2b8;">💳 Sync & Create Payments</a>
+            </div>
+        </div>
+        
+        {% if info_message %}
+        <div class="info-message">
+            ℹ️ {{ info_message }}
+        </div>
+        {% endif %}
+        
+        {% if success_message %}
+        <div class="success-message">
+            ✅ {{ success_message }}
+        </div>
+        {% endif %}
+        
+        {% if error_message %}
+        <div class="error-message">
+            ❌ {{ error_message }}
+        </div>
+        {% endif %}
+        
+        <!-- Database Info -->
+        <div class="database-info">
+            <strong>Database Status:</strong> 
+            Agent Payments: {{ agent_payments|length }} | 
+            Upline Payments: {{ upline_payments|length }} |
+            Total Payments: {{ stats[0] or 0 }}
+        </div>
+        
+        <!-- Enhanced Summary Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Displayed Payments</div>
+                <div class="stat-value" style="color: #6f42c1;">{{ agent_payments|length + upline_payments|length }}</div>
+                <div style="font-size: 12px; color: #999;">
+                    {{ agent_payments|length }} agent + {{ upline_payments|length }} upline
+                </div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Total Paid</div>
+                <div class="stat-value" style="color: #28a745;">RM{{ "{:,.2f}".format(stats[1] or 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Pending Payment</div>
+                <div class="stat-value" style="color: #fd7e14;">RM{{ "{:,.2f}".format(total_pending_correct or 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Processing</div>
+                <div class="stat-value" style="color: #17a2b8;">RM{{ "{:,.2f}".format(stats[3] or 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Agent Pending</div>
+                <div class="stat-value" style="color: #007bff;">RM{{ "{:,.2f}".format(total_agent_amount or 0) }}</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Upline Pending</div>
+                <div class="stat-value" style="color: #6f42c1;">RM{{ "{:,.2f}".format(total_upline_amount or 0) }}</div>
+            </div>
+        </div>
+        
+        <!-- Filter Section -->
+        <div class="filter-card">
+            <h3 style="margin-top: 0;">Filter Payments</h3>
+            <form method="get" class="filter-form">
+                <select name="status">
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
+                    <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="processing" {% if status_filter == 'processing' %}selected{% endif %}>Processing</option>
+                    <option value="paid" {% if status_filter == 'paid' %}selected{% endif %}>Paid</option>
+                </select>
+                
+                <select name="agent">
+                    <option value="all" {% if agent_filter == 'all' %}selected{% endif %}>All Agents</option>
+                    {% for agent in agents %}
+                    <option value="{{ agent[0] }}" {% if agent_filter == agent[0]|string %}selected{% endif %}>{{ agent[1] }}</option>
+                    {% endfor %}
+                </select>
+                
+                <button type="submit" class="btn">🔍 Filter</button>
+                <a href="/admin/payments" class="btn" style="background: #6c757d; margin-left: auto;">Clear</a>
+            </form>
+        </div>
+        
+        <!-- Agent Payments Table -->
+        <div class="table-container">
+            <div class="section-header">
+                <div class="section-title">
+                    <h2 style="margin: 0;">👤 Agent Commission Payments</h2>
+                    <span class="badge-count">{{ agent_payments|length }} payments</span>
+                </div>
+                <span class="payment-type agent-payment">Agent's Own Commissions</span>
+            </div>
+            
+            {% if agent_payments %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Payment ID</th>
+                        <th>Listing</th>
+                        <th>Agent</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Payment Date</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in agent_payments %}
+                    <tr>
+                        <td><strong>#{{ payment[0] }}</strong></td>
+                        <td>
+                            <div class="listing-info">
+                                <strong>#{{ payment[1] }}</strong>
+                                {% if payment[12] %}
+                                <div class="project-name">{{ payment[12] }}</div>
+                                {% endif %}
+                                {% if payment[10] %}
+                                <div>{{ payment[10] }}</div>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            {{ payment[3] }}
+                            <div style="font-size: 12px; color: #666;">{{ payment[4] }}</div>
+                        </td>
+                        <td><strong>RM{{ "{:,.2f}".format(payment[5] or 0) }}</strong></td>
+                        <td>
+                            {% if payment[6] == 'pending' %}
+                            <span class="status-badge status-pending">Pending</span>
+                            {% elif payment[6] == 'processing' %}
+                            <span class="status-badge status-processing">Processing</span>
+                            {% elif payment[6] == 'paid' %}
+                            <span class="status-badge status-paid">Paid</span>
+                            {% else %}
+                            <span class="status-badge">{{ payment[6] }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ payment[7] if payment[7] else 'Not paid' }}</td>
+                        <td>{{ payment[8].split()[0] if payment[8] else '' }}</td>
+                        <td class="actions">
+                            <a href="/admin/payment/{{ payment[0] }}" class="action-btn view-btn">👁️ View</a>
+                            {% if payment[6] != 'paid' %}
+                            <a href="/admin/mark-commission-paid/CP-{{ payment[0] }}" 
+                               class="action-btn pay-btn" 
+                               onclick="return confirm('Mark agent payment #{{ payment[0] }} as paid?')">
+                               💰 Mark Paid
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-data">No agent commission payments found.</p>
+            {% endif %}
+        </div>
+        
+        <!-- Upline Payments Table -->
+        <div class="table-container">
+            <div class="section-header">
+                <div class="section-title">
+                    <h2 style="margin: 0;">👥 Upline Commission Payments</h2>
+                    <span class="badge-count">{{ upline_payments|length }} payments</span>
+                </div>
+                <span class="payment-type upline-payment">Commissions from Downline Agents</span>
+            </div>
+            
+            {% if upline_payments %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Listing</th>
+                        <th>Upline Agent</th>
+                        <th>From Agent</th>
+                        <th>Type</th>
+                        <th>Rate</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Payment Date</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in upline_payments %}
+                    <tr>
+                        <td><strong>UC-{{ payment[0] }}</strong></td>
+                        <td>
+                            <div class="listing-info">
+                                <strong>#{{ payment[1] }}</strong>
+                                {% if payment[14] %}
+                                <div class="project-name">{{ payment[14] }}</div>
+                                {% endif %}
+                                {% if payment[9] %}
+                                <div>{{ payment[9] }}</div>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            {{ payment[3] if payment[3] else 'Unknown' }}
+                            <div style="font-size: 12px; color: #666;">{{ payment[4] if payment[4] else '' }}</div>
+                        </td>
+                        <td>
+                            {{ payment[11] if payment[11] else 'N/A' }}
+                            <div style="font-size: 12px; color: #666;">{{ payment[12] if payment[12] else '' }}</div>
+                        </td>
+                        <td>
+                            {% if payment[15] == 'indirect' %}
+                                <span class="payment-type upline-indirect">Indirect</span>
+                            {% else %}
+                                <span class="payment-type upline-direct">Direct</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ payment[16] or 0 }}%
+                        </td>
+                        <td><strong>RM{{ "{:,.2f}".format(payment[5] or 0) }}</strong></td>
+                        <td>
+                            {% if payment[6] == 'pending' %}
+                            <span class="status-badge status-pending">Pending</span>
+                            {% elif payment[6] == 'paid' %}
+                            <span class="status-badge status-paid">Paid</span>
+                            {% elif payment[6] == 'processing' %}
+                            <span class="status-badge status-processing">Processing</span>
+                            {% else %}
+                            <span class="status-badge">{{ payment[6] }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if payment[8] %}
+                            {{ payment[8].split()[0] if payment[8] else '' }}
+                            {% else %}
+                            Not paid
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if payment[7] %}
+                            {{ payment[7].split()[0] if payment[7] else '' }}
+                            {% else %}
+                            N/A
+                            {% endif %}
+                        </td>
+                        <td class="actions">
+                            {% if payment[6] == 'pending' %}
+                            <a href="/admin/mark-commission-paid/UC-{{ payment[0] }}" 
+                               class="action-btn pay-btn" 
+                               onclick="return confirm('Mark upline commission UC-{{ payment[0] }} as paid? Amount: RM{{ "{:,.2f}".format(payment[5] or 0) }}')">
+                               💰 Mark Paid
+                            </a>
+                            {% else %}
+                            <span class="status-badge">{{ payment[6] }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <h3 style="color: #6c757d; margin-bottom: 10px;">No Upline Commission Payments Found</h3>
+                <p style="color: #666; margin-bottom: 15px;">This could be because:</p>
+                <ul>
+                    <li>No upline relationships have been set up</li>
+                    <li>Agents don't have uplines assigned</li>
+                    <li>No commissions have been approved yet</li>
+                    <li>All upline commissions have already been paid</li>
+                </ul>
+                <div style="margin-top: 15px;">
+                    <a href="/admin/set-upline" class="btn" style="background: #17a2b8; margin: 5px;">👥 Set Upline Relationships</a>
+                    <a href="/admin/agents" class="btn" style="background: #20c997; margin: 5px;">📋 Manage Agents</a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add payment type indicators
+            const agentRows = document.querySelectorAll('.table-container:first-child tbody tr');
+            agentRows.forEach(row => {
+                const typeCell = row.querySelector('td:nth-child(3)');
+                if (typeCell) {
+                    const typeBadge = document.createElement('span');
+                    typeBadge.className = 'payment-type agent-payment';
+                    typeBadge.textContent = 'Agent';
+                    typeBadge.style.marginLeft = '5px';
+                    typeBadge.style.fontSize = '10px';
+                    typeCell.appendChild(typeBadge);
+                }
+            });
+            
+            const uplineRows = document.querySelectorAll('.table-container:last-child tbody tr');
+            uplineRows.forEach(row => {
+                const typeCell = row.querySelector('td:nth-child(3)');
+                if (typeCell) {
+                    const commissionTypeCell = row.querySelector('td:nth-child(5)');
+                    if (commissionTypeCell) {
+                        const commissionType = commissionTypeCell.textContent.trim();
+                        const typeBadge = document.createElement('span');
+                        typeBadge.className = 'payment-type';
+                        typeBadge.textContent = commissionType === 'Indirect' ? 'Upline (Indirect)' : 'Upline (Direct)';
+                        typeBadge.style.marginLeft = '5px';
+                        typeBadge.style.fontSize = '10px';
+                        typeBadge.style.background = commissionType === 'Indirect' ? '#ffc107' : '#e3f2fd';
+                        typeBadge.style.color = commissionType === 'Indirect' ? '#000' : '#1565c0';
+                        typeBadge.style.padding = '2px 6px';
+                        typeBadge.style.borderRadius = '10px';
+                        typeCell.appendChild(typeBadge);
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

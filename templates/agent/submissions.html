@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Submissions</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif;
+            margin: 20px; 
+            background: #f5f5f5; 
+        }
+        .header { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        .stats { 
+            display: flex; 
+            gap: 15px; 
+            margin: 20px 0; 
+            flex-wrap: wrap; 
+        }
+        .stat-card { 
+            background: white; 
+            padding: 15px; 
+            border-radius: 8px; 
+            flex: 1; 
+            min-width: 120px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            text-align: center; 
+        }
+        .stat-value { 
+            font-size: 1.8em; 
+            font-weight: bold; 
+        }
+        .filters { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        .filter-group { 
+            display: flex; 
+            gap: 15px; 
+            align-items: center; 
+        }
+        select, input { 
+            padding: 8px 12px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+        }
+        .btn { 
+            padding: 8px 16px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            text-decoration: none; 
+            display: inline-block;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        table { 
+            width: 100%; 
+            background: white; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            margin: 20px 0; 
+        }
+        th, td { 
+            padding: 12px 15px; 
+            text-align: left; 
+            border-bottom: 1px solid #eee; 
+        }
+        th { 
+            background: #2c3e50; 
+            color: white; 
+        }
+        .status-badge { 
+            padding: 4px 10px; 
+            border-radius: 12px; 
+            font-size: 12px; 
+            font-weight: bold; 
+        }
+        .status-draft { 
+            background: #fff3cd; 
+            color: #856404; 
+        }
+        .status-submitted { 
+            background: #cce5ff; 
+            color: #004085; 
+        }
+        .status-approved { 
+            background: #d4edda; 
+            color: #155724; 
+        }
+        .status-rejected { 
+            background: #f8d7da; 
+            color: #721c24; 
+        }
+        .action-btn { 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            font-size: 12px; 
+            text-decoration: none; 
+            margin-right: 5px; 
+        }
+        .btn-view { 
+            background: #17a2b8; 
+            color: white; 
+        }
+        .btn-docs { 
+            background: #6f42c1; 
+            color: white; 
+        }
+        .empty-state { 
+            text-align: center; 
+            padding: 50px 20px; 
+            background: white; 
+            border-radius: 10px; 
+            color: #666; 
+        }
+        .doc-status {
+            font-weight: bold;
+        }
+        .doc-status-none {
+            color: #dc3545;
+        }
+        .doc-status-partial {
+            color: #ffc107;
+        }
+        .doc-status-complete {
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📋 My Submissions</h1>
+        <div>
+            <a href="/agent/dashboard" class="btn">← Dashboard</a>
+            <a href="/new-listing" class="btn" style="background: #28a745;">➕ New Submission</a>
+            <a href="/logout" style="color: #dc3545; margin-left: 20px;">Logout</a>
+        </div>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Total</div>
+            <div class="stat-value" style="color: #007bff;">{{ total_count }}</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Draft</div>
+            <div class="stat-value" style="color: #6c757d;">{{ status_counts.get('draft', 0) }}</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Submitted</div>
+            <div class="stat-value" style="color: #007bff;">{{ status_counts.get('submitted', 0) }}</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Approved</div>
+            <div class="stat-value" style="color: #28a745;">{{ status_counts.get('approved', 0) }}</div>
+        </div>
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Rejected</div>
+            <div class="stat-value" style="color: #dc3545;">{{ status_counts.get('rejected', 0) }}</div>
+        </div>
+    </div>
+    
+    <div class="filters">
+        <h3>Filter Submissions</h3>
+        <form method="GET" class="filter-group">
+            <select name="status">
+                <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status ({{ total_count }})</option>
+                <option value="incomplete" {% if status_filter == 'incomplete' %}selected{% endif %}>Incomplete Documents ({{ incomplete_count }})</option>
+                <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Drafts ({{ status_counts.get('draft', 0) }})</option>
+                <option value="submitted" {% if status_filter == 'submitted' %}selected{% endif %}>Submitted ({{ status_counts.get('submitted', 0) }})</option>
+                <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved ({{ status_counts.get('approved', 0) }})</option>
+                <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected ({{ status_counts.get('rejected', 0) }})</option>
+            </select>
+            
+            <input type="text" name="search" placeholder="Search by customer or property..." value="{{ search_query }}">
+            
+            <button type="submit" class="btn">🔍 Filter</button>
+            <a href="/agent/submissions" class="btn" style="background: #6c757d;">Clear</a>
+        </form>
+    </div>
+    
+    {% if submissions %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Customer</th>
+                <th>Property</th>
+                <th>Sale Price</th>
+                <th>Commission</th>
+                <th>Documents</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sub in submissions %}
+            <tr>
+                <td>#{{ sub[0] }}</td>
+                <td>{{ sub[2] or '' }}</td>
+                <td>{{ (sub[3] or '')[:30] }}{% if (sub[3] or '')|length > 30 %}...{% endif %}</td>
+                <td>RM{{ "%.2f"|format(sub[4] or 0) }}</td>
+                <td>RM{{ "%.2f"|format(sub[5] or 0) }}</td>
+                <td>
+                    {% if sub[9] == 0 %}
+                    <span class="doc-status doc-status-none">❌ No Docs</span>
+                    {% elif sub[9] < 3 %}
+                    <span class="doc-status doc-status-partial">⚠️ {{ sub[9] }}/3</span>
+                    {% else %}
+                    <span class="doc-status doc-status-complete">✅ {{ sub[9] }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="status-badge status-{{ sub[1] or 'draft' }}">
+                        {{ (sub[1] or 'draft')|title }}
+                    </span>
+                    {% if sub[8] and sub[1] == 'approved' %}
+                    <br><small>Approved: {{ sub[8][:10] }}</small>
+                    {% endif %}
+                </td>
+                <td>{{ sub[7][:10] if sub[7] else 'Not submitted' }}</td>
+                <td>
+                    <a href="/agent/submission/{{ sub[0] }}" class="action-btn btn-view">👁️ View</a>
+                    <a href="/agent/documents/{{ sub[0] }}" class="action-btn btn-docs">📎 Docs</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <h3>No submissions found</h3>
+        <p>{{ empty_message }}</p>
+        <a href="/new-listing" class="btn" style="background: #28a745; margin-top: 15px;">Create Your First Submission</a>
+    </div>
+    {% endif %}
+</body>
+</html>

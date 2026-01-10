@@ -53,6 +53,49 @@ app.secret_key = secrets.token_hex(32)  # Generate secure random key
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB max file size
 app.config["UPLOAD_FOLDER"] = "uploads"
 
+# ============ HELPER FUNCTIONS ============
+
+def render_error_page(error_message, error_details=None):
+    """Render error page with consistent styling"""
+    return render_template(
+        "error.html",
+        error_message=error_message,
+        error_details=error_details,
+        support_email="support@realestate.com"
+    )
+
+@app.template_filter('format_currency')
+def format_currency_filter(value):
+    """Format numbers as currency with 2 decimal places"""
+    try:
+        return "{:,.2f}".format(float(value))
+    except (ValueError, TypeError):
+        return value
+
+def update_pending_commissions(agent_id, downline_id, commission_type, amount, submission_id):
+    """Update pending commissions when a downline submits a commission request"""
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+    
+    try:
+        # Insert into upline_pending_commissions table
+        cursor.execute(
+            """
+            INSERT INTO upline_pending_commissions 
+            (submission_id, downline_agent_id, upline_agent_id, commission_type, amount, status)
+            VALUES (?, ?, ?, ?, ?, 'pending')
+            """,
+            (submission_id, downline_id, agent_id, commission_type, amount)
+        )
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error updating pending commissions: {e}")
+        return False
+    finally:
+        conn.close()
+
 # ============ ADD SECURITY CONFIGURATION HERE ============
 from datetime import timedelta
 
@@ -121,9 +164,6 @@ def get_file_icon(file_type):
 
 
 # ===================== MULTI-LEVEL COMMISSION HELPERS =====================
-# ADD THE HELPER FUNCTIONS RIGHT HERE:
-
-
 def get_agent_with_upline_info(agent_id):
     """Get agent information with upline details"""
     conn = sqlite3.connect("real_estate.db")
@@ -179,104 +219,480 @@ def get_agent_with_upline_info(agent_id):
 
 
 # ===================== COMMISSION CALCULATION =====================
-# ADD THIS FUNCTION RIGHT HERE:
-
-
-def calculate_multi_level_commission(sale_amount, agent_id):
-    """Calculate commissions for multiple upline levels"""
+def calculate_multi_level_commission(sale_amount, agent_id, calculation_method="auto", listing_id=None):
+    """
+    Calculate commissions with two possible methods
+    
+    Parameters:
+    - sale_amount: Property sale price
+    - agent_id: ID of selling agent
+    - calculation_method: "auto", "legacy", or "fund_based"
+    - listing_id: Optional listing ID (can be None for tests)
+    """
+    import json
+    from datetime import datetime
+    
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
-
-    # Get agent's commission rates
-    cursor.execute(
-        """
-    SELECT upline_id, upline2_id, upline_commission_rate, upline2_commission_rate, commission_rate 
-    FROM users WHERE id = ? AND role = "agent"
-    """,
-        (agent_id,),
+    
+    # Get agent with all commission fields
+    cursor.execute("""
+        SELECT 
+            upline_id, upline2_id, 
+            total_commission_fund_pct, agent_fund_pct,
+            upline_fund_pct, upline2_fund_pct, company_fund_pct,
+            commission_structure
+        FROM users WHERE id = ? AND role = "agent"
+        """,
+        (agent_id,)
     )
-
+    
     agent = cursor.fetchone()
-
     commissions = []
-
+    
     if agent:
-        upline_id, upline2_id, upline_rate, upline2_rate, agent_rate = agent
-
-        # Calculate for agent themselves
-        if agent_rate and agent_rate > 0:
-            amount = sale_amount * (agent_rate / 100)
-            commissions.append(
-                {
-                    "agent_id": agent_id,
-                    "amount": amount,
-                    "rate": agent_rate,
-                    "level": 0,
-                    "type": "self",
-                }
-            )
-
+        (upline_id, upline2_id, total_fund_pct, agent_fund_pct,
+         upline_fund_pct, upline2_fund_pct, company_fund_pct, structure) = agent
+        
+        # For legacy calculation, use default rates
+        legacy_agent_rate = 0.025  # Default 2.5%
+        legacy_upline_rate = 0.20  # Default 20%
+        
+        # Determine calculation method
+        if calculation_method == "auto":
+            use_fund_method = (structure == "fund_based" or 
+                              total_fund_pct is not None)
+        else:
+            use_fund_method = (calculation_method == "fund_based")
+        
+        if use_fund_method:
+            # ============ NEW FUND-BASED CALCULATION ============
+            # 1. Calculate total commission fund (2% of sale)
+            total_fund_percentage = total_fund_pct if total_fund_pct is not None else 2.00
+            total_commission_fund = sale_amount * (total_fund_percentage / 100)
+            
+            # 2. Get percentages (use defaults if NULL)
+            agent_pct = agent_fund_pct if agent_fund_pct is not None else 80.00
+            upline_pct = upline_fund_pct if upline_fund_pct is not None else 10.00
+            upline2_pct = upline2_fund_pct if upline2_fund_pct is not None else 5.00
+            company_pct = company_fund_pct if company_fund_pct is not None else 5.00
+            
+            # 3. Calculate amounts from fund
+            # Agent: 80% of fund
+            agent_amount = total_commission_fund * (agent_pct / 100)
+            
+            # Direct upline: 10% of fund
+            upline_amount = 0
+            if upline_id and upline_pct > 0:
+                upline_amount = total_commission_fund * (upline_pct / 100)
+            
+            # Indirect upline: 5% of fund
+            upline2_amount = 0
+            if upline2_id and upline2_pct > 0:
+                upline2_amount = total_commission_fund * (upline2_pct / 100)
+            
+            # Company balance: 5% of fund
+            company_amount = total_commission_fund * (company_pct / 100)
+            
+            # Adjust for any rounding errors
+            total_distributed = agent_amount + upline_amount + upline2_amount + company_amount
+            variance = total_commission_fund - total_distributed
+            if abs(variance) > 0.01:
+                company_amount += variance
+            
+            # 4. Create commission records
+            commissions.append({
+                "agent_id": agent_id,
+                "amount": agent_amount,
+                "rate": agent_pct,
+                "level": 0,
+                "type": "agent_fund",
+                "calculation_method": "fund_based",
+                "calculation_base": total_commission_fund,
+                "formula": f"{total_fund_percentage}% of sale = fund, then {agent_pct}% of fund"
+            })
+            
             # Update agent's total commission
             cursor.execute(
                 """
-            UPDATE users 
-            SET total_commission = COALESCE(total_commission, 0) + ? 
-            WHERE id = ?
-            """,
-                (amount, agent_id),
+                UPDATE users 
+                SET total_commission = COALESCE(total_commission, 0) + ? 
+                WHERE id = ?
+                """,
+                (agent_amount, agent_id)
             )
-
-        # Calculate for direct upline
-        if upline_id and upline_rate and upline_rate > 0:
-            amount = sale_amount * (upline_rate / 100)
-            commissions.append(
-                {
+            
+            # Direct upline
+            if upline_id and upline_amount > 0:
+                commissions.append({
                     "agent_id": upline_id,
-                    "amount": amount,
-                    "rate": upline_rate,
+                    "amount": upline_amount,
+                    "rate": upline_pct,
+                    "level": 1,
+                    "type": "direct_upline_fund",
+                    "calculation_method": "fund_based",
+                    "calculation_base": total_commission_fund,
+                    "formula": f"{upline_pct}% of commission fund"
+                })
+                
+                cursor.execute(
+                    """
+                    UPDATE users 
+                    SET total_commission = COALESCE(total_commission, 0) + ? 
+                    WHERE id = ?
+                    """,
+                    (upline_amount, upline_id)
+                )
+            
+            # Indirect upline
+            if upline2_id and upline2_amount > 0:
+                commissions.append({
+                    "agent_id": upline2_id,
+                    "amount": upline2_amount,
+                    "rate": upline2_pct,
+                    "level": 2,
+                    "type": "indirect_upline_fund",
+                    "calculation_method": "fund_based",
+                    "calculation_base": total_commission_fund,
+                    "formula": f"{upline2_pct}% of commission fund"
+                })
+                
+                cursor.execute(
+                    """
+                    UPDATE users 
+                    SET total_commission = COALESCE(total_commission, 0) + ? 
+                    WHERE id = ?
+                    """,
+                    (upline2_amount, upline2_id)
+                )
+            
+            # Company balance
+            commissions.append({
+                "agent_id": 0,
+                "amount": company_amount,
+                "rate": company_pct,
+                "level": 3,
+                "type": "company_balance",
+                "calculation_method": "fund_based",
+                "calculation_base": total_commission_fund,
+                "formula": f"Company balance: {company_pct}% of fund"
+            })
+            
+            # Store calculation details
+            calculation_details = json.dumps({
+                'method': 'fund_based',
+                'total_fund_percentage': total_fund_percentage,
+                'total_commission_fund': total_commission_fund,
+                'distributions': commissions,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # INSERT with listing_id (can be NULL)
+            cursor.execute(
+                """
+                INSERT INTO commission_calculations 
+                (listing_id, agent_id, sale_price, base_rate, commission, calculation_details)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (listing_id, agent_id, sale_amount, total_fund_percentage, agent_amount, calculation_details)
+            )
+            
+        else:
+            # ============ LEGACY CALCULATION ============
+            agent_amount = sale_amount * legacy_agent_rate
+            commissions.append({
+                "agent_id": agent_id,
+                "amount": agent_amount,
+                "rate": legacy_agent_rate * 100,
+                "level": 0,
+                "type": "self",
+                "calculation_method": "legacy"
+            })
+            
+            cursor.execute(
+                """
+                UPDATE users 
+                SET total_commission = COALESCE(total_commission, 0) + ? 
+                WHERE id = ?
+                """,
+                (agent_amount, agent_id)
+            )
+            
+            # Calculate for direct upline
+            if upline_id and legacy_upline_rate > 0:
+                upline_amount = agent_amount * legacy_upline_rate
+                commissions.append({
+                    "agent_id": upline_id,
+                    "amount": upline_amount,
+                    "rate": legacy_upline_rate * 100,
                     "level": 1,
                     "type": "direct_upline",
-                }
-            )
-
-            # Update upline's total commission
+                    "calculation_method": "legacy"
+                })
+                
+                cursor.execute(
+                    """
+                    UPDATE users 
+                    SET total_commission = COALESCE(total_commission, 0) + ? 
+                    WHERE id = ?
+                    """,
+                    (upline_amount, upline_id)
+                )
+            
+            # Store legacy calculation
+            calculation_details = json.dumps({
+                'method': 'legacy',
+                'agent_rate': float(legacy_agent_rate),
+                'upline_rate': float(legacy_upline_rate),
+                'distributions': commissions,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # INSERT with listing_id (can be NULL)
             cursor.execute(
                 """
+                INSERT INTO commission_calculations 
+                (listing_id, agent_id, sale_price, base_rate, commission, calculation_details)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (listing_id, agent_id, sale_amount, legacy_agent_rate, commissions[0]['amount'] if commissions else 0, calculation_details)
+            )
+        
+        # Update total sales for agent
+        cursor.execute(
+            """
             UPDATE users 
-            SET total_commission = COALESCE(total_commission, 0) + ? 
+            SET total_sales = COALESCE(total_sales, 0) + ? 
             WHERE id = ?
             """,
-                (amount, upline_id),
-            )
-
-        # Calculate for indirect upline
-        if upline2_id and upline2_rate and upline2_rate > 0:
-            amount = sale_amount * (upline2_rate / 100)
-            commissions.append(
-                {
-                    "agent_id": upline2_id,
-                    "amount": amount,
-                    "rate": upline2_rate,
-                    "level": 2,
-                    "type": "indirect_upline",
-                }
-            )
-
-            # Update upline2's total commission
-            cursor.execute(
-                """
-            UPDATE users 
-            SET total_commission = COALESCE(total_commission, 0) + ? 
-            WHERE id = ?
-            """,
-                (amount, upline2_id),
-            )
-
+            (sale_amount, agent_id)
+        )
+        
         conn.commit()
-
+    
     conn.close()
     return commissions
 
+# ===================== COMMISSION HELPER FUNCTIONS =====================
+def get_commission_breakdown(sale_amount, agent_id=None, method="fund_based"):
+    """
+    Get detailed commission breakdown for preview or display
+    """
+    if method == "fund_based":
+        total_fund = sale_amount * 0.02  # 2% of sale
+        
+        breakdown = {
+            "sale_amount": sale_amount,
+            "commission_fund_percentage": 2.0,
+            "total_commission_fund": total_fund,
+            "distribution": [
+                {
+                    "party": "Agent",
+                    "percentage": 80.0,
+                    "amount": total_fund * 0.80,
+                    "calculation": f"RM {total_fund:,.2f} × 80%",
+                    "description": "Agent gets 80% of commission fund"
+                },
+                {
+                    "party": "Direct Upline",
+                    "percentage": 10.0,
+                    "amount": total_fund * 0.10,
+                    "calculation": f"RM {total_fund:,.2f} × 10%",
+                    "description": "Direct upline gets 10% of commission fund"
+                },
+                {
+                    "party": "Indirect Upline",
+                    "percentage": 5.0,
+                    "amount": total_fund * 0.05,
+                    "calculation": f"RM {total_fund:,.2f} × 5%",
+                    "description": "Indirect upline gets 5% of commission fund"
+                },
+                {
+                    "party": "Company Balance",
+                    "percentage": 5.0,
+                    "amount": total_fund * 0.05,
+                    "calculation": f"RM {total_fund:,.2f} × 5%",
+                    "description": "Company keeps 5% as balance"
+                }
+            ],
+            "total_distributed": total_fund,
+            "method": "fund_based"
+        }
+        
+        # If agent_id provided, fetch agent-specific rates
+        if agent_id:
+            conn = sqlite3.connect("real_estate.db")
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT total_commission_fund_pct, agent_fund_pct, 
+                       upline_fund_pct, upline2_fund_pct, company_fund_pct
+                FROM users WHERE id = ?
+            """, (agent_id,))
+            
+            agent_rates = cursor.fetchone()
+            conn.close()
+            
+            if agent_rates and any(r is not None for r in agent_rates):
+                total_pct, agent_pct, upline_pct, upline2_pct, company_pct = agent_rates
+                
+                if total_pct is not None:
+                    breakdown["commission_fund_percentage"] = float(total_pct)
+                    breakdown["total_commission_fund"] = sale_amount * (float(total_pct) / 100)
+                
+                # Update percentages if custom
+                if agent_pct is not None:
+                    breakdown["distribution"][0]["percentage"] = float(agent_pct)
+                if upline_pct is not None:
+                    breakdown["distribution"][1]["percentage"] = float(upline_pct)
+                if upline2_pct is not None:
+                    breakdown["distribution"][2]["percentage"] = float(upline2_pct)
+                if company_pct is not None:
+                    breakdown["distribution"][3]["percentage"] = float(company_pct)
+                
+                # Recalculate amounts with custom percentages
+                total_fund = breakdown["total_commission_fund"]
+                breakdown["distribution"][0]["amount"] = total_fund * (breakdown["distribution"][0]["percentage"] / 100)
+                breakdown["distribution"][1]["amount"] = total_fund * (breakdown["distribution"][1]["percentage"] / 100)
+                breakdown["distribution"][2]["amount"] = total_fund * (breakdown["distribution"][2]["percentage"] / 100)
+                breakdown["distribution"][3]["amount"] = total_fund * (breakdown["distribution"][3]["percentage"] / 100)
+                
+                breakdown["has_custom_rates"] = True
+            else:
+                breakdown["has_custom_rates"] = False
+    
+    else:
+        # Legacy breakdown
+        breakdown = {
+            "sale_amount": sale_amount,
+            "distribution": [
+                {
+                    "party": "Agent",
+                    "percentage": 2.5,
+                    "amount": sale_amount * 0.025,
+                    "calculation": f"RM {sale_amount:,.2f} × 2.5%",
+                    "description": "Agent gets 2.5% of sale price"
+                },
+                {
+                    "party": "Direct Upline",
+                    "percentage": 0.5,  # 20% of 2.5%
+                    "amount": sale_amount * 0.025 * 0.20,
+                    "calculation": f"RM {sale_amount * 0.025:,.2f} × 20%",
+                    "description": "Upline gets 20% of agent's commission"
+                }
+            ],
+            "total_distributed": sale_amount * 0.025 * 1.20,
+            "method": "legacy"
+        }
+    
+    return breakdown
+
+def update_agent_commission_structure(agent_id, structure_type, rates=None):
+    """
+    Update an agent's commission structure
+    """
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+    
+    try:
+        if structure_type == "fund_based":
+            # Update to fund-based structure
+            cursor.execute("""
+                UPDATE users 
+                SET commission_structure = 'fund_based',
+                    total_commission_fund_pct = COALESCE(?, total_commission_fund_pct),
+                    agent_fund_pct = COALESCE(?, agent_fund_pct),
+                    upline_fund_pct = COALESCE(?, upline_fund_pct),
+                    upline2_fund_pct = COALESCE(?, upline2_fund_pct),
+                    company_fund_pct = COALESCE(?, company_fund_pct)
+                WHERE id = ?
+            """, (
+                rates.get('total_fund_pct') if rates else None,
+                rates.get('agent_pct') if rates else None,
+                rates.get('upline_pct') if rates else None,
+                rates.get('upline2_pct') if rates else None,
+                rates.get('company_pct') if rates else None,
+                agent_id
+            ))
+        else:
+            # Update to legacy structure
+            cursor.execute("""
+                UPDATE users 
+                SET commission_structure = 'legacy'
+                WHERE id = ?
+            """, (agent_id,))
+        
+        conn.commit()
+        success = True
+    except Exception as e:
+        print(f"Error updating commission structure: {e}")
+        success = False
+    
+    conn.close()
+    return success
+
+def migrate_agent_to_fund_based(agent_id, custom_rates=None):
+    """
+    Migrate an agent from legacy to fund-based commission structure
+    """
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+    
+    # Get current agent rates
+    cursor.execute("""
+        SELECT agent_commission_rate, upline_commission_rate 
+        FROM users WHERE id = ?
+    """, (agent_id,))
+    
+    result = cursor.fetchone()
+    
+    if result:
+        agent_rate, upline_rate = result
+        
+        # Convert legacy rates to fund-based equivalents
+        # Legacy: agent gets 2.5% of sale, upline gets 20% of that
+        # Equivalent: agent gets 80% of 2% fund, upline gets 10% of fund
+        
+        # Keep track of migration
+        cursor.execute("""
+            UPDATE users 
+            SET commission_structure = 'fund_based',
+                total_commission_fund_pct = ?,
+                agent_fund_pct = ?,
+                upline_fund_pct = ?,
+                company_fund_pct = 5.00,
+                upline2_fund_pct = 5.00
+            WHERE id = ?
+        """, (
+            custom_rates.get('total_fund_pct', 2.00) if custom_rates else 2.00,
+            custom_rates.get('agent_pct', 80.00) if custom_rates else 80.00,
+            custom_rates.get('upline_pct', 10.00) if custom_rates else 10.00,
+            agent_id
+        ))
+        
+        # Log the migration
+        cursor.execute("""
+            INSERT INTO system_settings (setting_type, setting_key, setting_value)
+            VALUES ('migration', 'agent_migration', ?)
+        """, (json.dumps({
+            'agent_id': agent_id,
+            'from_structure': 'legacy',
+            'to_structure': 'fund_based',
+            'legacy_rates': {'agent': float(agent_rate), 'upline': float(upline_rate)},
+            'new_rates': {
+                'total_fund_pct': custom_rates.get('total_fund_pct', 2.00) if custom_rates else 2.00,
+                'agent_pct': custom_rates.get('agent_pct', 80.00) if custom_rates else 80.00,
+                'upline_pct': custom_rates.get('upline_pct', 10.00) if custom_rates else 10.00
+            },
+            'migrated_at': datetime.now().isoformat()
+        }),))
+        
+        conn.commit()
+        success = True
+    else:
+        success = False
+    
+    conn.close()
+    return success
 
 def update_upline_chain(agent_id, upline_id):
     """Update an agent's upline and automatically set upline2"""
@@ -357,23 +773,16 @@ def check_and_notify_incomplete_docs(listing_id, agent_id, customer_name):
 # ============ DATABASE SETUP ============
 def init_database():
     """Create all necessary tables"""
-    import time
-    import traceback
-
     print("🔧 Starting database initialization...")
-
+    
     conn = None
     try:
-        # Try to connect with timeout
         conn = sqlite3.connect("real_estate.db", timeout=10)
-        conn.execute("PRAGMA journal_mode=WAL")  # Enable Write-Ahead Logging
+        conn.execute("PRAGMA journal_mode=WAL")
         cursor = conn.cursor()
-
-        # ============ CREATE TABLES ============
-
+        
         # Users Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
@@ -381,19 +790,25 @@ def init_database():
                 name TEXT NOT NULL,
                 role TEXT DEFAULT 'agent',
                 upline_id INTEGER NULL,
-                agent_commission_rate DECIMAL(5,4) DEFAULT 0.025,  -- 2.5%
-                upline_commission_rate DECIMAL(5,4) DEFAULT 0.20,  -- 20% of agent's commission
+                upline2_id INTEGER NULL,
+                agent_commission_rate DECIMAL(5,4) DEFAULT 0.025,
+                upline_commission_rate DECIMAL(5,4) DEFAULT 0.20,
+                total_commission_fund_pct DECIMAL(5,2) DEFAULT 2.00,
+                agent_fund_pct DECIMAL(5,2) DEFAULT 80.00,
+                upline_fund_pct DECIMAL(5,2) DEFAULT 10.00,
+                upline2_fund_pct DECIMAL(5,2) DEFAULT 5.00,
+                company_fund_pct DECIMAL(5,2) DEFAULT 5.00,
+                commission_structure TEXT DEFAULT 'legacy',
+                total_commission DECIMAL(12,2) DEFAULT 0.00,
+                total_sales DECIMAL(12,2) DEFAULT 0.00,
                 is_deleted BOOLEAN DEFAULT 0,
                 deleted_at TIMESTAMP NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (upline_id) REFERENCES users(id)
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
-
+        """)
+        
         # Property Listings Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS property_listings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 agent_id INTEGER NOT NULL,
@@ -420,12 +835,10 @@ def init_database():
                 unit_id INTEGER NULL,
                 FOREIGN KEY (agent_id) REFERENCES users(id)
             )
-        """
-        )
-
+        """)
+        
         # Commission Distributions Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS commission_distributions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 listing_id INTEGER NOT NULL,
@@ -445,15 +858,13 @@ def init_database():
                 FOREIGN KEY (agent_id) REFERENCES users(id),
                 FOREIGN KEY (upline_id) REFERENCES users(id)
             )
-        """
-        )
-
+        """)
+        
         # Commission Calculations Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS commission_calculations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                listing_id INTEGER NOT NULL,
+                listing_id INTEGER NULL,
                 agent_id INTEGER NOT NULL,
                 property_type TEXT,
                 sale_price DECIMAL(12,2),
@@ -462,12 +873,10 @@ def init_database():
                 calculation_details TEXT,
                 calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
-
+        """)
+        
         # Documents Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 listing_id INTEGER NOT NULL,
@@ -481,12 +890,10 @@ def init_database():
                 notes TEXT,
                 FOREIGN KEY (listing_id) REFERENCES property_listings(id) ON DELETE CASCADE
             )
-        """
-        )
-
+        """)
+        
         # Commission Payments Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS commission_payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 listing_id INTEGER NOT NULL,
@@ -503,17 +910,16 @@ def init_database():
                 FOREIGN KEY (listing_id) REFERENCES property_listings(id) ON DELETE CASCADE,
                 FOREIGN KEY (agent_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """
-        )
-
+        """)
+        
         # Projects Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_name TEXT NOT NULL,
                 category TEXT NOT NULL,
                 project_type TEXT NOT NULL,
+                project_sale_type TEXT,
                 location TEXT,
                 description TEXT,
                 status TEXT DEFAULT 'active',
@@ -522,12 +928,10 @@ def init_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
-
+        """)
+        
         # Project Units Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS project_units (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
@@ -542,12 +946,10 @@ def init_database():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )
-        """
-        )
-
+        """)
+        
         # System Settings Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS system_settings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 setting_type TEXT NOT NULL,
@@ -556,12 +958,10 @@ def init_database():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(setting_type, setting_key)
             )
-        """
-        )
-
+        """)
+        
         # Payment Vouchers Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS payment_vouchers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 voucher_number TEXT UNIQUE NOT NULL,
@@ -579,12 +979,10 @@ def init_database():
                 FOREIGN KEY (payment_id) REFERENCES commission_payments(id) ON DELETE CASCADE,
                 FOREIGN KEY (agent_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """
-        )
-
+        """)
+        
         # Email Logs Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS email_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 recipient_email TEXT NOT NULL,
@@ -598,12 +996,10 @@ def init_database():
                 related_type TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
-
+        """)
+        
         # Deletion Logs Table
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS deletion_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -613,14 +1009,15 @@ def init_database():
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 FOREIGN KEY (deleted_by) REFERENCES users(id)
             )
-        """
-        )
-
-        conn.commit()
-
+        """)
+        
         # ============ INITIALIZE DEFAULT SETTINGS ============
-
         default_settings = [
+            ("commission", "default_total_fund_pct", "2.00"),
+            ("commission", "default_agent_fund_pct", "80.00"),
+            ("commission", "default_upline_fund_pct", "10.00"),
+            ("commission", "default_upline2_fund_pct", "5.00"),
+            ("commission", "default_company_fund_pct", "5.00"),
             ("payment", "processing_days", "14"),
             ("payment", "min_payout", "100"),
             ("payment", "payout_schedule", "monthly"),
@@ -628,11 +1025,7 @@ def init_database():
             ("payment", "voucher_template", "detailed"),
             ("payment", "voucher_prefix", "PAY"),
             ("payment", "payment_methods", "bank_transfer,check"),
-            (
-                "notification",
-                "notifications",
-                "submission_received,submission_approved,payment_processed,reminders",
-            ),
+            ("notification", "notifications", "submission_received,submission_approved,payment_processed,reminders"),
             ("notification", "auto_approve_threshold", "0"),
             ("notification", "reminder_days", "3"),
             ("notification", "admin_email", "admin@example.com"),
@@ -641,71 +1034,63 @@ def init_database():
             ("notification", "smtp_port", ""),
             ("notification", "smtp_username", ""),
             ("notification", "smtp_password", ""),
-            (
-                "notification",
-                "email_footer",
-                "© 2024 Real Estate System. All rights reserved.",
-            ),
-            ("commission", "default_agent_rate", "0.025"),  # 2.5%
-            ("commission", "default_upline_rate", "0.20"),  # 20%
-            ("commission", "max_upline_levels", "3"),
-            ("commission", "calculation_method", "percentage_of_commission"),
+            ("notification", "email_footer", "© 2024 Real Estate System. All rights reserved.")
         ]
-
+        
         for setting_type, setting_key, default_value in default_settings:
             cursor.execute(
                 """
                 INSERT OR IGNORE INTO system_settings (setting_type, setting_key, setting_value)
                 VALUES (?, ?, ?)
-            """,
+                """,
                 (setting_type, setting_key, default_value),
             )
-
+        
         conn.commit()
-
+        
         # ============ CREATE SAMPLE USERS ============
         print("\n👤 Checking for sample users...")
-
+        
         # Check for specific users BEFORE creating them
         cursor.execute(
             "SELECT email FROM users WHERE email IN ('admin@example.com', 'agent@example.com', 'john_agent@yahoo.com', 'erwin@yahoo.com')"
         )
         existing_emails = [row[0] for row in cursor.fetchall()]
         print(f"📊 Existing sample users: {len(existing_emails)}")
-
+        
         # Only create users that don't exist
         try:
             if "admin@example.com" not in existing_emails:
                 print("➕ Creating admin user...")
                 from werkzeug.security import generate_password_hash
-
+                
                 admin_password = generate_password_hash("admin456***")
                 cursor.execute(
                     "INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)",
                     ("admin@example.com", admin_password, "Admin User", "admin"),
                 )
                 print("   ✅ Admin user created")
-
+            
             if "agent@example.com" not in existing_emails:
                 print("➕ Creating agent user...")
                 from werkzeug.security import generate_password_hash
-
+                
                 agent_password = generate_password_hash("agent123")
                 cursor.execute(
                     "INSERT INTO users (email, password, name, role, agent_commission_rate) VALUES (?, ?, ?, ?, ?)",
                     ("agent@example.com", agent_password, "John Agent", "agent", 0.025),
                 )
                 print("   ✅ Agent user created")
-
+            
             # Get John's ID for upline reference
             cursor.execute("SELECT id FROM users WHERE email = 'agent@example.com'")
             john_result = cursor.fetchone()
             john_id = john_result[0] if john_result else None
-
+            
             if "erwin@yahoo.com" not in existing_emails and john_id:
                 print("➕ Creating Erwin user (John's downline)...")
                 from werkzeug.security import generate_password_hash
-
+                
                 erwin_password = generate_password_hash("erwin123")
                 cursor.execute(
                     """INSERT INTO users (email, password, name, role, upline_id, 
@@ -722,21 +1107,22 @@ def init_database():
                     ),
                 )
                 print("   ✅ Erwin user created as John's downline")
-
+            
             conn.commit()
             print("✅ Sample users created successfully")
-
+            
         except Exception as e:
             print(f" User creation warning: {e}")
             conn.rollback()
-
+        
         # Create uploads folder if it doesn't exist
         if not os.path.exists("uploads"):
             os.makedirs("uploads")
             print("✅ Uploads folder created")
-
+        
+        conn.commit()
         print("✅ Database initialized successfully!")
-
+        
     except sqlite3.OperationalError as e:
         if "locked" in str(e):
             print("❌ Database is locked by another process")
@@ -745,12 +1131,13 @@ def init_database():
         else:
             print(f"❌ Database error: {e}")
         raise e
-
+        
     except Exception as e:
         print(f"❌ Critical error: {e}")
+        import traceback
         traceback.print_exc()
         raise e
-
+        
     finally:
         if conn:
             conn.close()
@@ -1479,620 +1866,6 @@ LOGIN_TEMPLATE = """
 </html>
 """
 
-AGENT_FORM_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>New {{ "Rental" if transaction_type == "rental" else "Sales" }} Entry</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 20px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-        .agent-info { background: #e8f4ff; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
-        .commission-preview { background: #f0f8ff; padding: 15px; border-left: 4px solid #007bff; margin: 20px 0; border-radius: 5px; }
-        .form-section { border: 1px solid #e0e0e0; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-        .required:after { content: " *"; color: red; }
-        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
-        input:focus, select:focus, textarea:focus { border-color: #007bff; outline: none; box-shadow: 0 0 5px rgba(0,123,255,0.3); }
-        .btn { padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-right: 10px; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-primary:hover { background: #0056b3; }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn-secondary:hover { background: #545b62; }
-        .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .file-upload { border: 2px dashed #ddd; padding: 20px; text-align: center; border-radius: 5px; }
-        .file-upload:hover { border-color: #007bff; background: #f8f9fa; }
-        .checklist { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-top: 20px; }
-        .project-info { background: #f0fdf4; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745; display: none; }
-        .unit-info { background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px; }
-        .transaction-badge { 
-            background-color: {% if transaction_type == "rental" %}#17a2b8{% else %}#28a745{% endif %}; 
-            color: white; 
-            padding: 5px 15px; 
-            border-radius: 20px; 
-            font-size: 0.9em; 
-            display: inline-block;
-            margin-left: 10px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>
-            {% if transaction_type == "rental" %}
-                📝 New Rental Entry
-            {% else %}
-                📝 New Sales Entry
-            {% endif %}
-            <span class="transaction-badge">
-                {% if transaction_type == "rental" %}
-                    RENTAL
-                {% else %}
-                    SALES
-                {% endif %}
-            </span>
-        </h1>
-        
-        <div class="agent-info">
-            <strong>Agent:</strong> {{ agent_name }} | 
-            <strong>ID:</strong> {{ agent_id }}
-        </div>
-        
-        {% if success %}
-        <div class="success">
-            ✅ {% if transaction_type == "rental" %}Rental{% else %}Sale{% endif %} submitted successfully! Commission: RM{{ commission|default('0.00') }}
-        </div>
-        {% endif %}
-
-        <div class="transaction-buttons" style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
-            <h3 style="margin-top: 0; color: #495057;">📊 Select Transaction Type</h3>
-            
-            <div style="display: flex; gap: 20px; justify-content: center; margin: 20px 0;">
-                <a href="/new-listing?type=sales" 
-                   style="text-decoration: none; flex: 0 1 200px;">
-                    <div style="padding: 20px; border-radius: 10px; 
-                               background: {% if transaction_type == 'sales' %}#28a745{% else %}#ffffff{% endif %}; 
-                               border: 3px solid {% if transaction_type == 'sales' %}#28a745{% else %}#dee2e6{% endif %}; 
-                               color: {% if transaction_type == 'sales' %}#ffffff{% else %}#495057{% endif %}; 
-                               transition: all 0.3s;">
-                        <div style="font-size: 32px;">💰</div>
-                        <div style="font-weight: bold; font-size: 18px; margin: 10px 0;">Sales</div>
-                        <div style="font-size: 14px; opacity: 0.8;">Property Purchase</div>
-                    </div>
-                </a>
-                
-                <a href="/new-listing?type=rental" 
-                   style="text-decoration: none; flex: 0 1 200px;">
-                    <div style="padding: 20px; border-radius: 10px; 
-                               background: {% if transaction_type == 'rental' %}#17a2b8{% else %}#ffffff{% endif %}; 
-                               border: 3px solid {% if transaction_type == 'rental' %}#17a2b8{% else %}#dee2e6{% endif %}; 
-                               color: {% if transaction_type == 'rental' %}#ffffff{% else %}#495057{% endif %}; 
-                               transition: all 0.3s;">
-                        <div style="font-size: 32px;">🏠</div>
-                        <div style="font-weight: bold; font-size: 18px; margin: 10px 0;">Rental</div>
-                        <div style="font-size: 14px; opacity: 0.8;">Property Rental</div>
-                    </div>
-                </a>
-            </div>
-            
-            <div style="padding: 10px; background: #e8f4ff; border-radius: 5px; display: inline-block;">
-                <strong>Currently viewing:</strong> 
-                <span style="color: {% if transaction_type == 'sales' %}#28a745{% else %}#17a2b8{% endif %}; font-weight: bold;">
-                    {{ 'Sales' if transaction_type == 'sales' else 'Rental' }} Projects
-                </span>
-                • {{ projects|length }} projects available
-            </div>
-        </div>
-        
-        <div class="commission-preview">
-            <h3>💵 Estimated Commission: <span id="estCommission">RM0.00</span></h3>
-            <p id="commissionBreakdown">
-                {% if transaction_type == "rental" %}
-                    Enter rental price to see calculation
-                {% else %}
-                    Enter sale price to see calculation
-                {% endif %}
-            </p>
-            <div id="projectCommissionInfo" style="display: none; margin-top: 10px; padding: 10px; background: #e8f4ff; border-radius: 5px;">
-                <strong>Project Commission:</strong> <span id="projectCommissionRate">0%</span>
-            </div>
-        </div>
-        
-        <form method="POST" action="/submit-listing" enctype="multipart/form-data">
-            <input type="hidden" name="sale_type" value="{{ transaction_type }}">
-            
-            <!-- Project Selection -->
-            <div class="form-section">
-                <h2>🏢 Select Project</h2>
-                <div class="form-group">
-                    <label>Select Project (Optional)</label>
-                    <select name="project_id" id="projectSelect" onchange="loadProjectDetails()">
-                        <option value="">-- Select a Project --</option>
-                        {% for project in projects %}
-                        <option value="{{ project.id }}" 
-                                data-category="{{ project.category }}" 
-                                data-type="{{ project.project_type }}" 
-                                data-commission="{{ project.commission_rate or '' }}"
-                                data-sale-type="{{ project.project_sale_type if project.project_sale_type is defined else 'sales' }}">
-                            {{ project.project_name }} ({{ project.category|title }} - {{ project.project_type|title }} - {{ (project.project_sale_type if project.project_sale_type is defined else 'sales')|title }})
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <small>Selecting a project will auto-fill property type and commission rate</small>
-                </div>
-                
-                <div id="projectDetails" class="project-info">
-                    <h4 style="margin-top: 0;">📋 Selected Project Details</h4>
-                    <div id="projectInfoContent"></div>
-                </div>
-                
-                <div id="unitSelection" style="display: none;">
-                    <div class="form-group">
-                        <label>Select Unit Type</label>
-                        <select name="unit_id" id="unitSelect" onchange="updateUnitDetails()">
-                            <option value="">-- Select Unit Type --</option>
-                        </select>
-                    </div>
-                    
-                    <div id="unitDetails" class="unit-info">
-                        <!-- Unit details will be populated here -->
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Customer Information -->
-            <div class="form-section">
-                <h2>👤 Customer Information</h2>
-                <div class="form-group">
-                    <label class="required">Customer Name</label>
-                    <input type="text" name="customer_name" required>
-                </div>
-                <div class="form-group">
-                    <label class="required">Customer Email</label>
-                    <input type="email" name="customer_email" required>
-                </div>
-                <div class="form-group">
-                    <label>Customer Phone</label>
-                    <input type="tel" name="customer_phone">
-                </div>
-            </div>
-            
-            <!-- Property Details -->
-            <div class="form-section">
-                <h2>🏠 Property Details</h2>
-                <div class="form-group">
-                    <label class="required">Property Address</label>
-                    <textarea name="property_address" id="propertyAddress" rows="3" required></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label class="required">
-                        {% if transaction_type == "rental" %}
-                            Monthly Rental Price (RM)
-                        {% else %}
-                            Sale Price (RM)
-                        {% endif %}
-                    </label>
-                    <input type="number" name="sale_price" id="salePrice" 
-                           min="0" step="1000" required 
-                           oninput="updateCommission()" 
-                           placeholder="{% if transaction_type == 'rental' %}e.g., 2500{% else %}e.g., 500000{% endif %}">
-                </div>
-                
-                <div class="form-group">
-                    <label>
-                        {% if transaction_type == "rental" %}
-                            Available From
-                        {% else %}
-                            Closing Date
-                        {% endif %}
-                    </label>
-                    <input type="date" name="closing_date">
-                </div>
-                
-                <!-- Rental Specific Fields -->
-                {% if transaction_type == "rental" %}
-                <div style="border-top: 1px solid #e0e0e0; padding-top: 15px; margin-top: 15px;">
-                    <h4 style="color: #17a2b8;">🏠 Rental Specific Details</h4>
-                    
-                    <div class="form-group">
-                        <label>Security Deposit (RM)</label>
-                        <input type="number" name="deposit" min="0" step="100" placeholder="e.g., 2500 (usually 1-2 months rent)">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Minimum Tenancy Period (months)</label>
-                        <input type="number" name="minimum_tenancy" min="1" placeholder="e.g., 12 months">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Furnishing Type</label>
-                        <select name="furnishing_type">
-                            <option value="">-- Select Furnishing --</option>
-                            <option value="fully_furnished">Fully Furnished</option>
-                            <option value="partially_furnished">Partially Furnished</option>
-                            <option value="unfurnished">Unfurnished</option>
-                        </select>
-                    </div>
-                </div>
-                {% endif %}
-            </div>
-            
-            <!-- Document Upload -->
-            <div class="form-section">
-                <h2>📎 Upload Documents</h2>
-                <p style="color: #666; margin-bottom: 15px;">
-                    Upload signed documents for verification. Maximum 10MB per file.
-                </p>
-                
-                <div class="form-group">
-                    <label>
-                        {% if transaction_type == "rental" %}
-                            Tenancy Agreement (Required)
-                        {% else %}
-                            Sales & Purchase Agreement (Required)
-                        {% endif %}
-                    </label>
-                    <div class="file-upload">
-                        <input type="file" name="agreement" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                        <small>
-                            {% if transaction_type == "rental" %}
-                                Signed tenancy agreement between landlord and tenant
-                            {% else %}
-                                Signed agreement between buyer and seller
-                            {% endif %}
-                        </small>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Customer ID Proof</label>
-                    <div class="file-upload">
-                        <input type="file" name="id_proof" accept=".pdf,.jpg,.jpeg,.png">
-                        <small>NRIC/Passport copy of customer</small>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Property Documents</label>
-                    <div class="file-upload">
-                        <input type="file" name="property_docs" accept=".pdf,.doc,.docx">
-                        <small>Title deed, floor plan, etc.</small>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Additional Documents</label>
-                    <div class="file-upload">
-                        <input type="file" name="additional_docs" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                        <small>Hold CTRL to select multiple files</small>
-                    </div>
-                </div>
-                
-                <div class="checklist">
-                    <h4 style="margin-top: 0;">📋 Document Checklist:</h4>
-                    <ul style="margin-bottom: 0;">
-                        {% if transaction_type == "rental" %}
-                            <li>✅ Signed Tenancy Agreement</li>
-                            <li>✅ Customer ID Proof</li>
-                            <li>✅ Property Title/Deed</li>
-                            <li>✅ Deposit Receipt</li>
-                        {% else %}
-                            <li>✅ Signed Sales & Purchase Agreement</li>
-                            <li>✅ Customer ID Proof</li>
-                            <li>✅ Property Title/Deed</li>
-                            <li>✅ Commission Agreement (if separate)</li>
-                        {% endif %}
-                    </ul>
-                </div>
-            </div>
-            
-            <!-- Additional Information -->
-            <div class="form-section">
-                <h2>📋 Additional Information</h2>
-                <div class="form-group">
-                    <label>Special Notes</label>
-                    <textarea name="notes" rows="4" 
-                              placeholder="Any special conditions, requirements, or notes..."></textarea>
-                </div>
-            </div>
-            
-            <button type="submit" class="btn btn-primary">
-                {% if transaction_type == "rental" %}
-                    ✅ Submit Rental for Approval
-                {% else %}
-                    ✅ Submit Sale for Approval
-                {% endif %}
-            </button>
-            <button type="button" class="btn btn-secondary" onclick="saveDraft()">💾 Save as Draft</button>
-            <a href="/agent/dashboard" style="color: #6c757d; margin-left: 15px;">← Back to Dashboard</a>
-        </form>
-    </div>
-    
-    <script>
-    // ============ SALES/RENTAL FILTERING ============
-    function filterProjectsByType(selectedType) {
-        console.log(`🎯 filterProjectsByType called with: ${selectedType}`);
-        
-        const projectSelect = document.getElementById('projectSelect');
-        if (!projectSelect) {
-            console.error('❌ projectSelect element not found!');
-            return;
-        }
-        
-        const options = projectSelect.options;
-        console.log(`📋 Total options: ${options.length}`);
-        
-        // Show/hide options based on saleType
-        let shownCount = 0;
-        let hiddenCount = 0;
-        
-        for (let i = 0; i < options.length; i++) {
-            const option = options[i];
-            const saleType = option.dataset.saleType || 'sales'; // Default to sales
-            
-            console.log(`  Option ${i}: "${option.text.substring(0, 30)}..." - saleType: "${saleType}"`);
-            
-            if (i === 0) {
-                // First option is "Select a Project" - always show
-                option.style.display = '';
-                option.disabled = false;
-                shownCount++;
-            } else if (selectedType === 'all' || saleType === selectedType) {
-                option.style.display = '';
-                option.disabled = false;
-                shownCount++;
-            } else {
-                option.style.display = 'none';
-                option.disabled = true;
-                hiddenCount++;
-            }
-        }
-        
-        console.log(`✅ Result: ${shownCount} shown, ${hiddenCount} hidden`);
-        
-        // Reset selection if current selection is hidden
-        const selectedOption = projectSelect.options[projectSelect.selectedIndex];
-        if (selectedOption && selectedOption.disabled) {
-            console.log('🔄 Resetting selection');
-            projectSelect.selectedIndex = 0;
-            
-            // Update commission calculation
-            if (typeof updateCommission === 'function') {
-                updateCommission();
-            }
-        }
-    }
-
-    // Initialize when page loads
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('🚀 Page loaded, initializing filter...');
-        
-        // Set filter based on current transaction type
-        const currentType = "{{ transaction_type }}";
-        filterProjectsByType(currentType);
-        
-        // Update price label based on transaction type
-        updatePriceLabel(currentType);
-    });
-
-    function updatePriceLabel(transactionType) {
-        const priceInput = document.getElementById('salePrice');
-        if (!priceInput) return;
-        
-        // Update placeholder based on transaction type
-        if (transactionType === 'rental') {
-            priceInput.placeholder = 'e.g., 2500 (monthly rent)';
-        } else {
-            priceInput.placeholder = 'e.g., 500000 (sale price)';
-        }
-    }
-
-    // Store project data
-    let projectsData = {{ projects_json|safe }};
-    let unitsData = {};
-    
-    function loadProjectDetails() {
-        const projectSelect = document.getElementById('projectSelect');
-        const projectId = projectSelect.value;
-        const projectDetails = document.getElementById('projectDetails');
-        const unitSelection = document.getElementById('unitSelection');
-        const projectInfoContent = document.getElementById('projectInfoContent');
-        
-        // Reset
-        projectDetails.style.display = 'none';
-        unitSelection.style.display = 'none';
-        document.getElementById('unitSelect').innerHTML = '<option value="">-- Select Unit Type --</option>';
-        document.getElementById('unitDetails').innerHTML = '';
-        
-        if (!projectId) return;
-        
-        // Find selected project
-        const project = projectsData.find(p => p.id == projectId);
-        if (!project) return;
-        
-        // Show project details
-        projectDetails.style.display = 'block';
-        projectInfoContent.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div>
-                    <strong>Category:</strong> ${project.category.toUpperCase()}<br>
-                    <strong>Type:</strong> ${project.project_type.toUpperCase()}<br>
-                    <strong>Location:</strong> ${project.location || 'Not specified'}
-                </div>
-                <div>
-                    <strong>Commission Rate:</strong> ${project.commission_rate || 'N/A'}%<br>
-                    <strong>Status:</strong> ${project.status.toUpperCase()}<br>
-                    ${project.description ? `<strong>Description:</strong> ${project.description.substring(0, 100)}...` : ''}
-                </div>
-            </div>
-        `;
-        
-        // Auto-fill property address with project location if empty
-        const propertyAddress = document.getElementById('propertyAddress');
-        if (!propertyAddress.value.trim() && project.location) {
-            propertyAddress.value = project.location;
-        }
-        
-        // Show commission info
-        if (project.commission_rate) {
-            document.getElementById('projectCommissionInfo').style.display = 'block';
-            document.getElementById('projectCommissionRate').textContent = project.commission_rate + '%';
-        }
-        
-        // Load units if available
-        if (project.units && project.units.length > 0) {
-            unitSelection.style.display = 'block';
-            const unitSelect = document.getElementById('unitSelect');
-            unitSelect.innerHTML = '<option value="">-- Select Unit Type --</option>';
-            
-            project.units.forEach(unit => {
-                const option = document.createElement('option');
-                option.value = unit.id;
-                // Use appropriate price based on transaction type
-                const transactionType = "{{ transaction_type }}";
-                const price = (transactionType === 'rental') ? 
-                              (unit.rental_price || unit.base_price || 0) : 
-                              (unit.base_price || unit.rental_price || 0);
-                option.textContent = `${unit.unit_type} (${unit.square_feet || 'N/A'} sqft) - RM${price.toLocaleString()}`;
-                option.setAttribute('data-price', price);
-                option.setAttribute('data-sale-type', project.project_sale_type || 'sales');
-                option.setAttribute('data-commission', unit.commission_rate || project.commission_rate || 0);
-                option.setAttribute('data-sqft', unit.square_feet || '');
-                unitSelect.appendChild(option);
-            });
-            
-            // Store units data for this project
-            unitsData[projectId] = project.units;
-        }
-        
-        updateCommission();
-    }
-    
-    function updateUnitDetails() {
-        const unitSelect = document.getElementById('unitSelect');
-        const unitId = unitSelect.value;
-        const unitDetails = document.getElementById('unitDetails');
-        const salePriceInput = document.getElementById('salePrice');
-        
-        if (!unitId) {
-            unitDetails.innerHTML = '';
-            return;
-        }
-        
-        const projectId = document.getElementById('projectSelect').value;
-        const units = unitsData[projectId];
-        const unit = units.find(u => u.id == unitId);
-        
-        if (!unit) return;
-        
-        // Get appropriate price based on transaction type
-        const transactionType = "{{ transaction_type }}";
-        const price = (transactionType === 'rental') ? 
-                      (unit.rental_price || unit.base_price || 0) : 
-                      (unit.base_price || unit.rental_price || 0);
-        const priceLabel = (transactionType === 'rental') ? 'Monthly Rent' : 'Price';
-        
-        unitDetails.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div>
-                    <strong>Unit Type:</strong> ${unit.unit_type}<br>
-                    <strong>Size:</strong> ${unit.square_feet || 'N/A'} sqft<br>
-                    <strong>Status:</strong> ${unit.status.toUpperCase()}
-                </div>
-                <div>
-                    <strong>${priceLabel}:</strong> RM${price.toLocaleString()}<br>
-                    <strong>Commission:</strong> ${unit.commission_rate || projectsData.find(p => p.id == projectId).commission_rate || 'N/A'}%<br>
-                    <strong>Quantity Available:</strong> ${unit.quantity || 0}
-                </div>
-            </div>
-        `;
-        
-        // Auto-fill sale/rental price
-        if (price > 0) {
-            salePriceInput.value = price;
-            updateCommission();
-        }
-    }
-    
-    function updateCommission() {
-        const salePrice = parseFloat(document.getElementById('salePrice').value) || 0;
-        const projectSelect = document.getElementById('projectSelect');
-        const projectId = projectSelect.value;
-        const selectedOption = projectSelect.options[projectSelect.selectedIndex];
-        const unitSelect = document.getElementById('unitSelect');
-        const unitId = unitSelect.value;
-        
-        // Get transaction type from template
-        const transactionType = "{{ transaction_type }}";
-        const isRental = transactionType === 'rental';
-
-        let commissionRate = 0;
-
-        // Check for unit-specific commission
-        if (unitId && unitsData[projectId]) {
-            const unit = unitsData[projectId].find(u => u.id == unitId);
-            if (unit && unit.commission_rate) {
-                commissionRate = unit.commission_rate / 100;
-            }
-        }
-
-        // Check for project commission
-        if (!commissionRate && selectedOption && selectedOption.dataset.commission) {
-            commissionRate = parseFloat(selectedOption.dataset.commission) / 100;
-        }
-
-        // Use default rate if no project/unit commission
-        if (!commissionRate) {
-            commissionRate = 0.03; // Default 3% commission for sales
-            // For rentals, typically 1 month rent commission
-            if (isRental) {
-                commissionRate = 1; // 1 month rent
-            }
-        }
-
-        let commission = 0;
-        let breakdown = '';
-        
-        if (isRental) {
-            // For rentals: commission is typically 1 month's rent
-            commission = salePrice; // 1 month rent as commission
-            breakdown = `Rental: RM${salePrice.toLocaleString()} × 1 month = RM${commission.toLocaleString()}`;
-        } else {
-            // For sales: percentage of sale price
-            commission = salePrice * commissionRate;
-            
-            // Apply caps (RM1,000 - RM50,000)
-            commission = Math.max(1000, Math.min(commission, 50000));
-            
-            breakdown = `Sale Price: RM${salePrice.toLocaleString()} × ${(commissionRate*100).toFixed(1)}%`;
-        }
-
-        // Update display
-        document.getElementById('estCommission').textContent = 
-            'RM' + commission.toLocaleString('en-US', {minimumFractionDigits: 2});
-
-        if (projectId) {
-            breakdown += ` (Project Rate)`;
-        } else {
-            breakdown += ` (Default Rate)`;
-        }
-
-        document.getElementById('commissionBreakdown').innerHTML = breakdown;
-    }
-    
-    function saveDraft() {
-        alert('Draft saved! You can continue later.');
-        // In real implementation, save via AJAX
-    }
-    </script>
-</body>
-</html>
-"""
-
-
 # ============ NOTIFICATION FUNCTIONS ============
 def create_agent_notification(
     agent_id,
@@ -2543,7 +2316,7 @@ def new_listing():
     print("\n" + "=" * 60)
     print(f"DEBUG: URL parameter 'type' = '{transaction_type}'")
 
-    # Build the SQL query - NO COMMENTS INSIDE SQL!
+    # Build the SQL query
     if transaction_type == "all":
         sql_query = """
             SELECT p.id, p.project_name, p.category, p.project_type, 
@@ -2567,12 +2340,6 @@ def new_listing():
 
     cursor.execute(sql_query, params)
     projects_raw = cursor.fetchall()
-
-    print(f"DEBUG: Fetched {len(projects_raw)} projects for type '{transaction_type}'")
-    for i, project in enumerate(projects_raw):
-        print(
-            f"DEBUG: Project {i+1}: {project[1]} (ID: {project[0]}, Type: '{project[8]}')"
-        )
 
     projects = []
     for project in projects_raw:
@@ -2622,8 +2389,9 @@ def new_listing():
 
     conn.close()
 
-    return render_template_string(
-        AGENT_FORM_TEMPLATE,
+    # Use Flask's render_template function instead of render_template_string
+    return render_template(
+        "agent/new-listing.html",  # Path to template file
         agent_name=session.get("user_name", "Agent"),
         agent_id=session.get("user_id"),
         agent_tier="standard",
@@ -2631,465 +2399,6 @@ def new_listing():
         transaction_type=transaction_type,
         projects_json=json.dumps(projects),
     )
-
-
-@app.route("/submit-listing", methods=["POST"])
-def submit_listing():
-    """Submit a new property listing"""
-    if "user_id" not in session:
-        return redirect("/login")
-
-    # Get action type from form (draft or submit)
-    action = request.form.get("action", "submit")  # Default to submit
-    status = "submitted" if action == "submit" else "draft"
-    submitted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if action == "submit" else None
-
-    # Initialize variables
-    conn = None
-    cursor = None
-    listing_id = None
-
-    try:
-        data = request.form
-        sale_type = data.get("sale_type", "sales")  # Default to sales
-
-        # Get project and unit info
-        project_id = data.get("project_id")
-        unit_id = data.get("unit_id")
-
-        # Calculate commission
-        sale_price = float(data["sale_price"])
-
-        # Initialize commission calculation variables
-        commission_rate = None
-        project_commission_rate = None
-        unit_commission_rate = None
-        commission_source = "default"
-
-        # OPEN SINGLE DATABASE CONNECTION WITH TIMEOUT
-        conn = sqlite3.connect("real_estate.db", timeout=30.0)
-        cursor = conn.cursor()
-
-        # Check for project-specific commission
-        if project_id:
-            # Get project commission rate
-            cursor.execute(
-                "SELECT commission_rate FROM projects WHERE id = ?", (project_id,)
-            )
-            project = cursor.fetchone()
-            if project and project[0]:
-                project_commission_rate = float(project[0])
-                commission_rate = project_commission_rate / 100
-                commission_source = "project"
-
-            # Check for unit-specific commission
-            if unit_id:
-                cursor.execute(
-                    "SELECT commission_rate FROM project_units WHERE id = ?", (unit_id,)
-                )
-                unit = cursor.fetchone()
-                if unit and unit[0]:
-                    unit_commission_rate = float(unit[0])
-                    commission_rate = unit_commission_rate / 100
-                    commission_source = "unit"
-
-        # If no project commission, use default rate
-        if commission_rate is None:
-            commission_rate = 0.03  # Default 3% commission
-            commission = sale_price * commission_rate
-            commission_source = "default"
-        else:
-            # Use project/unit commission rate
-            commission = sale_price * commission_rate
-
-        # Apply caps (RM1,000 - RM50,000)
-        commission = max(1000, min(commission, 50000))
-
-        # Save to database
-        cursor.execute(
-            """
-            INSERT INTO property_listings
-            (agent_id, customer_name, customer_email, customer_phone,
-            property_address, sale_type, sale_price, closing_date,
-            commission_amount, status, submitted_at, notes,
-            project_id, unit_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                session["user_id"],
-                data["customer_name"],
-                data["customer_email"],
-                data.get("customer_phone"),
-                data["property_address"],
-                sale_type,
-                sale_price,
-                data.get("closing_date"),
-                round(commission, 2),
-                status,  # ← Use variable based on action
-                submitted_time,  # ← Only set if submitting
-                data.get("notes", ""),
-                project_id if project_id else None,
-                unit_id if unit_id else None,
-            ),
-        )
-
-        listing_id = cursor.lastrowid
-        agent_id = session["user_id"]
-        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # ============ CREATE NOTIFICATIONS FOR AGENT ============
-        # Success notification - customize message based on action
-        notification_title = "✅ Submission Created" if action == "submit" else "💾 Draft Saved"
-        notification_message = (
-            f"Submission #{listing_id} has been submitted for approval."
-            if action == "submit"
-            else f"Draft #{listing_id} has been saved."
-        )
-        
-        cursor.execute(
-            """
-            INSERT INTO agent_notifications 
-            (agent_id, notification_type, title, message, related_id, related_type, priority, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                session["user_id"],
-                "submission_success" if action == "submit" else "draft_saved",
-                notification_title,
-                notification_message,
-                listing_id,
-                "listing",
-                "normal",
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ),
-        )
-
-        # ============ ENHANCED FILE UPLOAD HANDLING ============
-        uploaded_files = []
-        processed_filenames = set()  # Track filenames to prevent duplicates
-
-        # Allowed file extensions
-        ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
-
-        def allowed_file(filename):
-            if not filename or "." not in filename:
-                return False
-            return filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
-        # Create structured folder: uploads/agent_id/date/listing_id/
-        agent_id = session["user_id"]
-        current_date_folder = datetime.now().strftime("%Y-%m-%d")
-
-        # Create folder structure
-        base_folder = f"uploads/agent_{agent_id}"
-        date_folder = f"{base_folder}/{current_date_folder}"
-        listing_folder = f"{date_folder}/listing_{listing_id}"
-
-        # Create folders if they don't exist
-        for folder in [base_folder, date_folder, listing_folder]:
-            if not os.path.exists(folder):
-                os.makedirs(folder)
-
-        # Handle single files - FIXED: Only process files with actual content
-        file_fields = ["agreement", "id_proof", "property_docs"]
-        for field_name in file_fields:
-            if field_name in request.files:
-                file = request.files[field_name]
-                
-                # CRITICAL FIX: Check if file is actually uploaded (not empty)
-                if file and hasattr(file, 'filename') and file.filename and file.filename.strip() != "":
-                    
-                    # Check if file has content (not 0 bytes)
-                    file_content = file.read()
-                    file.seek(0)  # Reset pointer for saving
-                    
-                    if len(file_content) > 0 and allowed_file(file.filename):
-                        filename = secure_filename(file.filename)
-                        
-                        # Check if this filename was already processed (prevents duplicates in same submission)
-                        if filename in processed_filenames:
-                            print(f"⚠️ Skipping duplicate file in same submission: {filename}")
-                            continue
-                        
-                        filepath = os.path.join(listing_folder, filename)
-                        
-                        # Check if file already exists in database for this listing
-                        cursor.execute(
-                            "SELECT id FROM documents WHERE listing_id = ? AND filename = ?",
-                            (listing_id, filename)
-                        )
-                        existing_file = cursor.fetchone()
-                        
-                        if not existing_file:
-                            # Save file to disk
-                            file.save(filepath)
-                            
-                            # Verify file was saved and has content
-                            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-                                cursor.execute(
-                                    """
-                                    INSERT INTO documents 
-                                    (listing_id, filename, filepath, file_type, file_size, uploaded_by, notes)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                    (
-                                        listing_id,
-                                        filename,
-                                        filepath,
-                                        filename.rsplit(".", 1)[1].lower(),
-                                        os.path.getsize(filepath),
-                                        session["user_id"],
-                                        f"Uploaded by {session.get('user_name', 'Agent')} on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                                    ),
-                                )
-                                uploaded_files.append(filename)
-                                processed_filenames.add(filename)
-                                print(f"✅ Saved file: {filename}")
-                            else:
-                                print(f"❌ File save failed: {filename}")
-                        else:
-                            print(f"⚠️ Skipping duplicate (already in database): {filename}")
-                    else:
-                        print(f"⚠️ Invalid or empty file: {file.filename}")
-                else:
-                    print(f"ℹ️ No file uploaded for field: {field_name}")
-
-        # Handle multiple additional files - FIXED VERSION
-        if "additional_docs" in request.files:
-            files = request.files.getlist("additional_docs")
-            print(f"🔍 Processing {len(files)} additional files")
-            
-            for index, file in enumerate(files):
-                # Check if file has actual content
-                if file and hasattr(file, 'filename') and file.filename and file.filename.strip() != "":
-                    
-                    file_content = file.read()
-                    file.seek(0)  # Reset pointer
-                    
-                    if len(file_content) > 0 and allowed_file(file.filename):
-                        filename = secure_filename(file.filename)
-                        
-                        # Check for duplicates in same submission
-                        if filename in processed_filenames:
-                            print(f"⚠️ Skipping duplicate additional file: {filename}")
-                            continue
-                        
-                        filepath = os.path.join(listing_folder, filename)
-                        
-                        # Check if already in database
-                        cursor.execute(
-                            "SELECT id FROM documents WHERE listing_id = ? AND filename = ?",
-                            (listing_id, filename)
-                        )
-                        existing_file = cursor.fetchone()
-                        
-                        if not existing_file:
-                            file.save(filepath)
-                            
-                            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-                                cursor.execute(
-                                    """
-                                    INSERT INTO documents 
-                                    (listing_id, filename, filepath, file_type, file_size, uploaded_by, notes)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                    (
-                                        listing_id,
-                                        filename,
-                                        filepath,
-                                        filename.rsplit(".", 1)[1].lower(),
-                                        os.path.getsize(filepath),
-                                        session["user_id"],
-                                        f"Additional document #{index+1}",
-                                    ),
-                                )
-                                uploaded_files.append(filename)
-                                processed_filenames.add(filename)
-                                print(f"✅ Saved additional file: {filename}")
-                            else:
-                                print(f"❌ Additional file save failed: {filename}")
-                        else:
-                            print(f"⚠️ Skipping duplicate additional file (in DB): {filename}")
-                    else:
-                        print(f"⚠️ Invalid additional file: {file.filename}")
-                else:
-                    # Empty file in the list - skip silently
-                    pass
-
-        print(f"📊 Total files uploaded for listing #{listing_id}: {len(uploaded_files)}")
-
-        # Update commission calculation details
-        calculation_details = {
-            "commission_source": commission_source,
-            "base_rate": commission_rate * 100,
-            "project_commission_rate": project_commission_rate,
-            "unit_commission_rate": unit_commission_rate,
-        }
-
-        # Save commission calculation
-        cursor.execute(
-            """
-            INSERT INTO commission_calculations 
-            (listing_id, agent_id, sale_price,
-             base_rate, commission, calculation_details)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            (
-                listing_id,
-                session["user_id"],
-                sale_price,
-                commission_rate * 100,  # Store as percentage
-                round(commission, 2),
-                json.dumps(calculation_details),
-            ),
-        )
-
-        # Commit all changes at once
-        conn.commit()
-
-        # ============ ENHANCED SUCCESS MESSAGE BASED ON ACTION ============
-        if action == "submit":
-            success_title = "✅ Sale Submitted Successfully!"
-            success_message = "Your submission is now pending admin approval."
-        else:
-            success_title = "💾 Draft Saved Successfully!"
-            success_message = "Your draft has been saved. You can submit it for approval later."
-
-        upload_message = ""
-        if uploaded_files:
-            upload_message = f"<br>📎 Uploaded {len(uploaded_files)} document(s): {', '.join(uploaded_files[:3])}"
-            if len(uploaded_files) > 3:
-                upload_message += f" and {len(uploaded_files)-3} more"
-
-        success_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>{'Submission Successful' if action == 'submit' else 'Draft Saved'}</title>
-                <meta http-equiv="refresh" content="5;url=/agent/dashboard">
-                <style>
-                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
-                    .success-box {{ border: 2px solid {'#28a745' if action == 'submit' else '#ffc107'}; 
-                                  padding: 30px; border-radius: 10px; text-align: center; }}
-                    h2 {{ color: {'#28a745' if action == 'submit' else '#ffc107'}; }}
-                    .details {{ text-align: left; background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-                    .redirect {{ margin-top: 20px; color: #666; font-size: 14px; }}
-                    .status-badge {{ 
-                        display: inline-block; 
-                        padding: 5px 15px; 
-                        border-radius: 20px; 
-                        font-weight: bold;
-                        background-color: {'#d4edda' if action == 'submit' else '#fff3cd'};
-                        color: {'#155724' if action == 'submit' else '#856404'};
-                        border: 1px solid {'#c3e6cb' if action == 'submit' else '#ffeaa7'};
-                        margin: 10px 0;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class="success-box">
-                    <h2>{success_title}</h2>
-                    <p>Reference ID: <strong>#{listing_id}</strong></p>
-                    
-                    <div class="status-badge">
-                        Status: {'PENDING APPROVAL' if action == 'submit' else 'DRAFT'}
-                    </div>
-                    
-                    <div class="details">
-                        <p><strong>Agent ID:</strong> {agent_id}</p>
-                        <p><strong>{'Submission' if action == 'submit' else 'Saved'} Date:</strong> {current_date}</p>
-                        <p><strong>Customer:</strong> {data['customer_name']}</p>
-                        <p><strong>Property:</strong> {data['property_address'][:50]}...</p>
-                        <p><strong>Sale Price:</strong> RM{"{:,.2f}".format(sale_price)}</p>
-                        <p><strong>Commission:</strong> <span style="color: #28a745; font-weight: bold;">
-                        RM{"{:,.2f}".format(commission)}</span></p>
-                        <p><strong>Folder Structure:</strong> agent_{agent_id}/{current_date_folder}/listing_{listing_id}/</p>
-                        {upload_message}
-                    </div>
-                    
-                    <p>{success_message}</p>
-                    <div class="redirect">
-                        Redirecting to dashboard in 5 seconds...
-                    </div>
-                    <div style="margin-top: 30px;">
-                        <a href="/new-listing" style="background: #007bff; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px; margin-right: 10px;">➕ New Sale</a>
-                        <a href="/agent/dashboard" style="background: #6c757d; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px;">📊 Go to Dashboard</a>
-                        {'<a href="/edit-listing/' + str(listing_id) + '" style="background: #17a2b8; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">✏️ Edit Draft</a>' if action == 'draft' else ''}
-                    </div>
-                </div>
-            </body>
-            </html>
-        """
-
-        return success_html
-
-    except sqlite3.OperationalError as e:
-        if conn:
-            conn.rollback()
-
-        # Specific handling for database locked error
-        if "locked" in str(e).lower():
-            error_msg = (
-                "Database is temporarily busy. Please wait a moment and try again."
-            )
-        else:
-            error_msg = f"Database error: {str(e)}"
-
-        return render_error_page(error_msg)
-
-    except ValueError as e:
-        if conn:
-            conn.rollback()
-        return render_error_page(f"Invalid input data: {str(e)}")
-
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        import traceback
-
-        error_details = traceback.format_exc()
-        print(f"Error in submit-listing: {error_details}")
-        return render_error_page(f"Unexpected error: {str(e)}")
-
-    finally:
-        # Always close the database connection
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
-def render_error_page(error_message):
-    """Helper function to render error page"""
-    error_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Submission Error</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
-            .error-box {{ border: 2px solid #dc3545; padding: 30px; border-radius: 10px; text-align: center; }}
-            h2 {{ color: #dc3545; }}
-        </style>
-    </head>
-    <body>
-        <div class="error-box">
-            <h2>❌ Submission Failed</h2>
-            <p><strong>Error:</strong> {error_message}</p>
-            <div style="margin-top: 30px;">
-                <a href="/new-listing" style="background: #007bff; color: white; padding: 10px 20px; 
-                   text-decoration: none; border-radius: 5px; margin-right: 10px;">← Try Again</a>
-                <a href="/agent/dashboard" style="background: #6c757d; color: white; padding: 10px 20px; 
-                   text-decoration: none; border-radius: 5px;">Dashboard →</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return error_html
-
 
 @app.route("/agent/dashboard")
 def agent_dashboard():
@@ -3424,7 +2733,7 @@ def agent_dashboard():
 
 @app.route("/agent/my-downline")
 def agent_downline():
-    """Agent view of their downline network including indirect downlines"""
+    """Agent view of their downline network - FIXED PENDING COMMISSIONS"""
     if "user_id" not in session or session["user_role"] != "agent":
         return redirect("/login")
 
@@ -3433,36 +2742,55 @@ def agent_downline():
 
     agent_id = session["user_id"]
 
-    # ========== DIRECT DOWNLINES (Level 1) ==========
+    # ========== GET CURRENT AGENT'S COMMISSION STRUCTURE ==========
     cursor.execute(
         """
         SELECT 
-            id,
-            name,
-            email,
-            upline_commission_rate,
-            created_at,
-            'direct' as relationship_type
+            commission_structure,
+            upline_fund_pct,
+            upline2_fund_pct,
+            total_commission_fund_pct
+        FROM users 
+        WHERE id = ?
+    """,
+        (agent_id,),
+    )
+    
+    agent_info = cursor.fetchone()
+    commission_structure = agent_info[0] if agent_info else 'fund_based'
+    
+    if commission_structure == 'fund_based':
+        direct_rate = agent_info[1] if agent_info and agent_info[1] is not None else 10.0
+        indirect_rate = agent_info[2] if agent_info and agent_info[2] is not None else 5.0
+        total_fund_pct = agent_info[3] if agent_info and agent_info[3] is not None else 2.0
+    else:
+        direct_rate = 5.0
+        indirect_rate = 2.5
+        total_fund_pct = None
+
+    # ========== GET DOWNLINES ==========
+    # Direct downlines
+    cursor.execute(
+        """
+        SELECT id, name, email, created_at, commission_structure
         FROM users 
         WHERE upline_id = ? AND role = 'agent'
         ORDER BY created_at DESC
     """,
         (agent_id,),
     )
-
     direct_downlines = cursor.fetchall()
 
-    # ========== INDIRECT DOWNLINES (Level 2) ==========
+    # Indirect downlines
     cursor.execute(
         """
         SELECT 
             u2.id,
             u2.name,
             u2.email,
-            2.5 as commission_rate,  -- Fixed 2.5% for indirect
             u2.created_at,
-            'indirect' as relationship_type,
-            u1.name as direct_upline_name  -- Who connects them to you
+            u2.commission_structure,
+            u1.name as direct_upline_name
         FROM users u1
         JOIN users u2 ON u1.id = u2.upline_id
         WHERE u1.upline_id = ? 
@@ -3472,164 +2800,204 @@ def agent_downline():
     """,
         (agent_id,),
     )
-
     indirect_downlines = cursor.fetchall()
 
-    # ========== GET COMMISSIONS FROM INDIRECT DOWNLINES ==========
-    indirect_commissions = {}
-    if indirect_downlines:
-        # Get all indirect downline IDs
-        indirect_ids = [str(d[0]) for d in indirect_downlines]
-
-        if indirect_ids:
-            # Create parameter placeholders
-            placeholders = ",".join(["?" for _ in indirect_ids])
-            query = f"""
-                SELECT 
-                    agent_id,
-                    SUM(amount) as total_commission,
-                    COUNT(*) as commission_count
-                FROM upline_commissions 
-                WHERE upline_id = ?
-                AND agent_id IN ({placeholders})
-                AND commission_type = 'indirect'
-                GROUP BY agent_id
-            """
-            # Pass all parameters safely
-            cursor.execute(query, (agent_id, *indirect_ids))
-
-            for row in cursor.fetchall():
-                indirect_commissions[row[0]] = {
-                    "total": row[1] or 0,
-                    "count": row[2] or 0,
-                }
-
-    # ========== GET DIRECT COMMISSIONS ==========
-    direct_commissions = {}
-    if direct_downlines:
-        # Get all direct downline IDs
-        direct_ids = [str(d[0]) for d in direct_downlines]
-
-        if direct_ids:
-            placeholders = ",".join(["?" for _ in direct_ids])
-            query = f"""
-                SELECT 
-                    agent_id,
-                    SUM(amount) as total_commission,
-                    COUNT(*) as commission_count
-                FROM upline_commissions 
-                WHERE upline_id = ?
-                AND agent_id IN ({placeholders})
-                AND commission_type = 'direct'
-                GROUP BY agent_id
-            """
-            cursor.execute(query, (agent_id, *direct_ids))
-
-            for row in cursor.fetchall():
-                direct_commissions[row[0]] = {
-                    "total": row[1] or 0,
-                    "count": row[2] or 0,
-                }
-
-    # ========== TOTAL STATISTICS ==========
-    # Combine direct and indirect downlines for stats
-    all_downline_ids = [str(d[0]) for d in direct_downlines] + [
-        str(d[0]) for d in indirect_downlines
-    ]
-    all_ids_str = ",".join(all_downline_ids) if all_downline_ids else "0"
-
-    cursor.execute(
-        f"""
-        SELECT 
-            COUNT(pl.id) as total_sales,
-            SUM(pl.sale_price) as total_sales_value,
-            SUM(pl.commission_amount) as total_commission,
-            SUM(CASE WHEN pl.status = 'approved' THEN pl.commission_amount ELSE 0 END) as approved_commission
-        FROM users u
-        LEFT JOIN property_listings pl ON u.id = pl.agent_id
-        WHERE u.id IN ({all_ids_str})
-    """
-    )
-
-    stats = cursor.fetchone()
-
-    conn.close()
-
-    # ========== PREPARE DATA FOR TEMPLATE ==========
+    # ========== COMMISSION CALCULATION ==========
+    # First check what tables exist
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = [row[0] for row in cursor.fetchall()]
+    
+    total_direct_earnings = 0
+    total_indirect_earnings = 0
+    total_direct_pending = 0
+    total_indirect_pending = 0
+    
     direct_downline_list = []
     indirect_downline_list = []
 
-    total_direct_earnings = 0
-    total_indirect_earnings = 0
-
     # Process direct downlines
     for agent in direct_downlines:
-        commission_rate = agent[3] if agent[3] else 5.0  # Default 5%
         agent_id_val = agent[0]
-
-        # Get commissions for this direct downline
-        agent_commission = direct_commissions.get(
-            agent_id_val, {"total": 0, "count": 0}
-        )
-        total_direct_earnings += agent_commission["total"]
-
-        direct_downline_list.append(
-            {
-                "id": agent_id_val,
-                "name": agent[1],
-                "email": agent[2],
-                "commission_rate": commission_rate,
-                "join_date": agent[4][:10] if agent[4] else "",
-                "commission_percentage": f"{commission_rate}%",
-                "relationship": "direct",
-                "earnings_from_agent": agent_commission["total"],
-                "commission_count": agent_commission["count"],
-            }
-        )
+        
+        # Calculate EARNED commissions from upline_commissions (status = 'paid' or 'approved')
+        earned = 0
+        earned_count = 0
+        if 'upline_commissions' in tables:
+            cursor.execute(
+                """
+                SELECT SUM(amount), COUNT(*)
+                FROM upline_commissions 
+                WHERE upline_id = ? 
+                AND agent_id = ? 
+                AND commission_type = 'direct'
+                AND status IN ('paid', 'approved', 'completed')
+                """,
+                (agent_id, agent_id_val)
+            )
+            result = cursor.fetchone()
+            earned = result[0] or 0
+            earned_count = result[1] or 0
+        
+        # Calculate PENDING commissions from upline_commissions (status = 'pending')
+        pending = 0
+        pending_count = 0
+        if 'upline_commissions' in tables:
+            cursor.execute(
+                """
+                SELECT SUM(amount), COUNT(*)
+                FROM upline_commissions 
+                WHERE upline_id = ? 
+                AND agent_id = ? 
+                AND commission_type = 'direct'
+                AND status = 'pending'
+                """,
+                (agent_id, agent_id_val)
+            )
+            result = cursor.fetchone()
+            pending = result[0] or 0
+            pending_count = result[1] or 0
+        
+        # If no results in upline_commissions, check property_listings as fallback
+        if pending == 0 and 'property_listings' in tables:
+            cursor.execute(
+                """
+                SELECT SUM(commission_amount), COUNT(*)
+                FROM property_listings 
+                WHERE agent_id = ? AND status IN ('sold', 'pending') 
+                AND (commission_status IS NULL OR commission_status IN ('pending', 'unpaid'))
+                """,
+                (agent_id_val,)
+            )
+            result = cursor.fetchone()
+            pending_total = result[0] or 0
+            pending_count = result[1] or 0
+            pending = pending_total * direct_rate / 100
+        
+        direct_downline_list.append({
+            "id": agent_id_val,
+            "name": agent[1],
+            "email": agent[2],
+            "commission_rate": direct_rate,
+            "join_date": agent[3][:10] if agent[3] else "",
+            "commission_percentage": f"{direct_rate}%",
+            "relationship": "direct",
+            "earned_from_agent": earned,
+            "earned_count": earned_count,
+            "pending_from_agent": pending,
+            "pending_count": pending_count,
+            "commission_structure": agent[4] if len(agent) > 4 else 'fund_based',
+        })
+        
+        total_direct_earnings += earned
+        total_direct_pending += pending
 
     # Process indirect downlines
     for agent in indirect_downlines:
         agent_id_val = agent[0]
-        direct_upline_name = agent[6] if len(agent) > 6 else "Direct Upline"
+        
+        # Calculate EARNED commissions
+        earned = 0
+        earned_count = 0
+        if 'upline_commissions' in tables:
+            cursor.execute(
+                """
+                SELECT SUM(amount), COUNT(*)
+                FROM upline_commissions 
+                WHERE upline_id = ? 
+                AND agent_id = ? 
+                AND commission_type = 'indirect'
+                AND status IN ('paid', 'approved', 'completed')
+                """,
+                (agent_id, agent_id_val)
+            )
+            result = cursor.fetchone()
+            earned = result[0] or 0
+            earned_count = result[1] or 0
+        
+        # Calculate PENDING commissions
+        pending = 0
+        pending_count = 0
+        if 'upline_commissions' in tables:
+            cursor.execute(
+                """
+                SELECT SUM(amount), COUNT(*)
+                FROM upline_commissions 
+                WHERE upline_id = ? 
+                AND agent_id = ? 
+                AND commission_type = 'indirect'
+                AND status = 'pending'
+                """,
+                (agent_id, agent_id_val)
+            )
+            result = cursor.fetchone()
+            pending = result[0] or 0
+            pending_count = result[1] or 0
+        
+        # Fallback to property_listings
+        if pending == 0 and 'property_listings' in tables:
+            cursor.execute(
+                """
+                SELECT SUM(commission_amount), COUNT(*)
+                FROM property_listings 
+                WHERE agent_id = ? AND status IN ('sold', 'pending') 
+                AND (commission_status IS NULL OR commission_status IN ('pending', 'unpaid'))
+                """,
+                (agent_id_val,)
+            )
+            result = cursor.fetchone()
+            pending_total = result[0] or 0
+            pending_count = result[1] or 0
+            pending = pending_total * indirect_rate / 100
+        
+        indirect_downline_list.append({
+            "id": agent_id_val,
+            "name": agent[1],
+            "email": agent[2],
+            "commission_rate": indirect_rate,
+            "join_date": agent[3][:10] if agent[3] else "",
+            "commission_percentage": f"{indirect_rate}%",
+            "relationship": "indirect",
+            "direct_upline_name": agent[5] if len(agent) > 5 else "Direct Upline",
+            "earned_from_agent": earned,
+            "earned_count": earned_count,
+            "pending_from_agent": pending,
+            "pending_count": pending_count,
+            "commission_structure": agent[4] if len(agent) > 4 else 'fund_based',
+        })
+        
+        total_indirect_earnings += earned
+        total_indirect_pending += pending
 
-        # Get commissions for this indirect downline
-        agent_commission = indirect_commissions.get(
-            agent_id_val, {"total": 0, "count": 0}
-        )
-        total_indirect_earnings += agent_commission["total"]
-
-        indirect_downline_list.append(
-            {
-                "id": agent_id_val,
-                "name": agent[1],
-                "email": agent[2],
-                "commission_rate": 2.5,  # Fixed for indirect
-                "join_date": agent[4][:10] if agent[4] else "",
-                "commission_percentage": "2.5%",
-                "relationship": "indirect",
-                "direct_upline_name": direct_upline_name,
-                "earnings_from_agent": agent_commission["total"],
-                "commission_count": agent_commission["count"],
-            }
-        )
-
-    # ========== CALCULATE TOTAL STATS ==========
-    total_commission = stats[2] if stats and stats[2] else 0
-
+    # Debug logging
+    print(f"DEBUG: Total direct downlines: {len(direct_downline_list)}")
+    print(f"DEBUG: Total direct earnings: {total_direct_earnings}")
+    print(f"DEBUG: Total direct pending: {total_direct_pending}")
+    print(f"DEBUG: Total indirect downlines: {len(indirect_downline_list)}")
+    print(f"DEBUG: Total indirect earnings: {total_indirect_earnings}")
+    print(f"DEBUG: Total indirect pending: {total_indirect_pending}")
+    
+    # Stats
+    total_pending = total_direct_pending + total_indirect_pending
+    total_earnings = total_direct_earnings + total_indirect_earnings
+    
     stats_dict = {
         "total_downline": len(direct_downline_list) + len(indirect_downline_list),
         "direct_downline_count": len(direct_downline_list),
         "indirect_downline_count": len(indirect_downline_list),
-        "total_sales": stats[0] if stats and stats[0] else 0,
-        "total_sales_value": stats[1] if stats and stats[1] else 0,
-        "total_commission": total_commission,
-        "approved_commission": stats[3] if stats and stats[3] else 0,
         "total_direct_earnings": total_direct_earnings,
         "total_indirect_earnings": total_indirect_earnings,
-        "total_your_earnings": total_direct_earnings + total_indirect_earnings,
+        "total_direct_pending": total_direct_pending,
+        "total_indirect_pending": total_indirect_pending,
+        "total_your_earnings": total_earnings,
+        "total_your_pending": total_pending,
+        "commission_structure": commission_structure,
+        "direct_rate": direct_rate,
+        "indirect_rate": indirect_rate,
+        "total_fund_pct": total_fund_pct,
     }
 
-    # ========== RENDER TEMPLATE ==========
+    conn.close()
+    
     return render_template(
         "agent/downline.html",
         direct_downline_agents=direct_downline_list,
@@ -3654,56 +3022,103 @@ def agent_downline_performance(agent_id):
         conn.close()
         return "Access denied - This agent is not in your downline", 403
 
-    # Get downline agent details
-    cursor.execute(
-        "SELECT name, email, upline_commission_rate, created_at FROM users WHERE id = ?",
-        (agent_id,),
-    )
+    # Get downline agent details with commission structure
+    cursor.execute("""
+        SELECT name, email, upline_id, upline2_id, 
+               total_commission_fund_pct, agent_fund_pct,
+               upline_fund_pct, upline2_fund_pct, company_fund_pct,
+               commission_structure, created_at 
+        FROM users WHERE id = ?
+    """, (agent_id,))
     agent_info = cursor.fetchone()
 
-    # Get performance data
+    # Get approved listings with sale price
     sql = """SELECT 
-COUNT(*) as total_listings,
-SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_listings,
-SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_listings,
-SUM(sale_price) as total_sales,
-SUM(commission_amount) as total_commission,
-SUM(CASE WHEN status = 'approved' THEN commission_amount ELSE 0 END) as approved_commission,
-AVG(sale_price) as avg_sale_price,
-AVG(commission_amount) as avg_commission
-FROM property_listings 
-WHERE agent_id = ?"""
+    COUNT(*) as total_listings,
+    SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_listings,
+    SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_listings,
+    SUM(sale_price) as total_sales,
+    SUM(CASE WHEN status = 'approved' THEN sale_price ELSE 0 END) as approved_sales,
+    AVG(sale_price) as avg_sale_price
+    FROM property_listings 
+    WHERE agent_id = ? AND status IN ('approved', 'rejected', 'pending')"""
+    
     cursor.execute(sql, (agent_id,))
-
     performance = cursor.fetchone()
+    
+    # Get commission calculations ONLY for listings where agent is the selling agent
+    commission_sql = """
+    SELECT 
+        SUM(pl.commission_amount) as total_agent_commission,
+        AVG(pl.commission_amount) as avg_agent_commission,
+        COUNT(pl.id) as total_listings
+    FROM property_listings pl
+    WHERE pl.agent_id = ? AND pl.status = 'approved'
+    """
+    cursor.execute(commission_sql, (agent_id,))
+    commission_data = cursor.fetchone()
+    
+    # Get monthly performance with correct commission calculation
+    monthly_sql = """
+    SELECT 
+        strftime('%Y-%m', pl.created_at) as month,
+        COUNT(pl.id) as listings,
+        SUM(pl.sale_price) as sales_value,
+        SUM(CASE WHEN pl.status = 'approved' THEN pl.sale_price ELSE 0 END) as approved_sales,
+        SUM(CASE WHEN pl.status = 'approved' THEN pl.commission_amount ELSE 0 END) as agent_commission,
+        SUM(CASE WHEN pl.status = 'approved' THEN 1 ELSE 0 END) as approved_count
+    FROM property_listings pl
+    WHERE pl.agent_id = ? 
+    GROUP BY strftime('%Y-%m', pl.created_at)
+    ORDER BY month DESC
+    """
+    cursor.execute(monthly_sql, (agent_id,))
+    monthly_raw = cursor.fetchall()
+    
     conn.close()
 
-    # Process the data
+    # Process agent data
     if agent_info:
         agent_data = {
             "id": agent_id,
             "name": agent_info[0],
             "email": agent_info[1],
-            "upline_commission_rate": agent_info[2] if agent_info[2] else 0,
-            "created_at": agent_info[3][:10] if agent_info[3] else "",
-            "commission_percentage": f"{agent_info[2]}%" if agent_info[2] else "0%",
+            "upline_id": agent_info[2],
+            "upline2_id": agent_info[3],
+            "total_fund_pct": float(agent_info[4]) if agent_info[4] else 2.0,
+            "agent_fund_pct": float(agent_info[5]) if agent_info[5] else 80.0,
+            "upline_fund_pct": float(agent_info[6]) if agent_info[6] else 10.0,
+            "upline2_fund_pct": float(agent_info[7]) if agent_info[7] else 5.0,
+            "company_fund_pct": float(agent_info[8]) if agent_info[8] else 5.0,
+            "commission_structure": agent_info[9] or "fund_based",
+            "created_at": agent_info[10][:10] if agent_info[10] else "",
+            "commission_percentage": f"{float(agent_info[6]) if agent_info[6] else 10.0}%",
         }
     else:
         agent_data = None
 
+    # Process performance data
     if performance:
         perf_data = {
             "total_listings": performance[0] or 0,
             "approved_listings": performance[1] or 0,
             "rejected_listings": performance[2] or 0,
-            "total_sales": performance[3] or 0,
-            "total_commission": performance[4] or 0,
-            "approved_commission": performance[5] or 0,
-            "avg_sale_price": performance[6] or 0,
-            "avg_commission": performance[7] or 0,
+            "total_sales": float(performance[3] or 0),
+            "approved_sales": float(performance[4] or 0),
+            "avg_sale_price": float(performance[5] or 0),
         }
     else:
         perf_data = None
+    
+    # Process commission data
+    if commission_data:
+        perf_data["total_commission"] = float(commission_data[0] or 0)
+        perf_data["avg_commission"] = float(commission_data[1] or 0)
+        perf_data["total_calculations"] = commission_data[2] or 0
+    elif perf_data:
+        perf_data["total_commission"] = 0
+        perf_data["avg_commission"] = 0
+        perf_data["total_calculations"] = 0
 
     # Calculate conversion rates
     if perf_data and perf_data["total_listings"] > 0:
@@ -3717,141 +3132,101 @@ WHERE agent_id = ?"""
         approval_rate = 0
         rejection_rate = 0
 
-    # Calculate your earnings from this downline
-    your_earnings = 0
-    if perf_data and perf_data["total_commission"] > 0 and agent_data:
-        commission_rate = (
-            agent_data["upline_commission_rate"]
-            if agent_data["upline_commission_rate"]
-            else 5
-        )
-        your_earnings = perf_data["total_commission"] * (commission_rate / 100)
+    # CORRECT FUND-BASED CALCULATION
+    funds = []
+    total_fund_allocation = 0
+    agent_gets = 0
+    your_earnings = 0  # Current user's earnings as upline
+    upline_commission_amount = 0
+    
+    if perf_data and perf_data["approved_sales"] > 0 and agent_data:
+        # Get the correct fund percentages from agent data
+        total_fund_pct = agent_data["total_fund_pct"]  # Usually 2%
+        agent_fund_pct = agent_data["agent_fund_pct"]  # Usually 80%
+        upline_fund_pct = agent_data["upline_fund_pct"]  # Usually 10%
+        upline2_fund_pct = agent_data["upline2_fund_pct"]  # Usually 5%
+        company_fund_pct = agent_data["company_fund_pct"]  # Usually 5%
+        
+        # Calculate based on APPROVED sales only (according to your function)
+        approved_sales = perf_data["approved_sales"]
+        
+        # Step 1: Total commission fund (2% of approved sales)
+        total_commission_fund = approved_sales * (total_fund_pct / 100)
+        
+        # Step 2: Distribute according to fund percentages
+        # Agent gets their share from the fund
+        agent_from_fund = total_commission_fund * (agent_fund_pct / 100)
+        
+        # Current user (as direct upline) gets their share
+        if agent_data["upline_id"] == session["user_id"]:
+            your_share_from_fund = total_commission_fund * (upline_fund_pct / 100)
+            your_earnings = your_share_from_fund
+            upline_commission_amount = your_share_from_fund
+        
+        # Check if current user is indirect upline (upline2)
+        elif agent_data["upline2_id"] == session["user_id"]:
+            your_share_from_fund = total_commission_fund * (upline2_fund_pct / 100)
+            your_earnings = your_share_from_fund
+        
+        # Company gets balance
+        company_from_fund = total_commission_fund * (company_fund_pct / 100)
+        
+        # What agent actually gets (their share from fund)
+        agent_gets = agent_from_fund
+        
+        # Fund breakdown for display
+        funds = [
+            {"fund_name": "Total Commission Fund", "percentage": total_fund_pct, "amount": total_commission_fund},
+            {"fund_name": "Agent Fund", "percentage": agent_fund_pct, "amount": agent_from_fund},
+            {"fund_name": "Direct Upline Fund", "percentage": upline_fund_pct, "amount": total_commission_fund * (upline_fund_pct / 100)},
+            {"fund_name": "Indirect Upline Fund", "percentage": upline2_fund_pct, "amount": total_commission_fund * (upline2_fund_pct / 100)},
+            {"fund_name": "Company Fund", "percentage": company_fund_pct, "amount": company_from_fund}
+        ]
+    
+    # Process monthly data with correct fund calculation
+    monthly_data = []
+    for month in monthly_raw:
+        month_sales = float(month[3] or 0)  # Approved sales for the month
+        agent_commission = float(month[4] or 0)  # This is still position 4
+        # month[5] is now approved_count instead of commission_count
+        
+        if month_sales > 0 and agent_data:
+            # Calculate monthly fund
+            total_fund_pct = agent_data["total_fund_pct"]
+            total_commission_fund = month_sales * (total_fund_pct / 100)
+            
+            # Calculate your share based on relationship
+            if agent_data["upline_id"] == session["user_id"]:
+                upline_fund_pct = agent_data["upline_fund_pct"]
+                your_share_month = total_commission_fund * (upline_fund_pct / 100)
+            elif agent_data["upline2_id"] == session["user_id"]:
+                upline2_fund_pct = agent_data["upline2_fund_pct"]
+                your_share_month = total_commission_fund * (upline2_fund_pct / 100)
+            else:
+                your_share_month = 0
+        else:
+            your_share_month = 0
+        
+        monthly_data.append({
+            "month": month[0],
+            "listings": month[1] or 0,
+            "sales_value": float(month[2] or 0),
+            "approved_sales": month_sales,
+            "commission": agent_commission,
+            "your_share": your_share_month
+        })
 
-    # Create template - MINIMAL VERSION
-    template = """<!DOCTYPE html>
-<html>
-<head>
-    <title>Downline Performance</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
-        .stat-card { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .stat-value { font-size: 1.8em; font-weight: bold; margin: 10px 0; }
-        .btn { padding: 8px 16px; border-radius: 5px; text-decoration: none; display: inline-block; }
-        .btn-back { background: #6c757d; color: white; }
-        .agent-header { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
-        .agent-avatar { font-size: 50px; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #e9ecef; }
-        .commission-rate { background: #e3f2fd; color: #1565c0; padding: 5px 10px; border-radius: 15px; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>📊 Downline Performance</h1>
-        <div style="margin-top: 10px;">
-            <a href="/agent/my-downline" class="btn btn-back">← Back to Downline Network</a>
-        </div>
-    </div>
-    
-    {% if agent %}
-    <div class="agent-header">
-        <div class="agent-avatar">👤</div>
-        <div style="flex: 1;">
-            <h2 style="margin: 0;">{{ agent.name }}</h2>
-            <div style="color: #666; margin: 5px 0;">{{ agent.email }}</div>
-            <div style="margin-top: 10px;">
-                <span class="commission-rate">{{ agent.commission_percentage }} commission to you</span>
-                <div style="font-size: 14px; color: #666; margin-top: 5px;">
-                    Agent ID: #{{ agent.id }} | Joined: {{ agent.created_at }}
-                </div>
-            </div>
-        </div>
-        <div style="text-align: right;">
-            <div style="font-size: 14px; color: #666;">Your Earnings</div>
-            <div style="font-size: 28px; font-weight: bold; color: #28a745;">RM{{ "%.2f"|format(your_earnings|float) }}</div>
-        </div>
-    </div>
-    
-    {% if performance %}
-    <div class="stats">
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total Listings</div>
-            <div class="stat-value" style="color: #007bff;">{{ performance.total_listings }}</div>
-            <div style="font-size: 12px; color: #666;">
-                {{ performance.approved_listings }} approved<br>
-                {{ performance.rejected_listings }} rejected
-            </div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total Sales Value</div>
-            <div class="stat-value" style="color: #28a745;">RM{{ "%.0f"|format(performance.total_sales|float) }}</div>
-            <div style="font-size: 12px; color: #666;">
-                Avg: RM{{ "%.0f"|format(performance.avg_sale_price|float) }}
-            </div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total Commission</div>
-            <div class="stat-value" style="color: #6f42c1;">RM{{ "%.2f"|format(performance.total_commission|float) }}</div>
-            <div style="font-size: 12px; color: #666;">
-                Avg: RM{{ "%.2f"|format(performance.avg_commission|float) }}
-            </div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Approval Rate</div>
-            <div class="stat-value" style="color: #fd7e14;">{{ "%.1f"|format(approval_rate|float) }}%</div>
-            <div style="font-size: 12px; color: #666;">
-                Rejection: {{ "%.1f"|format(rejection_rate|float) }}%
-            </div>
-        </div>
-    </div>
-    
-    <div style="background: white; padding: 20px; border-radius: 10px; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-        <h3>💰 Earnings Summary</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
-            <div>
-                <strong>Downline Agent Earnings:</strong>
-                <div style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 5px;">
-                    <div>Total Commission: <strong>RM{{ "%.2f"|format(performance.total_commission|float) }}</strong></div>
-                    <div>Approved Commission: <strong>RM{{ "%.2f"|format(performance.approved_commission|float) }}</strong></div>
-                </div>
-            </div>
-            <div>
-                <strong>Your Earnings from this Agent:</strong>
-                <div style="margin: 10px 0; padding: 10px; background: #d4edda; border-radius: 5px; color: #155724;">
-                    <div style="font-size: 18px; font-weight: bold;">RM{{ "%.2f"|format(your_earnings|float) }}</div>
-                    <div style="font-size: 12px;">({{ agent.commission_percentage }} of their commission)</div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% else %}
-    <div style="padding: 40px; text-align: center; background: white; border-radius: 10px;">
-        <h3 style="color: #666;">No Performance Data Yet</h3>
-        <p style="color: #888;">This agent hasn't submitted any listings yet.</p>
-    </div>
-    {% endif %}
-    
-    {% else %}
-    <div style="padding: 40px; text-align: center; background: white; border-radius: 10px;">
-        <h3 style="color: #666;">Agent Not Found</h3>
-        <p style="color: #888;">The agent you're looking for doesn't exist or you don't have access.</p>
-        <a href="/agent/my-downline" class="btn btn-back" style="margin-top: 20px;">Back to Downline Network</a>
-    </div>
-    {% endif %}
-    
-    <div style="margin-top: 30px;">
-        <a href="/agent/my-downline" class="btn btn-back">← Back to Downline Network</a>
-    </div>
-</body>
-</html>"""
-
-    return render_template_string(
-        template,
+    return render_template(
+        "agent/downline-performance.html",
         agent=agent_data,
         performance=perf_data,
         your_earnings=your_earnings,
         approval_rate=approval_rate,
         rejection_rate=rejection_rate,
+        funds=funds,
+        upline_commission_amount=upline_commission_amount,
+        agent_gets=agent_gets,
+        monthly_data=monthly_data
     )
 
 
@@ -4264,7 +3639,7 @@ def create_test_notification():
 
 @app.route("/agent/submissions")
 def agent_submissions():
-    """Agent view all their submissions - FIXED VERSION WITH DOCUMENT STATUS"""
+    """Agent view all their submissions - TEMPLATE VERSION"""
     if "user_id" not in session or session["user_role"] != "agent":
         return redirect("/login")
 
@@ -4275,7 +3650,7 @@ def agent_submissions():
     status_filter = request.args.get("status", "all")
     search_query = request.args.get("search", "")
 
-    # Build query based on filters - UPDATED with document count
+    # Build query based on filters
     query = """
         SELECT p.id, p.status, p.customer_name, p.property_address, 
                p.sale_price, p.commission_amount, p.created_at, 
@@ -4332,7 +3707,6 @@ def agent_submissions():
     )
     total_count = cursor.fetchone()[0] or 0
 
-    # CLOSE THE DATABASE CONNECTION
     conn.close()
 
     # Convert status_counts to dictionary for easier access
@@ -4341,283 +3715,28 @@ def agent_submissions():
         status_key = status if status else "draft"
         status_counts[status_key] = count
 
-    # ========== BUILD TABLE ROWS ==========
-    table_rows = ""
-    if submissions:
-        for sub in submissions:
-            customer_name = sub[2] if sub[2] else ""
-            property_address = sub[3] if sub[3] else ""
-            prop_address_display = property_address[:30] + (
-                "..." if len(property_address) > 30 else ""
-            )
-            sale_price = float(sub[4]) if sub[4] else 0
-            commission = float(sub[5]) if sub[5] else 0
-            status = sub[1] if sub[1] else "draft"
-            submitted_date = sub[7][:10] if sub[7] else "Not submitted"
-            approved_date = sub[8][:10] if sub[8] and status == "approved" else ""
-            doc_count = sub[9] if len(sub) > 9 else 0
-
-            # Document status badge
-            if doc_count == 0:
-                doc_status = '<span style="color: #dc3545; font-size: 12px; font-weight: bold;">❌ No Docs</span>'
-            elif doc_count < 3:
-                doc_status = f'<span style="color: #ffc107; font-size: 12px; font-weight: bold;">⚠️ {doc_count}/3</span>'
-            else:
-                doc_status = f'<span style="color: #28a745; font-size: 12px;">✅ {doc_count}</span>'
-
-            table_rows += f"""
-                <tr>
-                    <td>#{sub[0]}</td>
-                    <td>{customer_name}</td>
-                    <td>{prop_address_display}</td>
-                    <td>RM{sale_price:,.2f}</td>
-                    <td>RM{commission:,.2f}</td>
-                    <td>{doc_status}</td>
-                    <td>
-                        <span class="status-badge status-{status}">
-                            {status.title()}
-                        </span>
-                        {'<br><small>Approved: ' + approved_date + '</small>' if approved_date else ''}
-                    </td>
-                    <td>{submitted_date}</td>
-                    <td>
-                        <a href="/agent/submission/{sub[0]}" class="action-btn btn-view">👁️ View</a>
-                        <a href="/agent/documents/{sub[0]}" class="action-btn btn-docs">📎 Docs</a>
-                    </td>
-                </tr>"""
-
     # Build empty state message
-    if status_filter != "all":
-        if status_filter == "incomplete":
-            empty_message = "No incomplete submissions found. All submissions have sufficient documents!"
+    if not submissions:
+        if status_filter != "all":
+            if status_filter == "incomplete":
+                empty_message = "No incomplete submissions found. All submissions have sufficient documents!"
+            else:
+                empty_message = f"No {status_filter} submissions found."
         else:
-            empty_message = f"No {status_filter} submissions found."
+            empty_message = "You haven't created any submissions yet."
     else:
-        empty_message = "You haven't created any submissions yet."
+        empty_message = ""
 
-    # Build the select options
-    status_options = f"""
-    <select name="status">
-        <option value="all" {'selected' if status_filter == 'all' else ''}>All Status ({total_count})</option>
-        <option value="incomplete" {'selected' if status_filter == 'incomplete' else ''}>Incomplete Documents ({incomplete_count})</option>
-        <option value="draft" {'selected' if status_filter == 'draft' else ''}>Drafts ({status_counts.get('draft', 0)})</option>
-        <option value="submitted" {'selected' if status_filter == 'submitted' else ''}>Submitted ({status_counts.get('submitted', 0)})</option>
-        <option value="approved" {'selected' if status_filter == 'approved' else ''}>Approved ({status_counts.get('approved', 0)})</option>
-        <option value="rejected" {'selected' if status_filter == 'rejected' else ''}>Rejected ({status_counts.get('rejected', 0)})</option>
-    </select>
-    """
-
-    # Build the main content
-    if submissions:
-        main_content = f"""
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Customer</th>
-                    <th>Property</th>
-                    <th>Sale Price</th>
-                    <th>Commission</th>
-                    <th>Documents</th>
-                    <th>Status</th>
-                    <th>Submitted</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {table_rows}
-            </tbody>
-        </table>
-        """
-    else:
-        main_content = f"""
-        <div class="empty-state">
-            <h3>No submissions found</h3>
-            <p>{empty_message}</p>
-            <a href="/new-listing" class="btn" style="background: #28a745; margin-top: 15px;">Create Your First Submission</a>
-        </div>
-        """
-
-    # Create the HTML template
-    html_template = f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>My Submissions</title>
-    <style>
-        body {{ 
-            font-family: Arial, sans-serif;
-            margin: 20px; 
-            background: #f5f5f5; 
-        }}
-        .header {{ 
-            background: white; 
-            padding: 20px; 
-            border-radius: 10px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }}
-        .stats {{ 
-            display: flex; 
-            gap: 15px; 
-            margin: 20px 0; 
-            flex-wrap: wrap; 
-        }}
-        .stat-card {{ 
-            background: white; 
-            padding: 15px; 
-            border-radius: 8px; 
-            flex: 1; 
-            min-width: 120px; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
-            text-align: center; 
-        }}
-        .stat-value {{ 
-            font-size: 1.8em; 
-            font-weight: bold; 
-        }}
-        .filters {{ 
-            background: white; 
-            padding: 20px; 
-            border-radius: 10px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }}
-        .filter-group {{ 
-            display: flex; 
-            gap: 15px; 
-            align-items: center; 
-        }}
-        select, input {{ 
-            padding: 8px 12px; 
-            border: 1px solid #ddd; 
-            border-radius: 5px; 
-        }}
-        .btn {{ 
-            padding: 8px 16px; 
-            background: #007bff; 
-            color: white; 
-            border: none; 
-            border-radius: 5px; 
-            cursor: pointer; 
-            text-decoration: none; 
-            display: inline-block;
-        }}
-        .btn:hover {{
-            background: #0056b3;
-        }}
-        table {{ 
-            width: 100%; 
-            background: white; 
-            border-radius: 10px; 
-            overflow: hidden; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            margin: 20px 0; 
-        }}
-        th, td {{ 
-            padding: 12px 15px; 
-            text-align: left; 
-            border-bottom: 1px solid #eee; 
-        }}
-        th {{ 
-            background: #2c3e50; 
-            color: white; 
-        }}
-        .status-badge {{ 
-            padding: 4px 10px; 
-            border-radius: 12px; 
-            font-size: 12px; 
-            font-weight: bold; 
-        }}
-        .status-draft {{ 
-            background: #fff3cd; 
-            color: #856404; 
-        }}
-        .status-submitted {{ 
-            background: #cce5ff; 
-            color: #004085; 
-        }}
-        .status-approved {{ 
-            background: #d4edda; 
-            color: #155724; 
-        }}
-        .status-rejected {{ 
-            background: #f8d7da; 
-            color: #721c24; 
-        }}
-        .action-btn {{ 
-            padding: 4px 8px; 
-            border-radius: 4px; 
-            font-size: 12px; 
-            text-decoration: none; 
-            margin-right: 5px; 
-        }}
-        .btn-view {{ 
-            background: #17a2b8; 
-            color: white; 
-        }}
-        .btn-docs {{ 
-            background: #6f42c1; 
-            color: white; 
-        }}
-        .empty-state {{ 
-            text-align: center; 
-            padding: 50px 20px; 
-            background: white; 
-            border-radius: 10px; 
-            color: #666; 
-        }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>📋 My Submissions</h1>
-        <div>
-            <a href="/agent/dashboard" class="btn">← Dashboard</a>
-            <a href="/new-listing" class="btn" style="background: #28a745;">➕ New Submission</a>
-            <a href="/logout" style="color: #dc3545; margin-left: 20px;">Logout</a>
-        </div>
-    </div>
-    
-    <div class="stats">
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total</div>
-            <div class="stat-value" style="color: #007bff;">{total_count}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Draft</div>
-            <div class="stat-value" style="color: #6c757d;">{status_counts.get('draft', 0)}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Submitted</div>
-            <div class="stat-value" style="color: #007bff;">{status_counts.get('submitted', 0)}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Approved</div>
-            <div class="stat-value" style="color: #28a745;">{status_counts.get('approved', 0)}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Rejected</div>
-            <div class="stat-value" style="color: #dc3545;">{status_counts.get('rejected', 0)}</div>
-        </div>
-    </div>
-    
-    <div class="filters">
-        <h3>Filter Submissions</h3>
-        <form method="GET" class="filter-group">
-            {status_options}
-            
-            <input type="text" name="search" placeholder="Search by customer or property..." value="{search_query}">
-            
-            <button type="submit" class="btn">🔍 Filter</button>
-            <a href="/agent/submissions" class="btn" style="background: #6c757d;">Clear</a>
-        </form>
-    </div>
-    
-    {main_content}
-</body>
-</html>"""
-
-    return html_template
+    return render_template(
+        "agent/submissions.html",
+        submissions=submissions,
+        status_filter=status_filter,
+        search_query=search_query,
+        status_counts=status_counts,
+        incomplete_count=incomplete_count,
+        total_count=total_count,
+        empty_message=empty_message
+    )
 
 
 @app.route("/agent/submission/<int:listing_id>")
@@ -5200,7 +4319,7 @@ def agent_view_documents(listing_id):
 
 @app.route("/agent/reupload-documents/<int:listing_id>", methods=["GET", "POST"])
 def agent_reupload_documents(listing_id):
-    """Agent reupload documents to existing listing - FIXED VERSION"""
+    """Agent reupload documents to existing listing - TEMPLATE VERSION"""
     if "user_id" not in session or session["user_role"] != "agent":
         return redirect("/login")
 
@@ -5223,107 +4342,10 @@ def agent_reupload_documents(listing_id):
     allowed_statuses = ["draft", "rejected"]
     if status not in allowed_statuses:
         conn.close()
-        # Show a user-friendly message with options
-        error_template = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Cannot Add Documents</title>
-            <style>
-                body { 
-                    font-family: Arial, sans-serif; 
-                    max-width: 600px; 
-                    margin: 50px auto; 
-                    padding: 20px; 
-                    background: #f5f5f5; 
-                }
-                .error-box { 
-                    background: white; 
-                    padding: 30px; 
-                    border-radius: 10px; 
-                    text-align: center; 
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-                    border: 2px solid #ffc107;
-                }
-                h2 { 
-                    margin-top: 0; 
-                    color: #856404; 
-                }
-                .status-badge { 
-                    padding: 8px 16px; 
-                    border-radius: 20px; 
-                    font-weight: bold; 
-                    font-size: 14px; 
-                    margin: 10px 0; 
-                    display: inline-block;
-                }
-                .status-submitted { background: #cce5ff; color: #004085; }
-                .status-approved { background: #d4edda; color: #155724; }
-                .btn { 
-                    padding: 10px 20px; 
-                    border-radius: 5px; 
-                    text-decoration: none; 
-                    display: inline-block; 
-                    margin: 10px 5px;
-                }
-                .btn-primary { background: #007bff; color: white; }
-                .btn-secondary { background: #6c757d; color: white; }
-                .info-box { 
-                    background: #e8f4ff; 
-                    padding: 15px; 
-                    border-radius: 5px; 
-                    margin: 20px 0; 
-                    text-align: left;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="error-box">
-                <h2> Cannot Add Documents to This Submission</h2>
-                
-                <div style="margin: 20px 0;">
-                    <div class="status-badge status-{{ status }}">
-                        {{ status|upper }}
-                    </div>
-                    <p>Submission #{{ listing_id }} is currently <strong>{{ status }}</strong>.</p>
-                </div>
-                
-                <div class="info-box">
-                    <h4 style="margin-top: 0;">📋 Document Upload Rules:</h4>
-                    <ul>
-                        <li><strong>Draft/Rejected:</strong> Can add/replace documents freely</li>
-                        <li><strong>Submitted:</strong> Under admin review - cannot modify documents</li>
-                        <li><strong>Approved:</strong> Completed - cannot modify documents</li>
-                    </ul>
-                </div>
-                
-                {% if status == 'submitted' %}
-                <div style="margin: 20px 0; padding: 15px; background: #fff3cd; border-radius: 5px;">
-                    <h4 style="margin-top: 0;">⏳ Submission Under Review</h4>
-                    <p>Your submission is currently being reviewed by the admin team. Once the review is complete, you will be notified of the outcome.</p>
-                    <p><strong>If you need to add urgent documents:</strong> Contact the admin team directly.</p>
-                </div>
-                {% endif %}
-                
-                {% if status == 'approved' %}
-                <div style="margin: 20px 0; padding: 15px; background: #d4edda; border-radius: 5px;">
-                    <h4 style="margin-top: 0;">✅ Submission Approved</h4>
-                    <p>Your submission has been approved! The commission process has begun.</p>
-                    <p><strong>Need to make changes?</strong> Contact the admin team if there are any issues.</p>
-                </div>
-                {% endif %}
-                
-                <div style="margin-top: 30px;">
-                    <a href="/agent/submission/{{ listing_id }}" class="btn btn-primary">📄 View Submission Details</a>
-                    <a href="/agent/documents/{{ listing_id }}" class="btn" style="background: #17a2b8; color: white;">📎 View Existing Documents</a>
-                    <a href="/agent/submissions" class="btn btn-secondary">📋 Back to My Submissions</a>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-        return render_template_string(
-            error_template, listing_id=listing_id, status=status
+        return render_template(
+            "agent/reupload_not_allowed.html",
+            listing_id=listing_id,
+            status=status
         )
 
     # Get existing documents
@@ -5488,50 +4510,17 @@ def agent_reupload_documents(listing_id):
                 customer_name=customer_name,
             )
 
-            # Success message
-            success_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Documents Uploaded Successfully</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
-                    .success-box {{ border: 2px solid #28a745; padding: 30px; border-radius: 10px; text-align: center; }}
-                    h2 {{ color: #28a745; }}
-                    .uploaded-files {{ text-align: left; background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-                </style>
-            </head>
-            <body>
-                <div class="success-box">
-                    <h2>✅ Documents Uploaded Successfully!</h2>
-                    <p>Listing: <strong>#{listing_id}</strong></p>
-                    
-                    {f'<div style="background: #d4edda; padding: 10px; border-radius: 5px; margin: 15px 0;"><strong>Status Updated:</strong> Changed from rejected to draft. You can now resubmit.</div>' if status == 'rejected' else ''}
-                    
-                    <div class="uploaded-files">
-                        <h3>Uploaded Files:</h3>
-                        {"<br>".join(uploaded_files) if uploaded_files else "<p>No new files were uploaded</p>"}
-                    </div>
-                    
-                    <p>Documents have been added/updated in the system.</p>
-                    <div style="margin-top: 30px;">
-                        <a href="/agent/submission/{listing_id}" style="background: #007bff; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px; margin-right: 10px;">📄 View Submission</a>
-                        <a href="/agent/documents/{listing_id}" style="background: #17a2b8; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px;">📎 View All Documents</a>
-                        {f'<a href="/agent/resubmit/{listing_id}" style="background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">✅ Resubmit Now</a>' if status == 'rejected' else ''}
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-
-            return success_html
+            # Success message using template
+            return render_template(
+                "agent/reupload_success.html",
+                listing_id=listing_id,
+                uploaded_files=uploaded_files,
+                was_rejected=(status == "rejected")
+            )
 
         except Exception as e:
-            # Safely handle errors without accessing closed connections
+            # Safely handle errors
             error_msg = str(e)
-            safe_error_msg = error_msg.replace("\\", "/")
 
             # Try to rollback if connection is still open
             try:
@@ -5541,835 +4530,907 @@ def agent_reupload_documents(listing_id):
             except:
                 pass  # Ignore rollback errors
 
-            error_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Upload Error</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
-                    .error-box {{ border: 2px solid #dc3545; padding: 30px; border-radius: 10px; text-align: center; }}
-                    h2 {{ color: #dc3545; }}
-                </style>
-            </head>
-            <body>
-                <div class="error-box">
-                    <h2>❌ Document Upload Failed</h2>
-                    <p><strong>Error:</strong> {safe_error_msg}</p>
-                    <div style="margin-top: 30px;">
-                        <a href="/agent/reupload-documents/{listing_id}" style="background: #007bff; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px; margin-right: 10px;">Try Again</a>
-                        <a href="/agent/submission/{listing_id}" style="background: #6c757d; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px;">Back to Submission</a>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-            return error_html
+            return render_template(
+                "agent/reupload_error.html",
+                listing_id=listing_id,
+                error_message=error_msg
+            )
 
     # GET request - show reupload form
-    reupload_template = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Upload Documents - Listing #{listing_id}</title>
-        <style>
-            body {{ 
-                font-family: Arial, sans-serif; 
-                max-width: 800px; 
-                margin: 50px auto; 
-                padding: 20px; 
-                background: #f5f5f5; 
-            }}
-            .container {{ 
-                background: white; 
-                padding: 30px; 
-                border-radius: 10px; 
-                box-shadow: 0 2px 20px rgba(0,0,0,0.1); 
-            }}
-            .header {{ 
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 20px;
-                padding-bottom: 20px;
-                border-bottom: 2px solid #007bff;
-            }}
-            .existing-docs {{
-                background: #f8f9fa;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 15px 0;
-                max-height: 200px;
-                overflow-y: auto;
-            }}
-            .file-upload {{
-                border: 2px dashed #ddd;
-                padding: 30px;
-                text-align: center;
-                border-radius: 5px;
-                margin: 20px 0;
-                background: #fafbfc;
-            }}
-            .file-upload:hover {{
-                border-color: #28a745;
-                background: #f8fff9;
-            }}
-            .form-group {{
-                margin-bottom: 20px;
-            }}
-            label {{
-                display: block;
-                margin-bottom: 5px;
-                font-weight: bold;
-                color: #555;
-            }}
-            .btn {{
-                padding: 12px 25px;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-                font-size: 16px;
-                text-decoration: none;
-                display: inline-block;
-            }}
-            .btn-primary {{
-                background: #28a745;
-                color: white;
-            }}
-            .btn-secondary {{
-                background: #6c757d;
-                color: white;
-            }}
-            .note-box {{
-                background: #fff3cd;
-                border: 1px solid #ffeaa7;
-                color: #856404;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 15px 0;
-            }}
-            .status-banner {{
-                background: #cce5ff;
-                border: 1px solid #b8daff;
-                color: #004085;
-                padding: 10px 15px;
-                border-radius: 5px;
-                margin: 15px 0;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }}
-            .status-rejected {{
-                background: #f8d7da;
-                border-color: #f5c6cb;
-                color: #721c24;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>📤 Upload Documents</h1>
-                <div>
-                    <a href="/agent/submission/{listing_id}" class="btn btn-secondary">← Back to Submission</a>
-                </div>
-            </div>
-            
-            {'<div class="status-banner status-rejected"><span style="font-size: 24px;"></span><div><strong>This submission was rejected</strong><br>Add missing documents and resubmit for review</div></div>' if status == 'rejected' else ''}
-            
-            <div class="note-box">
-                <h3 style="margin-top: 0;">📋 Important Notes:</h3>
-                <ul>
-                    <li>You can upload new documents or replace existing ones</li>
-                    <li>Files with the same name will be replaced</li>
-                    <li>Maximum file size: 10MB per file</li>
-                    <li>Allowed formats: PDF, DOC, DOCX, JPG, JPEG, PNG</li>
-                    <li>After uploading, the submission status will be changed to <strong>draft</strong></li>
-                </ul>
-            </div>
-            
-            {f'<div class="existing-docs"><h4>Existing Documents ({len(existing_docs)}):</h4>' + '<br>'.join([f'📄 {doc[0]} (Uploaded: {doc[1][:19]})' for doc in existing_docs]) + '</div>' if existing_docs else '<p style="color: #666;">No existing documents found.</p>'}
-            
-            <form method="POST" action="/agent/reupload-documents/{listing_id}" enctype="multipart/form-data">
-                <div class="form-group">
-                    <label>Sales & Purchase Agreement</label>
-                    <div class="file-upload">
-                        <input type="file" name="agreement" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                        <p>Signed agreement between buyer and seller</p>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Customer ID Proof</label>
-                    <div class="file-upload">
-                        <input type="file" name="id_proof" accept=".pdf,.jpg,.jpeg,.png">
-                        <p>NRIC/Passport copy of customer</p>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Property Documents</label>
-                    <div class="file-upload">
-                        <input type="file" name="property_docs" accept=".pdf,.doc,.docx">
-                        <p>Title deed, floor plan, etc.</p>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Additional Documents</label>
-                    <div class="file-upload">
-                        <input type="file" name="additional_docs" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                        <p>Hold CTRL to select multiple files</p>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 30px;">
-                    <button type="submit" class="btn btn-primary">✅ Upload Documents</button>
-                    <a href="/agent/submission/{listing_id}" class="btn btn-secondary">Cancel</a>
-                </div>
-            </form>
-        </div>
-    </body>
-    </html>
-    """
+    return render_template(
+        "agent/reupload_documents.html",
+        listing_id=listing_id,
+        status=status,
+        existing_docs=existing_docs
+    )
 
-    return reupload_template
-
-
-@app.route("/agent/resubmit/<int:listing_id>", methods=["GET", "POST"])
-def resubmit_listing(listing_id):
-    """Agent resubmit a rejected listing"""
-    if "user_id" not in session or session["user_role"] != "agent":
+@app.route("/submit-listing", methods=["POST"])
+def submit_listing():
+    """Submit a new property listing"""
+    if "user_id" not in session:
         return redirect("/login")
 
-    conn = sqlite3.connect("real_estate.db")
-    cursor = conn.cursor()
+    # Get action type from form (draft or submit)
+    action = request.form.get("action", "submit")  # Default to submit
+    status = "submitted" if action == "submit" else "draft"
+    submitted_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S") if action == "submit" else None
 
-    # Check if listing exists and belongs to agent
-    cursor.execute(
-        "SELECT * FROM property_listings WHERE id = ? AND agent_id = ?",
-        (listing_id, session["user_id"]),
-    )
-    listing = cursor.fetchone()
+    # Initialize variables
+    conn = None
+    cursor = None
+    listing_id = None
 
-    if not listing:
-        conn.close()
-        return "Listing not found or access denied", 404
+    try:
+        data = request.form
+        sale_type = data.get("sale_type", "sales")  # Default to sales
 
-    # Check if listing can be resubmitted (must be rejected)
-    if listing[2] != "rejected":
-        conn.close()
-        return redirect(f"/agent/submission/{listing_id}")
+        # Get project and unit info
+        project_id = data.get("project_id")
+        unit_id = data.get("unit_id")
 
-    if request.method == "POST":
-        # Handle resubmission
-        try:
-            data = request.form
-            sale_type = data.get("sale_type", "sales")  # Default to sales
+        # Calculate commission
+        sale_price = float(data["sale_price"])
 
-            # Get existing documents
+        # Initialize commission calculation variables
+        commission_rate = None
+        project_commission_rate = None
+        unit_commission_rate = None
+        commission_source = "default"
+
+        # OPEN SINGLE DATABASE CONNECTION WITH TIMEOUT
+        conn = sqlite3.connect("real_estate.db", timeout=30.0)
+        cursor = conn.cursor()
+
+        # Check for project-specific commission
+        if project_id:
+            # Get project commission rate
             cursor.execute(
-                "SELECT filename, filepath FROM documents WHERE listing_id = ?",
-                (listing_id,),
+                "SELECT commission_rate FROM projects WHERE id = ?", (project_id,)
             )
-            existing_docs = cursor.fetchall()
+            project = cursor.fetchone()
+            if project and project[0]:
+                project_commission_rate = float(project[0])
+                commission_rate = project_commission_rate / 100
+                commission_source = "project"
 
-            # Update the listing with new data - REMOVED property_type
-            cursor.execute(
-                """
-                UPDATE property_listings 
-                SET customer_name = ?,
-                    customer_email = ?,
-                    customer_phone = ?,
-                    property_address = ?,
-                    sale_price = ?,
-                    closing_date = ?,
-                    notes = ?,
-                    status = 'submitted',
-                    submitted_at = ?,
-                    rejection_reason = NULL
-                WHERE id = ?
-            """,
-                (
-                    data["customer_name"],
-                    data["customer_email"],
-                    data.get("customer_phone"),
-                    data["property_address"],
-                    float(data["sale_price"]),
-                    data.get("closing_date"),
-                    data.get("notes", ""),
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    listing_id,
-                ),
-            )
-
-            # Handle file uploads for resubmission
-            ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
-
-            def allowed_file(filename):
-                return (
-                    "." in filename
-                    and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+            # Check for unit-specific commission
+            if unit_id:
+                cursor.execute(
+                    "SELECT commission_rate FROM project_units WHERE id = ?", (unit_id,)
                 )
+                unit = cursor.fetchone()
+                if unit and unit[0]:
+                    unit_commission_rate = float(unit[0])
+                    commission_rate = unit_commission_rate / 100
+                    commission_source = "unit"
 
-            # Create folder structure for new uploads
-            agent_id = session["user_id"]
-            current_date = datetime.now().strftime("%Y-%m-%d")
-            listing_folder = (
-                f"uploads/agent_{agent_id}/{current_date}/listing_{listing_id}"
-            )
+        # If no project commission, use default rate
+        if commission_rate is None:
+            commission_rate = 0.02  # Default 2% commission (CHANGED FROM 3% TO 2%)
+            total_commission = sale_price * commission_rate
+            commission_source = "default"
+        else:
+            # Use project/unit commission rate
+            total_commission = sale_price * commission_rate
 
-            if not os.path.exists(listing_folder):
-                os.makedirs(listing_folder)
+        # Apply caps (RM1,000 - RM50,000) to total commission
+        total_commission = max(1000, min(total_commission, 50000))
 
-            uploaded_files = []
+        # ============ APPLY FUND-BASED ALLOCATION ============
+        # Agent gets 80% of total commission under fund-based system
+        agent_commission = total_commission * 0.80  # 80% to agent
+        
+        # For commission_amount field, store agent's share (80%)
+        commission_to_store = agent_commission
 
-            # Handle new file uploads
-            for field_name in request.files:
-                files = request.files.getlist(field_name)
-                for file in files:
-                    if file and file.filename and allowed_file(file.filename):
-                        filename = secure_filename(file.filename)
+        # Save to database
+        cursor.execute(
+            """
+            INSERT INTO property_listings
+            (agent_id, customer_name, customer_email, customer_phone,
+            property_address, sale_type, sale_price, closing_date,
+            commission_amount, status, submitted_at, notes,
+            project_id, unit_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                session["user_id"],
+                data["customer_name"],
+                data["customer_email"],
+                data.get("customer_phone"),
+                data["property_address"],
+                sale_type,
+                sale_price,
+                data.get("closing_date"),
+                round(commission_to_store, 2),  # Store agent's 80% share
+                status,
+                submitted_time,
+                data.get("notes", ""),
+                project_id if project_id else None,
+                unit_id if unit_id else None,
+            ),
+        )
+
+        listing_id = cursor.lastrowid
+        agent_id = session["user_id"]
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # ============ CREATE NOTIFICATIONS FOR AGENT ============
+        notification_title = "✅ Submission Created" if action == "submit" else "💾 Draft Saved"
+        notification_message = (
+            f"Submission #{listing_id} has been submitted for approval."
+            if action == "submit"
+            else f"Draft #{listing_id} has been saved."
+        )
+        
+        cursor.execute(
+            """
+            INSERT INTO agent_notifications 
+            (agent_id, notification_type, title, message, related_id, related_type, priority, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                session["user_id"],
+                "submission_success" if action == "submit" else "draft_saved",
+                notification_title,
+                notification_message,
+                listing_id,
+                "listing",
+                "normal",
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+
+        # ============ ENHANCED FILE UPLOAD HANDLING ============
+        uploaded_files = []
+        processed_filenames = set()
+        ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
+
+        def allowed_file(filename):
+            if not filename or "." not in filename:
+                return False
+            return filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+        def is_valid_file(file):
+            """Check if file is actually uploaded (not empty/placeholder)"""
+            if not file:
+                return False
+            if not hasattr(file, 'filename'):
+                return False
+            if not file.filename or file.filename.strip() == "":
+                return False
+            
+            # Additional check for file content
+            try:
+                current_pos = file.tell()
+                file.seek(0)
+                content = file.read(1024)
+                file.seek(current_pos)
+                
+                if len(content) == 0:
+                    print(f"DEBUG: Empty file detected: {file.filename}")
+                    return False
+                    
+            except Exception as e:
+                print(f"DEBUG: Error checking file {file.filename}: {e}")
+                return False
+                
+            return True
+
+        # Debug logging
+        print(f"DEBUG [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]: Agent {agent_id} submitting listing {listing_id}")
+        print(f"DEBUG: Received form fields: {list(request.form.keys())}")
+        print(f"DEBUG: Received file fields: {list(request.files.keys())}")
+
+        for field_name, file_obj in request.files.items():
+            if hasattr(file_obj, 'filename'):
+                print(f"DEBUG: Field '{field_name}' - filename: '{file_obj.filename}', content_length: {getattr(file_obj, 'content_length', 'N/A')}")
+            elif isinstance(file_obj, list):
+                for idx, f in enumerate(file_obj):
+                    if hasattr(f, 'filename'):
+                        print(f"DEBUG: Field '{field_name}[{idx}]' - filename: '{f.filename}', content_length: {getattr(f, 'content_length', 'N/A')}")
+
+        # Create structured folder
+        current_date_folder = datetime.now().strftime("%Y-%m-%d")
+        listing_folder = f"uploads/agent_{agent_id}/{current_date_folder}/listing_{listing_id}"
+        os.makedirs(listing_folder, exist_ok=True)
+
+        # ============ PROCESS MAIN DOCUMENT (REQUIRED) ============
+        if "main_document" in request.files:
+            file = request.files["main_document"]
+            if is_valid_file(file):
+                file_content = file.read()
+                file.seek(0)
+                
+                if len(file_content) > 0 and allowed_file(file.filename):
+                    filename = secure_filename(file.filename)
+                    
+                    if filename not in processed_filenames:
                         filepath = os.path.join(listing_folder, filename)
-                        file.save(filepath)
-
-                        # Check if document already exists
+                        
+                        # Check if file already exists
                         cursor.execute(
                             "SELECT id FROM documents WHERE listing_id = ? AND filename = ?",
-                            (listing_id, filename),
+                            (listing_id, filename)
                         )
-                        existing = cursor.fetchone()
-
-                        if existing:
-                            # Update existing document
-                            cursor.execute(
-                                """
-                                UPDATE documents 
-                                SET filepath = ?, uploaded_at = ?
-                                WHERE id = ?
-                            """,
-                                (
-                                    filepath,
-                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                    existing[0],
-                                ),
-                            )
+                        existing_file = cursor.fetchone()
+                        
+                        if not existing_file:
+                            file.save(filepath)
+                            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO documents 
+                                    (listing_id, filename, filepath, file_type, file_size, uploaded_by, notes)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                    (
+                                        listing_id,
+                                        filename,
+                                        filepath,
+                                        filename.rsplit(".", 1)[1].lower(),
+                                        os.path.getsize(filepath),
+                                        session["user_id"],
+                                        f"Main document uploaded by {session.get('user_name', 'Agent')}",
+                                    ),
+                                )
+                                uploaded_files.append(filename)
+                                processed_filenames.add(filename)
+                                print(f"DEBUG: Uploaded main document: {filename} ({os.path.getsize(filepath)} bytes)")
+                            else:
+                                print(f"DEBUG: Main document save failed: {filename}")
                         else:
-                            # Add new document
-                            cursor.execute(
-                                """
-                                INSERT INTO documents 
-                                (listing_id, filename, filepath, file_type, file_size, uploaded_by, notes)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """,
-                                (
-                                    listing_id,
-                                    filename,
-                                    filepath,
-                                    filename.rsplit(".", 1)[1].lower(),
-                                    os.path.getsize(filepath),
-                                    session["user_id"],
-                                    f"Resubmitted by {session['user_name']} on {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                                ),
-                            )
+                            print(f"DEBUG: Main document already exists: {filename}")
+            else:
+                print(f"DEBUG: Invalid main document file")
 
-                        uploaded_files.append(filename)
-
-            conn.commit()
-            conn.close()
-
-            # ============ CREATE NOTIFICATION ============
-            create_agent_notification(
-                agent_id=session["user_id"],
-                notification_type="resubmission_success",
-                title="🔄 Submission Resubmitted",
-                message=f"Submission #{listing_id} has been resubmitted for approval",
-                related_id=listing_id,
-                related_type="listing",
-                priority="normal",
-            )
-
-            # Success message
-            success_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Resubmission Successful</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
-                    .success-box {{ border: 2px solid #28a745; padding: 30px; border-radius: 10px; text-align: center; }}
-                    h2 {{ color: #28a745; }}
-                    .details {{ text-align: left; background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-                </style>
-            </head>
-            <body>
-                <div class="success-box">
-                    <h2>✅ Submission Resubmitted Successfully!</h2>
-                    <p>Reference ID: <strong>#{listing_id}</strong></p>
+        # ============ PROCESS ADDITIONAL DOCUMENTS (OPTIONAL) ============
+        if "additional_docs" in request.files:
+            files = request.files.getlist("additional_docs")
+            print(f"DEBUG: Found {len(files)} additional files")
+            
+            for index, file in enumerate(files):
+                if is_valid_file(file):
+                    file_content = file.read()
+                    file.seek(0)
                     
-                    <div class="details">
-                        <p><strong>Customer:</strong> {data['customer_name']}</p>
-                        <p><strong>Property:</strong> {data['property_address'][:50]}...</p>
-                        <p><strong>Sale Price:</strong> RM{"{:,.2f}".format(float(data['sale_price']))}</p>
-                        <p><strong>Status:</strong> Submitted for Review</p>
-                        {f'<p><strong>Uploaded Files:</strong> {len(uploaded_files)} new file(s)</p>' if uploaded_files else ''}
-                    </div>
+                    if len(file_content) > 0 and allowed_file(file.filename):
+                        filename = secure_filename(file.filename)
+                        if filename in processed_filenames:
+                            print(f"DEBUG: Skipping duplicate: {filename}")
+                            continue
+                        
+                        # Check if file already exists
+                        cursor.execute(
+                            "SELECT id FROM documents WHERE listing_id = ? AND filename = ?",
+                            (listing_id, filename)
+                        )
+                        existing_file = cursor.fetchone()
+                        
+                        if not existing_file:
+                            filepath = os.path.join(listing_folder, filename)
+                            file.save(filepath)
+                            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO documents 
+                                    (listing_id, filename, filepath, file_type, file_size, uploaded_by, notes)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                    (
+                                        listing_id,
+                                        filename,
+                                        filepath,
+                                        filename.rsplit(".", 1)[1].lower(),
+                                        os.path.getsize(filepath),
+                                        session["user_id"],
+                                        f"Additional document #{index+1}",
+                                    ),
+                                )
+                                uploaded_files.append(filename)
+                                processed_filenames.add(filename)
+                                print(f"DEBUG: Uploaded additional document: {filename}")
+                            else:
+                                print(f"DEBUG: Additional document save failed: {filename}")
+                        else:
+                            print(f"DEBUG: Additional document already exists: {filename}")
+                else:
+                    print(f"DEBUG: Invalid additional file #{index}")
+
+        # Log summary
+        if uploaded_files:
+            print(f"DEBUG: Successfully uploaded {len(uploaded_files)} file(s): {uploaded_files}")
+        else:
+            print(f"DEBUG: No valid files uploaded")
+
+        # ============ CLEANUP DUPLICATE DOCUMENTS ============
+
+        # Handle multiple additional files
+        if "additional_docs" in request.files:
+            files = request.files.getlist("additional_docs")
+            print(f"DEBUG: Found {len(files)} additional files")
+            
+            for index, file in enumerate(files):
+                # Add validation check
+                if is_valid_file(file):
+                    file_content = file.read()
+                    file.seek(0)
                     
-                    <p>Your resubmission is now pending admin approval.</p>
-                    <div style="margin-top: 30px;">
-                        <a href="/agent/submission/{listing_id}" style="background: #007bff; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px; margin-right: 10px;">📄 View Submission</a>
-                        <a href="/agent/submissions" style="background: #6c757d; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px;">📋 My Submissions</a>
-                    </div>
-                </div>
-            </body>
-            </html>
+                    if len(file_content) > 0 and allowed_file(file.filename):
+                        filename = secure_filename(file.filename)
+                        if filename in processed_filenames:
+                            print(f"DEBUG: Skipping duplicate filename in additional docs: {filename}")
+                            continue
+                        
+                        # Check if file already exists in this listing
+                        cursor.execute(
+                            "SELECT id FROM documents WHERE listing_id = ? AND filename = ?",
+                            (listing_id, filename)
+                        )
+                        existing_file = cursor.fetchone()
+                        
+                        if not existing_file:
+                            filepath = os.path.join(listing_folder, filename)
+                            file.save(filepath)
+                            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO documents 
+                                    (listing_id, filename, filepath, file_type, file_size, uploaded_by, notes)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                    (
+                                        listing_id,
+                                        filename,
+                                        filepath,
+                                        filename.rsplit(".", 1)[1].lower(),
+                                        os.path.getsize(filepath),
+                                        session["user_id"],
+                                        f"Additional document #{index+1}",
+                                    ),
+                                )
+                                uploaded_files.append(filename)
+                                processed_filenames.add(filename)
+                                print(f"DEBUG: Uploaded additional file: {filename} ({os.path.getsize(filepath)} bytes)")
+                            else:
+                                print(f"DEBUG: Additional file save failed or empty: {filename}")
+                        else:
+                            print(f"DEBUG: Additional file already exists in database: {filename}")
+                else:
+                    print(f"DEBUG: Invalid additional file #{index}: filename={getattr(file, 'filename', 'N/A')}")
+
+        # Log upload activity summary
+        if uploaded_files:
+            print(f"DEBUG: Successfully uploaded {len(uploaded_files)} file(s) for listing {listing_id}: {uploaded_files}")
+        else:
+            print(f"DEBUG: No valid files uploaded for listing {listing_id}")
+
+        # ============ CLEANUP DUPLICATE DOCUMENTS ============
+        def cleanup_duplicate_documents(listing_id, cursor):
+            """Remove duplicate documents for a listing"""
+            # Find duplicate filenames
+            cursor.execute("""
+                SELECT filename, COUNT(*) as count
+                FROM documents 
+                WHERE listing_id = ?
+                GROUP BY filename 
+                HAVING count > 1
+            """, (listing_id,))
+            
+            duplicates = cursor.fetchall()
+            
+            for filename, count in duplicates:
+                print(f"DEBUG: Found {count} duplicates for {filename} in listing {listing_id}")
+                # Keep the first one (lowest id), delete others
+                cursor.execute("""
+                    DELETE FROM documents 
+                    WHERE id NOT IN (
+                        SELECT MIN(id)
+                        FROM documents 
+                        WHERE listing_id = ? AND filename = ?
+                        GROUP BY filename
+                    ) AND listing_id = ? AND filename = ?
+                """, (listing_id, filename, listing_id, filename))
+                
+            if duplicates:
+                print(f"DEBUG: Cleaned up {len(duplicates)} duplicate document(s)")
+                
+        cleanup_duplicate_documents(listing_id, cursor)
+
+        # ============ UPDATE COMMISSION CALCULATION DETAILS ============
+        calculation_details = {
+            "commission_source": commission_source,
+            "base_rate": commission_rate * 100,
+            "project_commission_rate": project_commission_rate,
+            "unit_commission_rate": unit_commission_rate,
+            "total_commission": float(total_commission),  # Total before allocation
+            "agent_share_percentage": 80,
+            "agent_commission": round(commission_to_store, 2),  # Agent's 80% share
+            "fund_allocation": {
+                "agent": 80,
+                "direct_upline": 10,
+                "indirect_upline": 5,
+                "company_fund": 5
+            }
+        }
+
+        # Save commission calculation
+        cursor.execute(
             """
+            INSERT INTO commission_calculations 
+            (listing_id, agent_id, sale_price,
+             base_rate, commission, calculation_details)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            (
+                listing_id,
+                session["user_id"],
+                sale_price,
+                commission_rate * 100,
+                round(commission_to_store, 2),  # Store agent's commission
+                json.dumps(calculation_details),
+            ),
+        )
 
-            return success_html
+        # Commit all changes at once
+        conn.commit()
 
-        except Exception as e:
+        # ============ RENDER TEMPLATE ============
+        # Prepare upload message
+        upload_message = ""
+        if uploaded_files:
+            upload_message = f"<br>📎 Uploaded {len(uploaded_files)} document(s): {', '.join(uploaded_files[:3])}"
+            if len(uploaded_files) > 3:
+                upload_message += f" and {len(uploaded_files)-3} more"
+
+        # Render the template
+        return render_template(
+            "agent/submission_success.html",
+            is_draft=(action == "draft"),
+            listing_id=listing_id,
+            agent_id=agent_id,
+            current_date=current_date,
+            current_date_folder=current_date_folder,
+            customer_name=data["customer_name"],
+            property_address=data["property_address"],
+            sale_price=sale_price,
+            commission=commission_to_store,  # Show agent's commission
+            upload_message=upload_message
+        )
+
+    except sqlite3.OperationalError as e:
+        if conn:
             conn.rollback()
+        if "locked" in str(e).lower():
+            error_msg = "Database is temporarily busy. Please wait a moment and try again."
+        else:
+            error_msg = f"Database error: {str(e)}"
+        return render_error_page(error_msg)
+
+    except ValueError as e:
+        if conn:
+            conn.rollback()
+        return render_error_page(f"Invalid input data: {str(e)}")
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in submit-listing: {error_details}")
+        return render_error_page(f"Unexpected error: {str(e)}")
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
             conn.close()
-            return f"Error: {str(e)}"
-
-    # GET request - show resubmission form
-    # Create submission data dictionary - REMOVED property_type
-    sub_data = {
-        "id": listing[0],
-        "customer_name": listing[3],
-        "customer_email": listing[4],
-        "customer_phone": listing[5],
-        "property_address": listing[6],
-        "sale_price": listing[7],  # Changed from index 8 to 7
-        "closing_date": listing[8],  # Changed from index 9 to 8
-        "notes": listing[15],  # Changed from index 16 to 15
-        "rejection_reason": listing[17],  # Changed from index 18 to 17
-    }
-
-    # Get existing documents
-    cursor.execute("SELECT filename FROM documents WHERE listing_id = ?", (listing_id,))
-    existing_docs = [doc[0] for doc in cursor.fetchall()]
-
-    conn.close()
-
-    # Create resubmission form - REMOVED property_type references
-    resubmit_template = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Resubmit Submission #{listing_id}</title>
-        <style>
-            body {{ 
-                font-family: Arial, sans-serif; 
-                margin: 40px; 
-                background: #f5f5f5; 
-            }}
-            .container {{ 
-                max-width: 800px; 
-                margin: 0 auto; 
-                background: white; 
-                padding: 30px; 
-                border-radius: 10px; 
-                box-shadow: 0 2px 20px rgba(0,0,0,0.1); 
-            }}
-            .header {{ 
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 20px;
-                padding-bottom: 20px;
-                border-bottom: 2px solid #007bff;
-            }}
-            .rejection-alert {{
-                background: #fff3cd;
-                border: 1px solid #ffeaa7;
-                color: #856404;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 20px 0;
-            }}
-            .existing-data {{
-                background: #e8f4ff;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 15px 0;
-            }}
-            .form-section {{ 
-                border: 1px solid #e0e0e0; 
-                padding: 20px; 
-                margin-bottom: 20px; 
-                border-radius: 8px; 
-            }}
-            .form-group {{ 
-                margin-bottom: 15px; 
-            }}
-            label {{ 
-                display: block; 
-                margin-bottom: 5px; 
-                font-weight: bold; 
-                color: #555; 
-            }}
-            .required:after {{ 
-                content: " *"; 
-                color: red; 
-            }}
-            input, select, textarea {{ 
-                width: 100%; 
-                padding: 10px; 
-                border: 1px solid #ddd; 
-                border-radius: 5px; 
-                box-sizing: border-box; 
-            }}
-            .btn {{ 
-                padding: 12px 25px; 
-                border: none; 
-                border-radius: 5px; 
-                cursor: pointer; 
-                font-size: 16px; 
-                margin-right: 10px; 
-                text-decoration: none;
-                display: inline-block;
-            }}
-            .btn-primary {{ 
-                background: #28a745; 
-                color: white; 
-            }}
-            .btn-secondary {{ 
-                background: #6c757d; 
-                color: white; 
-            }}
-            .document-list {{
-                background: #f8f9fa;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 10px 0;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>✏️ Resubmit Submission #{listing_id}</h1>
-                <div>
-                    <a href="/agent/submission/{listing_id}" class="btn btn-secondary">← Back to Submission</a>
-                </div>
-            </div>
-            
-            <div class="rejection-alert">
-                <h3 style="margin-top: 0;"> Previous Rejection Reason:</h3>
-                <p><strong>{sub_data['rejection_reason'] or 'No reason provided'}</strong></p>
-                <p>Please fix the issues mentioned above before resubmitting.</p>
-            </div>
-            
-            <form method="POST" action="/agent/resubmit/{listing_id}" enctype="multipart/form-data">
-                
-                <!-- Customer Information -->
-                <div class="form-section">
-                    <h2>👤 Customer Information</h2>
-                    <div class="existing-data">
-                        <strong>Current Data:</strong> {sub_data['customer_name']} | {sub_data['customer_email']} | {sub_data['customer_phone'] or 'No phone'}
-                    </div>
-                    <div class="form-group">
-                        <label class="required">Customer Name</label>
-                        <input type="text" name="customer_name" value="{sub_data['customer_name']}" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="required">Customer Email</label>
-                        <input type="email" name="customer_email" value="{sub_data['customer_email']}" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Customer Phone</label>
-                        <input type="tel" name="customer_phone" value="{sub_data['customer_phone'] or ''}">
-                    </div>
-                </div>
-                
-                <!-- Property Details -->
-                <div class="form-section">
-                    <h2>🏠 Property Details</h2>
-                    <div class="existing-data">
-                        <strong>Current Data:</strong> RM{"{:,.2f}".format(sub_data['sale_price'])} | {sub_data['closing_date'] or 'No closing date'}
-                    </div>
-                    <div class="form-group">
-                        <label class="required">Property Address</label>
-                        <textarea name="property_address" rows="3" required>{sub_data['property_address']}</textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="required">Sale Price (RM)</label>
-                        <input type="number" name="sale_price" value="{sub_data['sale_price']}" min="0" step="1000" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Closing Date</label>
-                        <input type="date" name="closing_date" value="{sub_data['closing_date'] or ''}">
-                    </div>
-                </div>
-                
-                <!-- Document Update -->
-                <div class="form-section">
-                    <h2>📎 Update Documents</h2>
-                    <div class="existing-data">
-                        <strong>Existing Documents:</strong> {len(existing_docs)} file(s) uploaded
-                        <div class="document-list">
-                            {'<br>'.join([f'📄 {doc}' for doc in existing_docs[:5]])}
-                            {f'<br>... and {len(existing_docs) - 5} more' if len(existing_docs) > 5 else ''}
-                        </div>
-                    </div>
-                    <p style="color: #666; margin-bottom: 15px;">
-                        You can upload new documents or replacements. Existing documents will be kept unless you upload files with the same names.
-                    </p>
-                    
-                    <div class="form-group">
-                        <label>Update Agreement</label>
-                        <input type="file" name="agreement" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                        <small>Upload new version if needed</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Update ID Proof</label>
-                        <input type="file" name="id_proof" accept=".pdf,.jpg,.jpeg,.png">
-                        <small>Upload new version if needed</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Additional Documents</label>
-                        <input type="file" name="additional_docs" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                        <small>Hold CTRL to select multiple files</small>
-                    </div>
-                </div>
-                
-                <!-- Additional Information -->
-                <div class="form-section">
-                    <h2>📋 Additional Information</h2>
-                    <div class="form-group">
-                        <label>Special Notes</label>
-                        <textarea name="notes" rows="4" placeholder="Any special conditions, requirements, or notes...">{sub_data['notes']}</textarea>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 30px; text-align: center;">
-                    <button type="submit" class="btn btn-primary">✅ Submit for Review</button>
-                    <a href="/agent/submission/{listing_id}" class="btn btn-secondary">Cancel</a>
-                    <a href="/new-listing" class="btn" style="background: #007bff; color: white;">➕ Create New Instead</a>
-                </div>
-            </form>
-        </div>
-    </body>
-    </html>
-    """
-
-    return resubmit_template
-
 
 @app.route("/agent/commissions")
 def agent_commissions():
-    """Agent commission tracking - IMPROVED VERSION"""
+    """Agent commission tracking with filters"""
     if "user_id" not in session or session["user_role"] != "agent":
         return redirect("/login")
+
+    user_id = session["user_id"]
+    
+    # Get filter parameters from request
+    status_filter = request.args.get('status', 'all')
+    payment_type_filter = request.args.get('payment_type', 'all')
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    search_query = request.args.get('search', '')
+    sort_by = request.args.get('sort_by', 'date_desc')
+    page = int(request.args.get('page', 1))
+    items_per_page = 10
 
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
 
-    # Get commission summary - REMOVED property_type
-    cursor.execute(
-        """
+    # ===== BASE QUERIES WITH FILTERS =====
+    
+    # Build WHERE clauses dynamically - FIX: Start with approved only
+    where_clauses = ["pl.agent_id = ?", "pl.status = 'approved'"]  # Only approved commissions
+    params = [user_id]
+    
+    # Additional status filter (if user wants to see other statuses)
+    if status_filter != 'all' and status_filter != 'approved':
+        # If user selects other status, override the default 'approved'
+        where_clauses = ["pl.agent_id = ?", "pl.status = ?"]
+        params = [user_id, status_filter]
+    # If status_filter is 'approved' or 'all', keep the default 'approved' filter
+    
+    # Date filters for approved_at date
+    if date_from:
+        where_clauses.append("pl.approved_at >= ?")
+        params.append(date_from)
+    if date_to:
+        where_clauses.append("pl.approved_at <= ?")
+        params.append(f"{date_to} 23:59:59")
+    
+    # Search filter
+    if search_query:
+        where_clauses.append("(pl.customer_name LIKE ? OR pl.customer_email LIKE ? OR pl.property_address LIKE ?)")
+        params.extend([f"%{search_query}%", f"%{search_query}%", f"%{search_query}%"])
+    
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    
+    # ===== 1. GET FILTERED APPROVED COMMISSIONS =====
+    # First get total count
+    cursor.execute(f"""
+        SELECT COUNT(*) 
+        FROM property_listings pl
+        LEFT JOIN projects p ON pl.project_id = p.id
+        WHERE {where_sql}
+    """, params)
+    total_commissions = cursor.fetchone()[0]
+    
+    # Calculate pagination
+    total_pages = (total_commissions + items_per_page - 1) // items_per_page
+    offset = (page - 1) * items_per_page
+    
+    # Build ORDER BY based on sort parameter
+    order_by = {
+        'date_desc': 'pl.approved_at DESC',
+        'date_asc': 'pl.approved_at ASC',
+        'amount_desc': 'pl.commission_amount DESC',
+        'amount_asc': 'pl.commission_amount ASC',
+        'customer_asc': 'pl.customer_name ASC',
+        'customer_desc': 'pl.customer_name DESC'
+    }.get(sort_by, 'pl.approved_at DESC')
+    
+    # Get paginated commissions
+    cursor.execute(f"""
         SELECT 
             pl.id,
             pl.customer_name,
-            u.name as agent_name,
             pl.sale_price,
             pl.commission_amount,
             pl.status,
             pl.approved_at,
-            cc.calculation_details
+            pl.created_at,
+            COALESCE(p.project_name, '') as project_name
         FROM property_listings pl
-        JOIN users u ON pl.agent_id = u.id
-        JOIN commission_calculations cc ON pl.id = cc.listing_id
-        WHERE pl.agent_id = ? AND pl.status = 'approved'
-        ORDER BY pl.approved_at DESC
-    """,
-        (session["user_id"],),
-    )
-
+        LEFT JOIN projects p ON pl.project_id = p.id
+        WHERE {where_sql}
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+    """, params + [items_per_page, offset])
+    
     commissions = cursor.fetchall()
 
-    # Calculate totals
-    cursor.execute(
-        """
+    # Calculate totals for current filter
+    cursor.execute(f"""
         SELECT 
-            SUM(commission_amount) as total_approved,
-            COUNT(*) as total_count
+            COALESCE(SUM(commission_amount), 0) as total_approved,
+            COUNT(*) as total_count,
+            COALESCE(AVG(commission_amount), 0) as avg_commission
+        FROM property_listings pl
+        WHERE {where_sql}
+    """, params)
+    totals = cursor.fetchone()
+
+    # ===== 2. GET ALL STATUSES FOR STATS =====
+    # Get counts for all statuses (for stats display)
+    cursor.execute("""
+        SELECT 
+            SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
+            SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as submitted_count,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count,
+            SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft_count
+        FROM property_listings 
+        WHERE agent_id = ?
+    """, (user_id,))
+    
+    status_counts = cursor.fetchone()
+    
+    # ===== 3. GET FILTERED PAYMENTS =====
+    # Get own paid commissions
+    own_payments_query = """
+        SELECT 
+            cp.payment_date,
+            cp.commission_amount,
+            'Own' as payment_type,
+            cp.payment_status,
+            COALESCE(cp.transaction_id, 'N/A') as transaction_id,
+            COALESCE(p.project_name, '') as project_name,
+            pl.customer_name,
+            cp.created_at
+        FROM commission_payments cp
+        LEFT JOIN property_listings pl ON cp.listing_id = pl.id
+        LEFT JOIN projects p ON pl.project_id = p.id
+        WHERE cp.agent_id = ? AND cp.payment_status = 'paid'
+    """
+    
+    # Get upline commissions
+    upline_payments_query = """
+        SELECT 
+            uc.paid_at as payment_date,
+            uc.amount as commission_amount,
+            'Upline' as payment_type,
+            uc.status as payment_status,
+            COALESCE(uc.transaction_id, 'N/A') as transaction_id,
+            COALESCE(p.project_name, '') as project_name,
+            pl.customer_name,
+            selling_agent.name as selling_agent_name,
+            uc.created_at
+        FROM upline_commissions uc
+        LEFT JOIN property_listings pl ON uc.listing_id = pl.id
+        LEFT JOIN projects p ON pl.project_id = p.id
+        LEFT JOIN users selling_agent ON pl.agent_id = selling_agent.id
+        WHERE uc.upline_id = ? AND uc.status = 'paid'
+    """
+    
+    # Combine payments based on filter
+    recent_payments_list = []
+    
+    if payment_type_filter in ['all', 'own']:
+        cursor.execute(own_payments_query + " ORDER BY cp.payment_date DESC LIMIT 10", (user_id,))
+        for payment in cursor.fetchall():
+            recent_payments_list.append({
+                "payment_date": payment[0],
+                "amount": float(payment[1]) if payment[1] else 0,
+                "payment_type": payment[2],
+                "payment_status": payment[3],
+                "reference": payment[4] if payment[4] != 'N/A' else None,
+                "project_name": payment[5] if payment[5] else None,
+                "customer_name": payment[6],
+                "created_at": payment[7],
+                "is_upline_payment": False,
+                "selling_agent_name": None
+            })
+    
+    if payment_type_filter in ['all', 'upline']:
+        cursor.execute(upline_payments_query + " ORDER BY uc.paid_at DESC LIMIT 10", (user_id,))
+        for payment in cursor.fetchall():
+            recent_payments_list.append({
+                "payment_date": payment[0],
+                "amount": float(payment[1]) if payment[1] else 0,
+                "payment_type": payment[2],
+                "payment_status": payment[3],
+                "reference": payment[4] if payment[4] != 'N/A' else None,
+                "project_name": payment[5] if payment[5] else None,
+                "customer_name": payment[6],
+                "selling_agent_name": payment[7],
+                "created_at": payment[8],
+                "is_upline_payment": True
+            })
+    
+    # Sort and limit payments
+    recent_payments_list.sort(key=lambda x: x["payment_date"] or "", reverse=True)
+    recent_payments_list = recent_payments_list[:10]
+
+    # ===== 4. GET RECENT SALES (all statuses, last 10) =====
+    cursor.execute("""
+        SELECT 
+            pl.id,
+            pl.customer_name,
+            pl.sale_price,
+            pl.commission_amount,
+            pl.status,
+            pl.created_at,
+            COALESCE(p.project_name, '') as project_name
+        FROM property_listings pl
+        LEFT JOIN projects p ON pl.project_id = p.id
+        WHERE pl.agent_id = ?
+        ORDER BY pl.created_at DESC
+        LIMIT 10
+    """, (user_id,))
+    recent_sales = cursor.fetchall()
+
+    # ===== 5. GET TOTAL STATS (unfiltered) =====
+    # Total approved commissions (for stats card)
+    cursor.execute("""
+        SELECT 
+            COALESCE(SUM(commission_amount), 0) as total_approved_amount,
+            COUNT(*) as total_approved_count
         FROM property_listings 
         WHERE agent_id = ? AND status = 'approved'
-    """,
-        (session["user_id"],),
-    )
+    """, (user_id,))
+    approved_stats = cursor.fetchone()
+    total_approved_amount = float(approved_stats[0]) if approved_stats and approved_stats[0] else 0
+    total_approved_count = approved_stats[1] if approved_stats else 0
 
-    totals = cursor.fetchone()
+    # Total paid commissions
+    cursor.execute("""
+        SELECT 
+            COALESCE(SUM(commission_amount), 0) as total_own_paid
+        FROM commission_payments 
+        WHERE agent_id = ? AND payment_status = 'paid'
+    """, (user_id,))
+    total_own_paid_result = cursor.fetchone()
+    total_own_paid = float(total_own_paid_result[0]) if total_own_paid_result and total_own_paid_result[0] else 0
+
+    # Total upline commissions
+    cursor.execute("""
+        SELECT 
+            COALESCE(SUM(amount), 0) as total_upline_paid
+        FROM upline_commissions 
+        WHERE upline_id = ? AND status = 'paid'
+    """, (user_id,))
+    total_upline_paid_result = cursor.fetchone()
+    total_upline_paid = float(total_upline_paid_result[0]) if total_upline_paid_result and total_upline_paid_result[0] else 0
+
+    # Total pending (approved but not paid)
+    cursor.execute("""
+        SELECT 
+            COALESCE(SUM(commission_amount), 0) as total_pending
+        FROM property_listings 
+        WHERE agent_id = ? AND status = 'approved' 
+        AND id NOT IN (
+            SELECT listing_id FROM commission_payments WHERE agent_id = ? AND payment_status = 'paid'
+        )
+    """, (user_id, user_id))
+    total_pending_result = cursor.fetchone()
+    total_pending = float(total_pending_result[0]) if total_pending_result and total_pending_result[0] else 0
 
     conn.close()
 
-    # Create a properly formatted commissions list - REMOVED property_type
+    # ===== PROCESS DATA =====
     commissions_list = []
     for comm in commissions:
-        commissions_list.append(
-            {
-                "id": comm[0],
-                "customer_name": comm[1],
-                "agent_name": comm[2],
-                "sale_price": float(comm[3]) if comm[3] else 0,
-                "commission_amount": float(comm[4]) if comm[4] else 0,
-                "status": comm[5],
-                "approved_at": comm[6],
-            }
-        )
+        commissions_list.append({
+            "id": comm[0],
+            "customer_name": comm[1],
+            "sale_price": float(comm[2]) if comm[2] else 0,
+            "commission_amount": float(comm[3]) if comm[3] else 0,
+            "status": comm[4],
+            "approved_at": comm[5],
+            "created_at": comm[6],
+            "project_name": comm[7]
+        })
 
-    # Calculate totals safely
-    total_approved = float(totals[0]) if totals and totals[0] else 0
-    total_count = totals[1] if totals and totals[1] else 0
+    recent_sales_list = []
+    for sale in recent_sales:
+        recent_sales_list.append({
+            "id": sale[0],
+            "customer_name": sale[1],
+            "sale_price": float(sale[2]) if sale[2] else 0,
+            "commission_amount": float(sale[3]) if sale[3] else 0,
+            "status": sale[4],
+            "created_at": sale[5],
+            "project_name": sale[6]
+        })
 
-    commission_template = """<!DOCTYPE html>
-<html>
-<head>
-    <title>My Commissions</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            margin: 20px; 
-            background: #f5f5f5; 
-        }
-        .header { 
-            background: white; 
-            padding: 20px; 
-            border-radius: 10px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }
-        .stats { 
-            display: flex; 
-            gap: 15px; 
-            margin: 20px 0; 
-        }
-        .stat-card { 
-            background: white; 
-            padding: 15px; 
-            border-radius: 8px; 
-            flex: 1; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
-            text-align: center;
-        }
-        .stat-card h3 { 
-            margin-top: 0; 
-            color: #555; 
-            font-size: 14px; 
-        }
-        .stat-value { 
-            font-size: 1.8em; 
-            font-weight: bold; 
-            color: #28a745; 
-        }
-        table { 
-            width: 100%; 
-            background: white; 
-            border-radius: 10px; 
-            overflow: hidden; 
-            margin: 20px 0; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }
-        th, td { 
-            padding: 12px 15px; 
-            text-align: left; 
-            border-bottom: 1px solid #eee; 
-        }
-        th { 
-            background: #2c3e50; 
-            color: white; 
-        }
-        .btn { 
-            padding: 8px 16px; 
-            background: #007bff; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            display: inline-block;
-        }
-        .btn:hover {
-            background: #0056b3;
-        }
-        .empty-state {
-            padding: 40px;
-            text-align: center;
-            background: white;
-            border-radius: 10px;
-            color: #666;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>💰 My Commissions</h1>
-        <div>
-            <a href="/agent/dashboard" class="btn">← Dashboard</a>
-            <a href="/agent/submissions" class="btn" style="background: #28a745;">📋 My Submissions</a>
-        </div>
-    </div>
+    total_earnings = total_own_paid + total_upline_paid
     
-    <div class="stats">
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total Commission</div>
-            <div class="stat-value">RM{% if total_approved %}{{ "{:,.2f}".format(total_approved) }}{% else %}0.00{% endif %}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Approved Sales</div>
-            <div class="stat-value">{{ total_count }}</div>
-        </div>
-    </div>
-    
-    <h2>Approved Commissions</h2>
-    {% if commissions_list %}
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Customer</th>
-                <th>Agent</th>
-                <th>Sale Price</th>
-                <th>Commission</th>
-                <th>Approved Date</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for comm in commissions_list %}
-            <tr>
-                <td>#{{ comm.id }}</td>
-                <td>{{ comm.customer_name }}</td>
-                <td>{{ comm.agent_name }}</td>
-                <td>RM{{ "%.2f"|format(comm.sale_price) }}</td>
-                <td><strong>RM{{ "%.2f"|format(comm.commission_amount) }}</strong></td>
-                <td>{{ comm.approved_at[:10] if comm.approved_at else '' }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div class="empty-state">
-        <h3>No approved commissions yet</h3>
-        <p>Once your submissions are approved by admin, they will appear here.</p>
-        <a href="/agent/submissions" class="btn" style="background: #28a745; margin-top: 15px;">View My Submissions</a>
-    </div>
-    {% endif %}
-</body>
-</html>"""
+    # Count payments by type
+    own_payments_count = sum(1 for p in recent_payments_list if p['payment_type'] == 'Own')
+    upline_payments_count = sum(1 for p in recent_payments_list if p['payment_type'] == 'Upline')
+    total_payments_count = len(recent_payments_list)
 
-    return render_template_string(
-        commission_template,
+    return render_template(
+        "agent/commissions.html",
         commissions_list=commissions_list,
-        total_approved=total_approved,
-        total_count=total_count,
+        recent_sales=recent_sales_list,
+        recent_payments=recent_payments_list,
+        
+        # Stats for cards
+        total_approved=total_approved_amount,
+        total_count=total_approved_count,
+        total_earnings=total_earnings,
+        total_own_paid=total_own_paid,
+        total_upline_paid=total_upline_paid,
+        total_pending=total_pending,
+        
+        # Status counts for filter display
+        submitted_count=status_counts[1] if status_counts else 0,
+        pending_count=status_counts[2] if status_counts else 0,
+        rejected_count=status_counts[3] if status_counts else 0,
+        draft_count=status_counts[4] if status_counts else 0,
+        
+        total_payments_count=total_payments_count,
+        own_payments_count=own_payments_count,
+        upline_payments_count=upline_payments_count,
+        total_pages=total_pages,
+        current_page=page,
+        items_per_page=items_per_page,
+        total_commissions=total_commissions,
+        
+        # Filter parameters to pass back to template
+        filter_status=status_filter,
+        filter_payment_type=payment_type_filter,
+        filter_date_from=date_from,
+        filter_date_to=date_to,
+        filter_search=search_query,
+        filter_sort_by=sort_by,
     )
+
+# ===================== FLASK ROUTES =====================
+
+@app.route('/api/commission/preview', methods=['POST'])
+def api_commission_preview():
+    """Preview commission calculation before actual sale"""
+    data = request.json
+    
+    sale_amount = float(data.get('sale_amount', 0))
+    agent_id = data.get('agent_id')
+    method = data.get('method', 'fund_based')
+    
+    if not sale_amount:
+        return jsonify({'error': 'Sale amount required'})
+    
+    # Get breakdown
+    breakdown = get_commission_breakdown(sale_amount, agent_id, method)
+    
+    # If agent_id provided, show comparison
+    if agent_id:
+        # Calculate actual commission for comparison
+        preview_commissions = calculate_multi_level_commission(sale_amount, agent_id, method)
+        breakdown['preview_calculation'] = preview_commissions
+    
+    return jsonify(breakdown)
+
+@app.route('/admin/commission/migrate_agent/<int:agent_id>', methods=['POST'])
+def admin_migrate_agent(agent_id):
+    """Migrate an agent to fund-based commission system"""
+    if session.get('role') != 'admin':
+        return jsonify({'success': False, 'error': 'Unauthorized'})
+    
+    data = request.json
+    custom_rates = data.get('custom_rates')
+    
+    success = migrate_agent_to_fund_based(agent_id, custom_rates)
+    
+    return jsonify({'success': success})
+
+@app.route('/admin/commission/structure', methods=['GET'])
+def admin_commission_structure():
+    """View all agents' commission structures"""
+    if session.get('role') not in ['admin', 'manager']:
+        return redirect(url_for('login'))
+    
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT id, name, email, commission_structure,
+               total_commission_fund_pct, agent_fund_pct,
+               upline_fund_pct, upline2_fund_pct,
+               agent_commission_rate, upline_commission_rate
+        FROM users WHERE role = 'agent'
+        ORDER BY name
+    """)
+    
+    agents = []
+    for row in cursor.fetchall():
+        agents.append({
+            'id': row[0],
+            'name': row[1],
+            'email': row[2],
+            'structure': row[3],
+            'fund_total_pct': row[4],
+            'fund_agent_pct': row[5],
+            'fund_upline_pct': row[6],
+            'fund_upline2_pct': row[7],
+            'legacy_agent_rate': row[8],
+            'legacy_upline_rate': row[9]
+        })
+    
+    conn.close()
+    
+    return render_template('admin/commission_structures.html', agents=agents)
 
 
 @app.route("/agent/projects")
@@ -6408,103 +5469,23 @@ def agent_projects():
 
     conn.close()
 
-    projects_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>My Projects</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-            .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
-            .project-card { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .project-header { padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-            .project-body { padding: 20px; }
-            .project-meta { display: flex; justify-content: space-between; margin: 10px 0; font-size: 14px; }
-            .badge { padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-            .badge-sales { background: #d4edda; color: #155724; }
-            .badge-rental { background: #cce5ff; color: #004085; }
-            .btn { padding: 8px 16px; border-radius: 5px; text-decoration: none; display: inline-block; margin-right: 5px; font-size: 14px; }
-            .btn-view { background: #17a2b8; color: white; }
-            .empty-state { text-align: center; padding: 50px 20px; background: white; border-radius: 10px; color: #666; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>🏢 My Projects</h1>
-            <div>
-                <a href="/agent/dashboard" class="btn" style="background: #6c757d; color: white;">← Dashboard</a>
-                <a href="/new-listing" class="btn" style="background: #28a745; color: white;">➕ New Sale</a>
-            </div>
-        </div>
-        
-        {% if projects %}
-        <div class="project-grid">
-            {% for project in projects %}
-            <div class="project-card">
-                <div class="project-header">
-                    <h3 style="margin: 0;">{{ project[1] }}</h3>
-                    <div style="margin-top: 5px;">
-                        <span class="badge badge-{{ project[2] }}">{{ project[2]|title }}</span>
-                        <span class="badge" style="background: #fff3cd; color: #856404;">{{ project[3]|title }}</span>
-                    </div>
-                </div>
-                <div class="project-body">
-                    <div class="project-meta">
-                        <div>
-                            <strong>Location:</strong><br>
-                            {{ project[4] or 'Not specified' }}
-                        </div>
-                        <div>
-                            <strong>Commission Rate:</strong><br>
-                            {{ project[5] or 'N/A' }}%
-                        </div>
-                    </div>
-                    
-                    <div class="project-meta">
-                        <div>
-                            <strong>Total Sales:</strong><br>
-                            {{ project[6] or 0 }}
-                        </div>
-                        <div>
-                            <strong>Total Value:</strong><br>
-                            RM{{ "{:,.2f}".format(project[7] or 0) }}
-                        </div>
-                    </div>
-                    
-                    <div class="project-meta">
-                        <div>
-                            <strong>Total Commission:</strong><br>
-                            <span style="color: #28a745; font-weight: bold;">RM{{ "{:,.2f}".format(project[8] or 0) }}</span>
-                        </div>
-                        <div>
-                            <strong>Last Sale:</strong><br>
-                            {{ project[9][:10] if project[9] else 'Never' }}
-                        </div>
-                    </div>
-                    
-                    <div style="margin-top: 15px;">
-                        <a href="/agent/project-sales/{{ project[0] }}" class="btn btn-view">📊 View Sales</a>
-                        <a href="/new-listing?project_id={{ project[0] }}" class="btn" style="background: #007bff; color: white;">➕ New Sale</a>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <h3>No project sales yet</h3>
-            <p>You haven't made any sales from projects yet.</p>
-            <div style="margin-top: 20px;">
-                <a href="/new-listing" class="btn" style="background: #28a745; color: white; padding: 10px 20px;">Make Your First Sale</a>
-            </div>
-        </div>
-        {% endif %}
-    </body>
-    </html>
-    """
+    # Process projects data for template
+    processed_projects = []
+    for project in projects:
+        processed_projects.append({
+            'id': project[0],
+            'name': project[1],
+            'category': project[2],
+            'type': project[3],
+            'location': project[4],
+            'commission_rate': project[5],
+            'total_sales': project[6],
+            'total_value': project[7] if project[7] else 0,
+            'total_commission': project[8] if project[8] else 0,
+            'last_sale_date': project[9][:10] if project[9] else 'Never'
+        })
 
-    return render_template_string(projects_template, projects=projects)
+    return render_template("agent/projects.html", projects=processed_projects)
 
 
 @app.route("/agent/project-sales/<int:project_id>")
@@ -6884,10 +5865,11 @@ def admin_dashboard():
                pl.customer_phone, pl.property_address, pl.sale_price, pl.closing_date,
                pl.commission_amount, pl.commission_status, pl.created_at, pl.submitted_at,
                pl.approved_at, pl.approved_by, pl.notes, pl.metadata, pl.rejection_reason,
-               pl.project_id, pl.unit_id, pl.sale_type, u.name as agent_name,
+               pl.project_id, pl.unit_id,
+               u.name as agent_name,
                (SELECT COUNT(*) FROM documents d WHERE d.listing_id = pl.id) as document_count
         FROM property_listings pl
-        JOIN users u ON pl.agent_id = u.id
+        LEFT JOIN users u ON pl.agent_id = u.id
         WHERE 1=1
     """
 
@@ -6908,15 +5890,8 @@ def admin_dashboard():
         params.append("draft")
     # 'all' shows everything
 
-    # Apply type filter
-    if type_filter == "sales":
-        query += " AND pl.sale_type = ?"
-        params.append("sales")
-    elif type_filter == "rental":
-        query += " AND pl.sale_type = ?"
-        params.append("rental")
-    # 'all' shows both types
-
+    # Note: Type filter is disabled in template since sale_type column doesn't exist
+    
     # Apply search filter
     if search_query:
         query += " AND (pl.customer_name LIKE ? OR pl.property_address LIKE ? OR u.name LIKE ?)"
@@ -6941,15 +5916,12 @@ def admin_dashboard():
         """
         SELECT 
             COUNT(*) as total_listings,
-            SUM(CASE WHEN sale_type = 'sales' THEN sale_price ELSE 0 END) as total_sales,
-            SUM(CASE WHEN sale_type = 'rental' THEN sale_price ELSE 0 END) as total_rentals,
-            SUM(commission_amount) as total_commissions,
+            COALESCE(SUM(sale_price), 0) as total_sales,
+            COALESCE(SUM(commission_amount), 0) as total_commissions,
             SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
             SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as pending,
             SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
-            SUM(CASE WHEN status = 'draft' OR status IS NULL THEN 1 ELSE 0 END) as draft,
-            SUM(CASE WHEN sale_type = 'sales' THEN 1 ELSE 0 END) as sales_count,
-            SUM(CASE WHEN sale_type = 'rental' THEN 1 ELSE 0 END) as rentals_count
+            SUM(CASE WHEN status = 'draft' OR status IS NULL THEN 1 ELSE 0 END) as draft
         FROM property_listings
     """
     )
@@ -6957,7 +5929,7 @@ def admin_dashboard():
 
     # Get total agents
     cursor.execute('SELECT COUNT(*) FROM users WHERE role = "agent"')
-    total_agents = cursor.fetchone()[0]
+    total_agents = cursor.fetchone()[0] or 0
 
     # Get today's submissions
     cursor.execute(
@@ -6966,32 +5938,38 @@ def admin_dashboard():
         WHERE DATE(created_at) = DATE('now')
     """
     )
-    todays_submissions = cursor.fetchone()[0]
+    todays_submissions = cursor.fetchone()[0] or 0
 
     # Commission calculations
-    total_commissions = stats[3] if stats and stats[3] else 0
+    total_commissions = stats[2] if stats and stats[2] else 0
 
-    # Calculate commissions using ACTUAL upline amounts from database
-    cursor.execute("SELECT SUM(amount) FROM upline_commissions")
-    actual_upline_result = cursor.fetchone()
-    upline_commissions = (
-        actual_upline_result[0]
-        if actual_upline_result and actual_upline_result[0]
-        else 0
-    )
+    # Calculate commissions - check if upline_commissions table exists
+    upline_commissions = 0
+    try:
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM upline_commissions")
+        actual_upline_result = cursor.fetchone()
+        upline_commissions = actual_upline_result[0] if actual_upline_result else 0
+    except sqlite3.OperationalError:
+        # Table doesn't exist, set to 0
+        upline_commissions = 0
 
     # Agent commissions = total - actual upline
-    agent_commissions = total_commissions - upline_commissions
+    agent_commissions = max(0, total_commissions - upline_commissions)
 
-    # Get total paid from commission_payments table
-    cursor.execute(
-        'SELECT SUM(commission_amount) FROM commission_payments WHERE payment_status = "paid"'
-    )
-    paid_result = cursor.fetchone()
-    total_paid = paid_result[0] if paid_result and paid_result[0] else 0
+    # Get total paid from commission_payments table (check if exists)
+    total_paid = 0
+    try:
+        cursor.execute(
+            'SELECT COALESCE(SUM(commission_amount), 0) FROM commission_payments WHERE payment_status = "paid"'
+        )
+        paid_result = cursor.fetchone()
+        total_paid = paid_result[0] if paid_result else 0
+    except sqlite3.OperationalError:
+        # Table doesn't exist, set to 0
+        total_paid = 0
 
     # Calculate balance (what's still unpaid)
-    balance = total_commissions - total_paid
+    balance = max(0, total_commissions - total_paid)
 
     conn.close()
 
@@ -7003,13 +5981,13 @@ def admin_dashboard():
                 "id": sub[0],
                 "agent_id": sub[1],
                 "status": sub[2] or "draft",
-                "customer_name": sub[3],
-                "customer_email": sub[4],
-                "customer_phone": sub[5],
-                "property_address": sub[6],
-                "sale_price": sub[7],
+                "customer_name": sub[3] or "",
+                "customer_email": sub[4] or "",
+                "customer_phone": sub[5] or "",
+                "property_address": sub[6] or "",
+                "sale_price": float(sub[7]) if sub[7] else 0,
                 "closing_date": sub[8],
-                "commission_amount": sub[9],
+                "commission_amount": float(sub[9]) if sub[9] else 0,
                 "commission_status": sub[10],
                 "created_at": sub[11],
                 "submitted_at": sub[12],
@@ -7020,30 +5998,32 @@ def admin_dashboard():
                 "rejection_reason": sub[17],
                 "project_id": sub[18],
                 "unit_id": sub[19],
-                "sale_type": sub[20] or "sales",
-                "agent_name": sub[21],
-                "document_count": sub[22] or 0,
+                "sale_type": "sales",  # Default value since column doesn't exist
+                "agent_name": sub[20] or "Unknown Agent",
+                "document_count": sub[21] or 0,
             }
         )
 
+    # Calculate stats - all listings are treated as sales for now
+    total_listings = stats[0] if stats else 0
+    
     stats_dict = {
-        "total_listings": stats[0] if stats else 0,
+        "total_listings": total_listings,
         "total_sales": stats[1] if stats and stats[1] else 0,
-        "total_rentals": stats[2] if stats and stats[2] else 0,
+        "total_rentals": 0,  # Set to 0 until you add rental functionality
         "total_commissions": total_commissions,
         "agent_commissions": agent_commissions,
         "upline_commissions": upline_commissions,
         "total_paid": total_paid,
         "balance": balance,
-        "approved": stats[4] if stats else 0,
-        "pending": stats[5] if stats else 0,
-        "rejected": stats[6] if stats else 0,
-        "draft": stats[7] if stats else 0,
-        "sales_count": stats[8] if stats else 0,
-        "rentals_count": stats[9] if stats else 0,
+        "approved": stats[3] if stats else 0,
+        "pending": stats[4] if stats else 0,
+        "rejected": stats[5] if stats else 0,
+        "draft": stats[6] if stats else 0,
+        "sales_count": total_listings,  # All are sales for now
+        "rentals_count": 0,  # Set to 0
     }
 
-    # Simple return using the external template
     return render_template(
         "admin/dashboard.html",
         admin_name=session.get("user_name"),
@@ -7056,9 +6036,6 @@ def admin_dashboard():
         total_agents=total_agents,
         todays_submissions=todays_submissions,
     )
-
-
-# ============ ADD THIS TO ADMIN DASHBOARD (in the Pending Submissions table) ============
 
 
 @app.route("/admin/move-to-draft/<int:listing_id>")
@@ -7770,326 +6747,93 @@ updated_pending_query = """
             pl.submitted_at DESC
         """
 
-# ============ ADD NOTIFICATION TO AGENT WHEN STATUS CHANGED TO DRAFT ============
-
-
-def notify_agent_status_change(listing_id, agent_id, new_status, admin_name):
-    """Notify agent when admin changes their submission status"""
-    conn = sqlite3.connect("real_estate.db")
-    cursor = conn.cursor()
-
-    # Get agent details
-    cursor.execute("SELECT email, name FROM users WHERE id = ?", (agent_id,))
-    agent = cursor.fetchone()
-
-    if not agent:
-        conn.close()
-        return False
-
-    agent_email, agent_name = agent
-
-    # Get listing details
-    cursor.execute(
-        "SELECT customer_name FROM property_listings WHERE id = ?", (listing_id,)
-    )
-    listing = cursor.fetchone()
-    customer_name = listing[0] if listing else "Unknown"
-
-    conn.close()
-
-    # Create notification email
-    subject = f"Submission #{listing_id} Status Updated"
-
-    if new_status == "draft":
-        body = f"""
-Dear {agent_name},
-
-Your submission #{listing_id} (Customer: {customer_name}) has been updated by admin.
-
-**New Status: DRAFT**
-
-📋 **What This Means:**
-- You can now reupload or update documents
-- Please review the submission and upload any missing documents
-- Resubmit when all documents are complete
-
-🔧 **Required Action:**
-1. Go to "My Submissions" page
-2. Click on submission #{listing_id}
-3. Use the "Add/Replace Documents" button
-4. Upload required documents
-5. Resubmit for approval
-
-📎 **Document Checklist:**
-- ✅ Signed Sales & Purchase Agreement
-- ✅ Customer ID Proof
-- ✅ Property Title/Deed
-- ✅ Commission Agreement (if separate)
-
-**Changed by:** {admin_name}
-**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-Click here to access your submission: [Your Submissions]
-
-If you have any questions, please contact the admin team.
-
-Best regards,
-Real Estate Commission System
-"""
-    else:
-        # For other status changes
-        body = f"""
-Dear {agent_name},
-
-Your submission #{listing_id} (Customer: {customer_name}) has been updated.
-
-**New Status: {new_status.upper()}**
-
-**Changed by:** {admin_name}
-**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-Click here to view your submission: [Your Submissions]
-
-Best regards,
-Real Estate Commission System
-"""
-
-    # Send email
-    success, message = send_email(
-        recipient_email=agent_email,
-        recipient_name=agent_name,
-        subject=subject,
-        body=body,
-        email_type="status_change",
-        related_id=listing_id,
-        related_type="listing",
-    )
-
-    return success
-
-
 # ============ ADD WORKING ADMIN FEATURES ============
 @app.route("/admin/agents")
 def manage_agents():
+    """Display all agents with their commission structures"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
-
+    
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
-
-    # Get all agents with multi-level commission info
-    cursor.execute(
-        """
+    
+    # UPDATED QUERY: Get all agents with their NEW commission fields
+    cursor.execute("""
         SELECT 
             u.id,
-            u.name,
             u.email,
+            u.name,
+            u.role,
             u.upline_id,
-            u.upline2_id,
             u.upline_commission_rate,
+            u.created_at,
+            u.upline2_id,
             u.upline2_commission_rate,
             u.commission_rate,
             u.total_listings,
             u.total_commission,
-            u.created_at,
-            upline.name as upline_name,
-            upline.email as upline_email,
-            upline2.name as upline2_name,
-            upline2.email as upline2_email,
-            (SELECT SUM(pl.commission_amount) FROM property_listings pl WHERE pl.agent_id = u.id AND pl.status = 'approved') as approved_commission
+            -- NEW FIELDS:
+            u.commission_structure,
+            u.total_commission_fund_pct,
+            u.agent_fund_pct,
+            u.upline_fund_pct,
+            u.upline2_fund_pct,
+            u.company_fund_pct,
+            -- Upline details
+            ul.name as upline_name,
+            ul.email as upline_email,
+            ul2.name as upline2_name,
+            ul2.email as upline2_email
         FROM users u
-        LEFT JOIN users upline ON u.upline_id = upline.id
-        LEFT JOIN users upline2 ON u.upline2_id = upline2.id
+        LEFT JOIN users ul ON u.upline_id = ul.id
+        LEFT JOIN users ul2 ON u.upline2_id = ul2.id
         WHERE u.role = 'agent'
-        ORDER BY u.id
-    """
-    )
-
-    agents = cursor.fetchall()
+        ORDER BY u.created_at DESC
+    """)
+    
+    agents_data = cursor.fetchall()
     conn.close()
-
-    # Define the template string
-    template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Manage Agents</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-            .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .nav a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
-            table { width: 100%; background: white; border-radius: 10px; overflow: hidden; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-            th { background: #2c3e50; color: white; }
-            .btn { padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 12px; }
-            .btn-edit { background: #17a2b8; color: white; }
-            .btn-delete { background: #dc3545; color: white; }
-            .upline-info { font-size: 12px; color: #666; }
-            .commission-rate { 
-                background: #fff3cd; 
-                padding: 2px 6px; 
-                border-radius: 3px; 
-                font-size: 11px;
-                color: #856404;
-                display: inline-block;
-                margin-right: 5px;
-            }
-            .commission-rate-2 { 
-                background: #d1ecf1; 
-                padding: 2px 6px; 
-                border-radius: 3px; 
-                font-size: 11px;
-                color: #0c5460;
-                display: inline-block;
-            }
-            .hierarchy-badge {
-                display: inline-block;
-                padding: 2px 8px;
-                border-radius: 12px;
-                font-size: 11px;
-                font-weight: bold;
-                margin-left: 5px;
-            }
-            .level-1 { background: #007bff; color: white; }
-            .level-2 { background: #28a745; color: white; }
-            .level-3 { background: #6f42c1; color: white; }
-            .multi-level-info {
-                font-size: 11px;
-                color: #6c757d;
-                margin-top: 3px;
-            }
-            .agent-level {
-                font-size: 11px;
-                font-weight: bold;
-                padding: 1px 6px;
-                border-radius: 3px;
-                background: #f8f9fa;
-                color: #495057;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>👥 Manage Agents</h1>
-            <div class="nav">
-                <a href="/admin/dashboard">← Dashboard</a>
-                <a href="/admin/add-agent">➕ Add New Agent</a>
-                <a href="/admin/agent-hierarchy">📊 View Hierarchy</a>
-                <a href="/logout">Logout</a>
-            </div>
-        </div>
-        
-        <div style="background: white; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
-            <h3>📋 Multi-Level Commission System:</h3>
-            <div style="display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap;">
-                <div>
-                    <span class="hierarchy-badge level-1">L1</span> Top Level (No upline)<br>
-                    <small>Earns: 0% from upline</small>
-                </div>
-                <div>
-                    <span class="hierarchy-badge level-2">L2</span> Middle Level<br>
-                    <small>Earns: 5% from direct downlines</small>
-                </div>
-                <div>
-                    <span class="hierarchy-badge level-3">L3</span> Bottom Level<br>
-                    <small>Pays: 5% to L2 + 2.5% to L1</small>
-                </div>
-                <div style="margin-left: auto;">
-                    <div style="font-size: 12px; color: #666;">
-                        <span class="commission-rate">5%</span> = Direct upline commission<br>
-                        <span class="commission-rate-2">2.5%</span> = Indirect upline commission
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Agent</th>
-                    <th>Uplines</th>
-                    <th>Commission Rates</th>
-                    <th>Total Listings</th>
-                    <th>Total Commission</th>
-                    <th>Approved Comm</th>
-                    <th>Joined</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for agent in agents %}
-                <tr>
-                    <td>{{ agent[0] }}</td>
-                    <td>
-                        <strong>{{ agent[1] }}</strong><br>
-                        <small>{{ agent[2] }}</small><br>
-                        {% if not agent[3] %}
-                            <span class="hierarchy-badge level-1">L1</span>
-                            <span class="agent-level">Top Level</span>
-                        {% elif not agent[4] %}
-                            <span class="hierarchy-badge level-2">L2</span>
-                            <span class="agent-level">Middle Level</span>
-                        {% else %}
-                            <span class="hierarchy-badge level-3">L3</span>
-                            <span class="agent-level">Bottom Level</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if agent[11] %}
-                            <strong>Direct:</strong> {{ agent[11] }}<br>
-                            <small class="upline-info">{{ agent[12] }}</small><br>
-                        {% else %}
-                            <span style="color: #999;">No direct upline</span><br>
-                        {% endif %}
-                        
-                        {% if agent[13] %}
-                            <strong>Indirect:</strong> {{ agent[13] }}<br>
-                            <small class="upline-info">{{ agent[14] }}</small>
-                        {% elif agent[4] %}
-                            <span style="color: #999;">No indirect upline</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if agent[5] %}
-                            <span class="commission-rate">{{ agent[5] }}%</span> to direct upline<br>
-                        {% endif %}
-                        {% if agent[6] %}
-                            <span class="commission-rate-2">{{ agent[6] }}%</span> to indirect upline<br>
-                        {% endif %}
-                        <div class="multi-level-info">
-                            Own rate: {{ agent[7] or 10 }}%
-                        </div>
-                    </td>
-                    <td>{{ agent[8] or 0 }}</td>
-                    <td>RM{{ "{:,.2f}".format(agent[9] or 0) }}</td>
-                    <td>RM{{ "{:,.2f}".format(agent[15] or 0) }}</td>
-                    <td>{{ agent[10][:10] if agent[10] else 'N/A' }}</td>
-                    <td>
-                        <a href="/admin/edit-agent/{{ agent[0] }}" class="btn btn-edit">✏️ Edit</a>
-                        <a href="/admin/delete-agent/{{ agent[0] }}" class="btn btn-delete" onclick="return confirm('Are you sure you want to delete agent {{ agent[1] }}?')">🗑️ Delete</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </body>
-    </html>
-    """
-
-    return render_template_string(template, agents=agents)
-
+    
+    # Convert to list of dictionaries for easier template access
+    agents = []
+    for agent in agents_data:
+        agents.append({
+            'id': agent[0],
+            'email': agent[1],
+            'name': agent[2],
+            'role': agent[3],
+            'upline_id': agent[4],
+            'upline_commission_rate': agent[5],
+            'created_at': agent[6],
+            'upline2_id': agent[7],
+            'upline2_commission_rate': agent[8],
+            'commission_rate': agent[9],
+            'total_listings': agent[10],
+            'total_commission': agent[11],
+            'commission_structure': agent[12],
+            'total_commission_fund_pct': agent[13],
+            'agent_fund_pct': agent[14],
+            'upline_fund_pct': agent[15],
+            'upline2_fund_pct': agent[16],
+            'company_fund_pct': agent[17],
+            'upline_name': agent[18],
+            'upline_email': agent[19],
+            'upline2_name': agent[20],
+            'upline2_email': agent[21]
+        })
+    
+    return render_template("admin/manage_agents.html", agents=agents)
 
 @app.route("/admin/agent-hierarchy")
 def agent_hierarchy():
-    """View agent hierarchy tree with improved design"""
+    """View agent hierarchy tree with improved design - UPDATED FOR FUND-BASED COMMISSIONS"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
 
-    # Get all agents with their uplines and downline info
+    # UPDATED QUERY: Get all agents with NEW fund-based commission fields
     cursor.execute(
         """
         SELECT 
@@ -8102,10 +6846,19 @@ def agent_hierarchy():
             u2.email as upline_email,
             u3.name as upline2_name,
             u3.email as upline2_email,
+            u1.created_at,
+            -- NEW FIELDS:
+            u1.commission_structure,
+            u1.total_commission_fund_pct,
+            u1.agent_fund_pct,
+            u1.upline_fund_pct,
+            u1.upline2_fund_pct,
+            u1.company_fund_pct,
+            -- Legacy fields (keep for backward compatibility)
             u1.upline_commission_rate,
             u1.upline2_commission_rate,
             u1.commission_rate,
-            u1.created_at,
+            -- Statistics
             (SELECT COUNT(*) FROM users u4 WHERE u4.upline_id = u1.id AND u4.role = 'agent') as downline_count,
             (SELECT COUNT(*) FROM property_listings pl WHERE pl.agent_id = u1.id) as total_listings,
             (SELECT SUM(pl.commission_amount) FROM property_listings pl WHERE pl.agent_id = u1.id AND pl.status = 'approved') as total_commission
@@ -8149,13 +6902,22 @@ def agent_hierarchy():
                 "upline_email": agent[6],
                 "upline2_name": agent[7],
                 "upline2_email": agent[8],
-                "upline_commission_rate": agent[9],
-                "upline2_commission_rate": agent[10],
-                "commission_rate": agent[11],
-                "join_date": agent[12],
-                "downline_count": agent[13],
-                "total_listings": agent[14],
-                "total_commission": agent[15] or 0,
+                "join_date": agent[9],
+                # NEW FIELDS:
+                "commission_structure": agent[10],
+                "total_commission_fund_pct": agent[11],
+                "agent_fund_pct": agent[12],
+                "upline_fund_pct": agent[13],
+                "upline2_fund_pct": agent[14],
+                "company_fund_pct": agent[15],
+                # Legacy fields:
+                "upline_commission_rate": agent[16],
+                "upline2_commission_rate": agent[17],
+                "commission_rate": agent[18],
+                # Statistics
+                "downline_count": agent[19],
+                "total_listings": agent[20],
+                "total_commission": agent[21] or 0,
                 "downlines": [],  # Will be filled with child nodes
             }
 
@@ -8184,7 +6946,7 @@ def agent_hierarchy():
 
     hierarchy_tree = build_hierarchy_tree()
 
-    # Render HTML tree
+    # Render HTML tree - UPDATED FOR FUND-BASED COMMISSIONS
     def render_tree_html(agents_list, level=0, parent_id=None):
         html = ""
         for agent in agents_list:
@@ -8194,11 +6956,67 @@ def agent_hierarchy():
 
             # Calculate statistics
             total_downlines = agent["downline_count"]
-            commission_rate = agent["commission_rate"] or 0
             total_commission = agent["total_commission"] or 0
 
             # Determine if this agent has downlines
             has_downlines = len(agent["downlines"]) > 0
+            
+            # Determine commission structure to display
+            is_fund_based = agent.get("commission_structure") == "fund_based"
+            
+            # Commission display based on structure
+            commission_display = ""
+            if is_fund_based:
+                commission_display = f"""
+                    <div class="detail-row">
+                        <div class="detail-item">
+                            <span class="detail-label">Fund:</span>
+                            <span class="detail-value">{agent.get('total_commission_fund_pct') or 2.0}% of sale</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Agent Share:</span>
+                            <span class="detail-value" style="color: #28a745;">{agent.get('agent_fund_pct') or 80.0}%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <div class="detail-item">
+                            <span class="detail-label">Direct Upline:</span>
+                            <span class="detail-value">{agent.get('upline_fund_pct') or 10.0}% of fund</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Indirect Upline:</span>
+                            <span class="detail-value">{agent.get('upline2_fund_pct') or 5.0}% of fund</span>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <div class="detail-item">
+                            <span class="detail-label">Company:</span>
+                            <span class="detail-value">{agent.get('company_fund_pct') or 5.0}% of fund</span>
+                        </div>
+                    </div>
+                """
+            else:
+                commission_display = f"""
+                    <div class="detail-row">
+                        <div class="detail-item">
+                            <span class="detail-label">Upline Rate:</span>
+                            <span class="detail-value">{agent.get('upline_commission_rate') or 0}%</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Upline2 Rate:</span>
+                            <span class="detail-value">{agent.get('upline2_commission_rate') or 0}%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <div class="detail-item">
+                            <span class="detail-label">Own Rate:</span>
+                            <span class="detail-value">{agent.get('commission_rate') or 0}%</span>
+                        </div>
+                    </div>
+                """
 
             html += f"""
             <div class="hierarchy-item {level_class}" style="margin-left: {padding_left}px;">
@@ -8212,6 +7030,11 @@ def agent_hierarchy():
                             <h3>{agent['name']}</h3>
                             <p class="agent-email">{agent['email']}</p>
                             <div class="agent-id">ID: #{agent['id']}</div>
+                            <div style="font-size: 10px; margin-top: 3px;">
+                                <span class="commission-structure" style="background: {'#28a745' if is_fund_based else '#6c757d'}; color: white; padding: 2px 6px; border-radius: 3px;">
+                                    {'💰 Fund-Based' if is_fund_based else '⚡ Legacy'}
+                                </span>
+                            </div>
                         </div>
                         <div class="agent-actions">
                             <a href="/admin/edit-agent/{agent['id']}" class="btn-edit">✏️ Edit</a>
@@ -8231,25 +7054,16 @@ def agent_hierarchy():
                             </div>
                         </div>
             
-                        <div class="detail-row">
-                            <div class="detail-item">
-                                <span class="detail-label">Upline Comm Rate:</span>
-                                <span class="detail-value">{agent['upline_commission_rate'] or 0}%</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-label">Upline2 Comm Rate:</span>
-                                <span class="detail-value">{agent['upline2_commission_rate'] or 0}%</span>
-                            </div>
-                        </div>
+                        {commission_display}
             
                         <div class="detail-row">
                             <div class="detail-item">
-                                <span class="detail-label">Own Comm Rate:</span>
-                                <span class="detail-value">{agent['commission_rate'] or 0}%</span>
-                            </div>
-                            <div class="detail-item">
                                 <span class="detail-label">Downlines:</span>
                                 <span class="detail-value badge-downline">{total_downlines} agent(s)</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">Listings:</span>
+                                <span class="detail-value badge-listings">{agent['total_listings'] or 0}</span>
                             </div>
                         </div>
             
@@ -8259,21 +7073,14 @@ def agent_hierarchy():
                                 <span class="detail-value" style="color: #28a745; font-weight: bold;">RM{float(total_commission):,.2f}</span>
                             </div>
                             <div class="detail-item">
-                                <span class="detail-label">Listings:</span>
-                                <span class="detail-value badge-listings">{agent['total_listings'] or 0}</span>
+                                <span class="detail-label">Joined:</span>
+                                <span class="detail-value">{agent['join_date'][:10] if agent['join_date'] else 'N/A'}</span>
                             </div>
-                       </div>
+                        </div>
             
-                       <div class="detail-row">
-                           <div class="detail-item">
-                               <span class="detail-label">Joined:</span>
-                               <span class="detail-value">{agent['join_date'][:10] if agent['join_date'] else 'N/A'}</span>
-                           </div>
-                       </div>
+                        {f'<div class="downline-preview" style="background: #e7f3ff;"><strong>Fund-Based Commission:</strong> Agent gets {agent.get("agent_fund_pct") or 80.0}% of {agent.get("total_commission_fund_pct") or 2.0}% fund</div>' if is_fund_based else ''}
             
-                       {f'<div class="downline-preview" style="background: #e7f3ff;"><strong>Multi-Level Commission:</strong> Earns {agent["upline_commission_rate"] or 0}% from direct downlines + {agent["upline2_commission_rate"] or 0}% from 2nd-level downlines</div>' if agent['upline2_name'] else ''}
-            
-                       {f'<div class="downline-preview"><strong>Direct Downlines:</strong> {downline_groups.get(agent["id"], "None")}</div>' if downline_groups.get(agent["id"]) else ''}
+                        {f'<div class="downline-preview"><strong>Direct Downlines:</strong> {downline_groups.get(agent["id"], "None")}</div>' if downline_groups.get(agent["id"]) else ''}
                    </div>
         
                    {f'<div class="connector-line" style="left: {padding_left + 15}px;"></div>' if has_downlines else ''}
@@ -8290,562 +7097,29 @@ def agent_hierarchy():
 
         return html
 
-    hierarchy_html = (
-        render_tree_html(hierarchy_tree)
-        if hierarchy_tree
-        else """
-    <div class="empty-state">
-        <div class="empty-icon">👥</div>
-        <h3>No Agents Found</h3>
-        <p>There are no agents in the system yet. Add your first agent to start building your network.</p>
-        <a href="/admin/add-agent" class="btn btn-primary">➕ Add First Agent</a>
-    </div>
-    """
-    )
+    hierarchy_html = render_tree_html(hierarchy_tree) if hierarchy_tree else ""
 
-    # Calculate statistics - WITH TYPE CONVERSION
+    # Calculate statistics
     total_agents = len(agents)
     top_level_count = sum(1 for agent in agents if agent[3] is None or agent[3] == "")
-    with_downlines = sum(1 for agent in agents if agent[13] and int(agent[13]) > 0)
-    total_commission = sum(float(agent[15] or 0) for agent in agents)
-
-    # Create the template
-    hierarchy_template = f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>Agent Hierarchy Network</title>
-    <style>
-        /* ============ BASE STYLES ============ */
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-        }}
-        
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-        }}
-        
-        /* ============ HEADER STYLES ============ */
-        .header {{
-            background: white;
-            padding: 25px;
-            border-radius: 15px;
-            margin-bottom: 25px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-            border-left: 5px solid #007bff;
-        }}
-        
-        .header h1 {{
-            margin: 0;
-            color: #2c3e50;
-            font-size: 28px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }}
-        
-        .header-actions {{
-            display: flex;
-            gap: 12px;
-            margin-top: 15px;
-            flex-wrap: wrap;
-        }}
-        
-        .btn {{
-            padding: 10px 20px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            border: none;
-            cursor: pointer;
-        }}
-        
-        .btn-primary {{
-            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-            color: white;
-        }}
-        
-        .btn-secondary {{
-            background: #6c757d;
-            color: white;
-        }}
-        
-        .btn-success {{
-            background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);
-            color: white;
-        }}
-        
-        .btn:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }}
-        
-        /* ============ STATS STYLES ============ */
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 25px 0;
-        }}
-        
-        .stat-card {{
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease;
-        }}
-        
-        .stat-card:hover {{
-            transform: translateY(-5px);
-        }}
-        
-        .stat-icon {{
-            font-size: 32px;
-            margin-bottom: 10px;
-        }}
-        
-        .stat-value {{
-            font-size: 28px;
-            font-weight: bold;
-            margin: 10px 0;
-        }}
-        
-        .stat-label {{
-            color: #6c757d;
-            font-size: 14px;
-        }}
-        
-        /* ============ HIERARCHY STYLES ============ */
-        .hierarchy-container {{
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin: 25px 0;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-            min-height: 500px;
-            position: relative;
-        }}
-        
-        .hierarchy-item {{
-            margin-bottom: 15px;
-            position: relative;
-        }}
-        
-        .agent-card {{
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            border: 1px solid #e0e0e0;
-            transition: all 0.3s ease;
-            position: relative;
-        }}
-        
-        .agent-card:hover {{
-            background: white;
-            border-color: #007bff;
-            box-shadow: 0 5px 15px rgba(0,123,255,0.2);
-            transform: translateX(5px);
-        }}
-        
-        .level-0 .agent-card {{
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-left: 4px solid #007bff;
-        }}
-        
-        .level-1 .agent-card {{
-            background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%);
-            border-left: 4px solid #28a745;
-        }}
-        
-        .level-2 .agent-card {{
-            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-            border-left: 4px solid #17a2b8;
-        }}
-        
-        .level-3 .agent-card {{
-            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
-            border-left: 4px solid #6f42c1;
-        }}
-        
-        .agent-header {{
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            margin-bottom: 15px;
-        }}
-        
-        .agent-avatar {{
-            position: relative;
-            width: 60px;
-            height: 60px;
-            background: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-        }}
-        
-        .avatar-icon {{
-            font-size: 32px;
-        }}
-        
-        .level-badge {{
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            background: #007bff;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: bold;
-        }}
-        
-        .agent-info h3 {{
-            margin: 0;
-            color: #2c3e50;
-            font-size: 18px;
-        }}
-        
-        .agent-email {{
-            color: #6c757d;
-            font-size: 14px;
-            margin: 5px 0;
-        }}
-        
-        .agent-id {{
-            font-size: 12px;
-            color: #6c757d;
-            background: #e9ecef;
-            padding: 2px 8px;
-            border-radius: 10px;
-            display: inline-block;
-        }}
-        
-        .agent-actions {{
-            margin-left: auto;
-            display: flex;
-            gap: 8px;
-        }}
-        
-        .btn-edit, .btn-view {{
-            padding: 6px 12px;
-            border-radius: 5px;
-            text-decoration: none;
-            font-size: 13px;
-        }}
-        
-        .btn-edit {{
-            background: #ffc107;
-            color: #000;
-        }}
-        
-        .btn-view {{
-            background: #17a2b8;
-            color: white;
-        }}
-        
-        .agent-details {{
-            border-top: 1px solid #e0e0e0;
-            padding-top: 15px;
-        }}
-        
-        .detail-row {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 10px;
-        }}
-        
-        .detail-item {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 12px;
-            background: white;
-            border-radius: 6px;
-        }}
-        
-        .detail-label {{
-            color: #6c757d;
-            font-size: 13px;
-        }}
-        
-        .detail-value {{
-            font-weight: 500;
-            color: #2c3e50;
-        }}
-        
-        .badge-downline {{
-            background: #d1ecf1;
-            color: #0c5460;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-        }}
-        
-        .badge-listings {{
-            background: #fff3cd;
-            color: #856404;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-        }}
-        
-        .downline-preview {{
-            margin-top: 10px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 6px;
-            font-size: 13px;
-            color: #495057;
-        }}
-        
-        .connector-line {{
-            position: absolute;
-            left: -25px;
-            top: 50%;
-            width: 25px;
-            height: 2px;
-            background: #adb5bd;
-            z-index: 1;
-        }}
-        
-        .downline-container {{
-            margin-left: 40px;
-            border-left: 2px dashed #dee2e6;
-            padding-left: 20px;
-            position: relative;
-        }}
-        
-        /* ============ EMPTY STATE ============ */
-        .empty-state {{
-            text-align: center;
-            padding: 60px 20px;
-            color: #6c757d;
-        }}
-        
-        .empty-icon {{
-            font-size: 64px;
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }}
-        
-        .empty-state h3 {{
-            margin: 10px 0;
-            color: #495057;
-        }}
-        
-        /* ============ RESPONSIVE ============ */
-        @media (max-width: 768px) {{
-            .detail-row {{
-                grid-template-columns: 1fr;
-            }}
-            
-            .agent-header {{
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 15px;
-            }}
-            
-            .agent-actions {{
-                margin-left: 0;
-                width: 100%;
-                justify-content: flex-start;
-            }}
-            
-            .stats-grid {{
-                grid-template-columns: 1fr;
-            }}
-            
-            .downline-container {{
-                margin-left: 20px;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>
-                <span style="font-size: 32px;">🌳</span>
-                Agent Hierarchy Network
-            </h1>
-            <p style="color: #6c757d; margin: 10px 0;">Visualize your agent network structure and relationships</p>
-            
-            <div class="header-actions">
-                <a href="/admin/agents" class="btn btn-secondary">
-                    <span style="font-size: 18px;">👥</span>
-                    Back to Agents List
-                </a>
-                <a href="/admin/add-agent" class="btn btn-success">
-                    <span style="font-size: 18px;">➕</span>
-                    Add New Agent
-                </a>
-                <a href="/admin/dashboard" class="btn btn-secondary">
-                    <span style="font-size: 18px;">📊</span>
-                    Dashboard
-                </a>
-                <a href="/admin/export-data?type=agents" class="btn" style="background: #6f42c1; color: white;">
-                    <span style="font-size: 18px;">📤</span>
-                    Export Agents
-                </a>
-            </div>
-        </div>
-        
-        <!-- Statistics -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon">👥</div>
-                <div class="stat-value" style="color: #007bff;">{total_agents}</div>
-                <div class="stat-label">Total Agents</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">🏆</div>
-                <div class="stat-value" style="color: #28a745;">{top_level_count}</div>
-                <div class="stat-label">Top Level Agents</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">📈</div>
-                <div class="stat-value" style="color: #ffc107;">{with_downlines}</div>
-                <div class="stat-label">With Downlines</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">💰</div>
-                <div class="stat-value" style="color: #6f42c1;">RM{total_commission:,.2f}</div>
-                <div class="stat-label">Total Commission</div>
-            </div>
-        </div>
-        
-        <!-- Hierarchy Container -->
-        <div class="hierarchy-container">
-            <div style="margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #f0f0f0;">
-                <h2 style="margin: 0; color: #2c3e50; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 24px;">📊</span>
-                    Network Structure
-                </h2>
-                <p style="color: #6c757d; margin: 5px 0;">Click on any agent card to view/edit details</p>
-            </div>
-            
-            {hierarchy_html}
-        </div>
-        
-        <!-- Legend -->
-        <div style="background: white; padding: 20px; border-radius: 12px; margin-top: 25px; box-shadow: 0 3px 10px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 15px 0; color: #2c3e50;">📋 Hierarchy Legend</h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
-                    <div style="width: 20px; height: 20px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-left: 3px solid #007bff; border-radius: 3px;"></div>
-                    <div>
-                        <strong>Level 1</strong>
-                        <div style="font-size: 12px; color: #6c757d;">Top Level (No upline)</div>
-                    </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
-                    <div style="width: 20px; height: 20px; background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%); border-left: 3px solid #28a745; border-radius: 3px;"></div>
-                    <div>
-                        <strong>Level 2</strong>
-                        <div style="font-size: 12px; color: #6c757d;">Middle Level</div>
-                    </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
-                    <div style="width: 20px; height: 20px; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-left: 3px solid #17a2b8; border-radius: 3px;"></div>
-                    <div>
-                        <strong>Level 3</strong>
-                        <div style="font-size: 12px; color: #6c757d;">Base Level</div>
-                    </div>
-                </div>
-                <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
-                    <div style="width: 20px; height: 20px; background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%); border-left: 3px solid #6f42c1; border-radius: 3px;"></div>
-                    <div>
-                        <strong>Level 4+</strong>
-                        <div style="font-size: 12px; color: #6c757d;">Extended Network</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- How It Works -->
-        <div style="margin-top: 25px; padding: 25px; background: white; border-radius: 12px; box-shadow: 0 3px 10px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 15px 0; color: #2c3e50;">💡 How It Works</h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
-                <div style="padding: 15px; background: #f0f9ff; border-radius: 8px; border-left: 4px solid #007bff;">
-                    <h4 style="margin: 0 0 10px 0; color: #0056b3;">📊 Commission Flow</h4>
-                    <p style="margin: 0; color: #495057; font-size: 14px;">
-                        When an agent makes a sale, their upline earns a percentage of their commission based on the upline commission rate.
-                    </p>
-                </div>
-                <div style="padding: 15px; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #28a745;">
-                    <h4 style="margin: 0 0 10px 0; color: #1e7e34;">🌱 Network Growth</h4>
-                    <p style="margin: 0; color: #495057; font-size: 14px;">
-                        Each agent can recruit downline agents, creating a multi-level network that generates passive income through commission sharing.
-                    </p>
-                </div>
-                <div style="padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-                    <h4 style="margin: 0 0 10px 0; color: #856404;">💰 Earnings Potential</h4>
-                    <p style="margin: 0; color: #495057; font-size: 14px;">
-                        Top-level agents earn from their direct sales plus commissions from all downline agents in their network.
-                    </p>
-                </div>
-            </div>
-        </div>
-    </div>
+    with_downlines = sum(1 for agent in agents if agent[19] and int(agent[19]) > 0)
+    total_commission = sum(float(agent[21] or 0) for agent in agents)
     
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {{
-        // Make agent cards clickable
-        document.querySelectorAll('.agent-card').forEach(card => {{
-            card.style.cursor = 'pointer';
-            card.addEventListener('click', function(e) {{
-                // Don't trigger if clicking on a button
-                if (!e.target.closest('a') && !e.target.closest('button')) {{
-                    const agentId = this.querySelector('.agent-id').textContent.split('#')[1];
-                    if (agentId) {{
-                        window.location.href = `/admin/edit-agent/RM{{agentId}}`;
-                    }}
-                }}
-            }});
-        }});
-        
-        // Add hover effects to stats cards
-        document.querySelectorAll('.stat-card').forEach(card => {{
-            card.addEventListener('mouseenter', function() {{
-                this.style.transform = 'translateY(-5px) scale(1.02)';
-            }});
-            card.addEventListener('mouseleave', function() {{
-                this.style.transform = 'translateY(0) scale(1)';
-            }});
-        }});
-        
-        // Toggle downline visibility (optional feature)
-        const downlineContainers = document.querySelectorAll('.downline-container');
-        downlineContainers.forEach(container => {{
-            const parentCard = container.parentElement.querySelector('.agent-card');
-            parentCard.style.cursor = 'pointer';
-            parentCard.addEventListener('dblclick', function() {{
-                container.style.display = container.style.display === 'none' ? 'block' : 'none';
-            }});
-        }});
-    }});
-    </script>
-</body>
-</html>"""
+    # Count fund-based vs legacy agents
+    fund_based_count = sum(1 for agent in agents if agent[10] == 'fund_based')
+    legacy_count = total_agents - fund_based_count
 
-    return hierarchy_template
+    return render_template(
+        "admin/agent_hierarchy.html",
+        hierarchy_tree=hierarchy_tree,
+        hierarchy_html=hierarchy_html,
+        total_agents=total_agents,
+        top_level_count=top_level_count,
+        with_downlines=with_downlines,
+        total_commission=total_commission,
+        fund_based_count=fund_based_count,
+        legacy_count=legacy_count
+    )
 
 
 @app.route("/admin/add-agent", methods=["GET", "POST"])
@@ -9065,14 +7339,14 @@ def add_agent():
 
 @app.route("/admin/edit-agent/<int:agent_id>", methods=["GET", "POST"])
 def edit_agent(agent_id):
-    """Edit agent details with upline system - MULTI-LEVEL VERSION"""
+    """Edit agent details with upline system - UPDATED FOR FUND-BASED COMMISSIONS"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
 
-    # Get agent details with multi-level commission fields - UPDATED QUERY
+    # FIXED QUERY: Removed the # comment which was causing SQL syntax error
     cursor.execute(
         """
         SELECT 
@@ -9082,13 +7356,16 @@ def edit_agent(agent_id):
             u.name,
             u.role,
             u.upline_id,
-            u.upline_commission_rate,
             u.created_at,
             u.upline2_id,
-            u.upline2_commission_rate,
-            u.commission_rate,
             u.total_listings,
-            u.total_commission
+            u.total_commission,
+            u.commission_structure,
+            u.total_commission_fund_pct,
+            u.agent_fund_pct,
+            u.upline_fund_pct,
+            u.upline2_fund_pct,
+            u.company_fund_pct
         FROM users u
         WHERE u.id = ? AND u.role = "agent"
     """,
@@ -9110,15 +7387,15 @@ def edit_agent(agent_id):
 
     # Get upline details
     upline_name = "None"
-    if agent[5]:  # upline_id
+    if agent[5]:  # upline_id (index 5)
         cursor.execute("SELECT name FROM users WHERE id = ?", (agent[5],))
         upline_result = cursor.fetchone()
         upline_name = upline_result[0] if upline_result else "None"
 
     # Get upline2 details
     upline2_name = "None"
-    if agent[8]:  # upline2_id (index 8)
-        cursor.execute("SELECT name FROM users WHERE id = ?", (agent[8],))
+    if agent[7]:  # upline2_id (index 7)
+        cursor.execute("SELECT name FROM users WHERE id = ?", (agent[7],))
         upline2_result = cursor.fetchone()
         upline2_name = upline2_result[0] if upline2_result else "None"
 
@@ -9127,43 +7404,50 @@ def edit_agent(agent_id):
             name = request.form["name"]
             email = request.form["email"]
             upline_id = request.form.get("upline_id", None)
-            upline_commission_rate = float(
-                request.form.get("upline_commission_rate", 0)
-            )
-            upline2_commission_rate = float(
-                request.form.get("upline2_commission_rate", 0)
-            )
-            commission_rate = float(request.form.get("commission_rate", 10))
             password = request.form.get("password", "")
-
+            
+            # NEW: Fund-based commission fields
+            commission_structure = request.form.get("commission_structure", "fund_based")
+            total_fund_pct = float(request.form.get("total_fund_pct", 2.0))
+            agent_fund_pct = float(request.form.get("agent_fund_pct", 80.0))
+            upline_fund_pct = float(request.form.get("upline_fund_pct", 10.0))
+            upline2_fund_pct = float(request.form.get("upline2_fund_pct", 5.0))
+            company_fund_pct = float(request.form.get("company_fund_pct", 5.0))
+            
             # Auto-set upline2 based on upline's upline
             upline2_id = None
             if upline_id:
-                # Use the helper function we added earlier
                 from app import update_upline_chain
-
                 upline2_id = update_upline_chain(agent_id, upline_id)
-
-            # Build update query with multi-level commission fields
+            
+            # Build update query with NEW commission fields
             if password:
                 hashed_pw = generate_password_hash(password)
                 cursor.execute(
                     """
                     UPDATE users 
                     SET name = ?, email = ?, 
-                        upline_id = ?, upline_commission_rate = ?,
-                        upline2_id = ?, upline2_commission_rate = ?,
-                        commission_rate = ?, password = ?
+                        upline_id = ?, upline2_id = ?,
+                        commission_structure = ?,
+                        total_commission_fund_pct = ?,
+                        agent_fund_pct = ?,
+                        upline_fund_pct = ?,
+                        upline2_fund_pct = ?,
+                        company_fund_pct = ?,
+                        password = ?
                     WHERE id = ?
                 """,
                     (
                         name,
                         email,
                         upline_id,
-                        upline_commission_rate,
                         upline2_id,
-                        upline2_commission_rate,
-                        commission_rate,
+                        commission_structure,
+                        total_fund_pct,
+                        agent_fund_pct,
+                        upline_fund_pct,
+                        upline2_fund_pct,
+                        company_fund_pct,
                         hashed_pw,
                         agent_id,
                     ),
@@ -9173,43 +7457,57 @@ def edit_agent(agent_id):
                     """
                     UPDATE users 
                     SET name = ?, email = ?, 
-                        upline_id = ?, upline_commission_rate = ?,
-                        upline2_id = ?, upline2_commission_rate = ?,
-                        commission_rate = ?
+                        upline_id = ?, upline2_id = ?,
+                        commission_structure = ?,
+                        total_commission_fund_pct = ?,
+                        agent_fund_pct = ?,
+                        upline_fund_pct = ?,
+                        upline2_fund_pct = ?,
+                        company_fund_pct = ?
                     WHERE id = ?
                 """,
                     (
                         name,
                         email,
                         upline_id,
-                        upline_commission_rate,
                         upline2_id,
-                        upline2_commission_rate,
-                        commission_rate,
+                        commission_structure,
+                        total_fund_pct,
+                        agent_fund_pct,
+                        upline_fund_pct,
+                        upline2_fund_pct,
+                        company_fund_pct,
                         agent_id,
                     ),
                 )
-
+            
             conn.commit()
             conn.close()
             return redirect("/admin/agents?success=Agent updated successfully!")
-
+        
         except Exception as e:
             conn.rollback()
             conn.close()
             return f"Error updating agent: {str(e)}"
-
+    
     # GET request - show edit form
     conn.close()
-
-    # Use the updated template with multi-level commissions
+    
+    # Extract values from query result
+    # Index mapping based on updated SELECT query:
+    # 0: id, 1: email, 2: password, 3: name, 4: role, 5: upline_id, 6: created_at,
+    # 7: upline2_id, 8: total_listings, 9: total_commission, 10: commission_structure,
+    # 11: total_commission_fund_pct, 12: agent_fund_pct, 13: upline_fund_pct,
+    # 14: upline2_fund_pct, 15: company_fund_pct
+    
+    # Use the updated template with fund-based commissions
     edit_agent_template = """
     <!DOCTYPE html>
     <html>
     <head>
         <title>Edit Agent</title>
         <style>
-            body { font-family: Arial, sans-serif; max-width: 700px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
             .form-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
             h2 { margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
             .info-box { background: #e8f4ff; padding: 15px; border-radius: 5px; margin: 15px 0; }
@@ -9245,7 +7543,20 @@ def edit_agent(agent_id):
             .commission-box:nth-child(3) {
                 border-left-color: #ffc107;
             }
+            .commission-box:nth-child(4) {
+                border-left-color: #dc3545;
+            }
+            .commission-box:nth-child(5) {
+                border-left-color: #6f42c1;
+            }
             small { color: #666; font-size: 13px; display: block; margin-top: 5px; }
+            .total-check {
+                background: #d1ecf1;
+                padding: 10px;
+                border-radius: 5px;
+                margin-top: 10px;
+                font-weight: bold;
+            }
         </style>
     </head>
     <body>
@@ -9258,9 +7569,10 @@ def edit_agent(agent_id):
                 <p><strong>Current Direct Upline:</strong> {{ upline_name }}</p>
                 <p><strong>Current Indirect Upline:</strong> {{ upline2_name }}</p>
                 <p><strong>Joined:</strong> {{ join_date }}</p>
+                <p><strong>Commission Structure:</strong> {{ commission_structure|upper }}</p>
             </div>
             
-            <form method="POST">
+            <form method="POST" onsubmit="return validateCommissionTotal()">
                 <div class="form-group">
                     <label>Full Name</label>
                     <input type="text" name="name" value="{{ agent_name }}" required>
@@ -9285,39 +7597,74 @@ def edit_agent(agent_id):
                 </div>
                 
                 <div class="commission-section">
-                    <h4 style="margin-top: 0; color: #333;">💰 Multi-Level Commission Settings</h4>
+                    <h4 style="margin-top: 0; color: #333;">💰 Fund-Based Commission Settings</h4>
                     
-                    <div class="commission-grid">
-                        <div class="commission-box">
-                            <label>Direct Upline Rate (%)</label>
-                            <input type="number" name="upline_commission_rate" 
-                                   value="{{ upline_commission_rate }}" 
-                                   min="0" max="100" step="0.1" required>
-                            <small>Commission to direct upline agent</small>
-                        </div>
-                        
-                        <div class="commission-box">
-                            <label>Indirect Upline Rate (%)</label>
-                            <input type="number" name="upline2_commission_rate" 
-                                   value="{{ upline2_commission_rate }}" 
-                                   min="0" max="100" step="0.1" required>
-                            <small>Commission to upline's upline (Level 2)</small>
-                        </div>
-                        
-                        <div class="commission-box">
-                            <label>Agent's Own Rate (%)</label>
-                            <input type="number" name="commission_rate" 
-                                   value="{{ commission_rate }}" 
-                                   min="0" max="100" step="0.1" required>
-                            <small>Agent's commission from own sales</small>
-                        </div>
+                    <div class="form-group">
+                        <label>Commission Structure</label>
+                        <select name="commission_structure" id="commission_structure" onchange="toggleCommissionType()">
+                            <option value="fund_based" {% if commission_structure == 'fund_based' %}selected{% endif %}>
+                                Fund-Based (Recommended)
+                            </option>
+                            <option value="legacy" {% if commission_structure == 'legacy' %}selected{% endif %}>
+                                Legacy (Percentage-based)
+                            </option>
+                        </select>
+                        <small>Fund-based: Percentage of sale creates commission fund, then split percentages</small>
                     </div>
                     
-                    <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 5px;">
-                        <strong>💡 Example Commission Flow:</strong><br>
-                        • Agent makes a sale → gets {{ commission_rate }}%<br>
-                        • Direct upline gets {{ upline_commission_rate }}% of the sale<br>
-                        • Indirect upline gets {{ upline2_commission_rate }}% of the sale
+                    <div id="fund_based_settings">
+                        <div class="commission-grid">
+                            <div class="commission-box">
+                                <label>Total Fund Percentage (%)</label>
+                                <input type="number" name="total_fund_pct" id="total_fund_pct"
+                                       value="{{ total_fund_pct|default('2.0') }}" 
+                                       min="0.1" max="10" step="0.1" required>
+                                <small>Percentage of sale that creates commission fund</small>
+                            </div>
+                            
+                            <div class="commission-box">
+                                <label>Agent's Fund Share (%)</label>
+                                <input type="number" name="agent_fund_pct" id="agent_fund_pct"
+                                       value="{{ agent_fund_pct|default('80.0') }}" 
+                                       min="0" max="100" step="0.1" required>
+                                <small>Agent's percentage of the commission fund</small>
+                            </div>
+                            
+                            <div class="commission-box">
+                                <label>Direct Upline Share (%)</label>
+                                <input type="number" name="upline_fund_pct" id="upline_fund_pct"
+                                       value="{{ upline_fund_pct|default('10.0') }}" 
+                                       min="0" max="100" step="0.1" required>
+                                <small>Direct upline's percentage of the commission fund</small>
+                            </div>
+                            
+                            <div class="commission-box">
+                                <label>Indirect Upline Share (%)</label>
+                                <input type="number" name="upline2_fund_pct" id="upline2_fund_pct"
+                                       value="{{ upline2_fund_pct|default('5.0') }}" 
+                                       min="0" max="100" step="0.1" required>
+                                <small>Indirect upline's percentage of the commission fund</small>
+                            </div>
+                            
+                            <div class="commission-box">
+                                <label>Company Balance (%)</label>
+                                <input type="number" name="company_fund_pct" id="company_fund_pct"
+                                       value="{{ company_fund_pct|default('5.0') }}" 
+                                       min="0" max="100" step="0.1" required>
+                                <small>Company's percentage of the commission fund</small>
+                            </div>
+                        </div>
+                        
+                        <div id="total_check" class="total-check">
+                            Total Percentage: <span id="total_percentage">100.0</span>%
+                        </div>
+                        
+                        <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 5px;">
+                            <strong>💡 Example for RM1,000,000 sale:</strong><br>
+                            <span id="example_text">
+                                Calculating...
+                            </span>
+                        </div>
                     </div>
                 </div>
                 
@@ -9338,37 +7685,99 @@ def edit_agent(agent_id):
         
         <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Update commission example when rates change
-            function updateExample() {
-                const uplineRate = document.querySelector('input[name="upline_commission_rate"]').value || 0;
-                const upline2Rate = document.querySelector('input[name="upline2_commission_rate"]').value || 0;
-                const selfRate = document.querySelector('input[name="commission_rate"]').value || 0;
+            updateCommissionTotal();
+            updateExample();
+        });
+        
+        function toggleCommissionType() {
+            const structure = document.getElementById('commission_structure').value;
+            const fundSettings = document.getElementById('fund_based_settings');
+            
+            if (structure === 'fund_based') {
+                fundSettings.style.display = 'block';
+            } else {
+                fundSettings.style.display = 'none';
+            }
+        }
+        
+        function updateCommissionTotal() {
+            const agentPct = parseFloat(document.getElementById('agent_fund_pct').value) || 0;
+            const uplinePct = parseFloat(document.getElementById('upline_fund_pct').value) || 0;
+            const upline2Pct = parseFloat(document.getElementById('upline2_fund_pct').value) || 0;
+            const companyPct = parseFloat(document.getElementById('company_fund_pct').value) || 0;
+            
+            const total = agentPct + uplinePct + upline2Pct + companyPct;
+            const totalElement = document.getElementById('total_percentage');
+            
+            totalElement.textContent = total.toFixed(1);
+            
+            if (Math.abs(total - 100.0) > 0.1) {
+                totalElement.style.color = '#dc3545';
+                totalElement.parentElement.style.background = '#f8d7da';
+            } else {
+                totalElement.style.color = '#28a745';
+                totalElement.parentElement.style.background = '#d1ecf1';
+            }
+        }
+        
+        function updateExample() {
+            const totalFundPct = parseFloat(document.getElementById('total_fund_pct').value) || 2.0;
+            const agentPct = parseFloat(document.getElementById('agent_fund_pct').value) || 80.0;
+            const uplinePct = parseFloat(document.getElementById('upline_fund_pct').value) || 10.0;
+            const upline2Pct = parseFloat(document.getElementById('upline2_fund_pct').value) || 5.0;
+            const companyPct = parseFloat(document.getElementById('company_fund_pct').value) || 5.0;
+            
+            const saleAmount = 1000000;
+            const totalFund = saleAmount * (totalFundPct / 100);
+            
+            const exampleText = `
+                • Total commission fund: RM${saleAmount.toLocaleString()} × ${totalFundPct}% = RM${totalFund.toFixed(2).toLocaleString()}<br>
+                • Agent gets: RM${totalFund.toFixed(2).toLocaleString()} × ${agentPct}% = RM${(totalFund * agentPct/100).toFixed(2).toLocaleString()}<br>
+                • Direct upline gets: RM${totalFund.toFixed(2).toLocaleString()} × ${uplinePct}% = RM${(totalFund * uplinePct/100).toFixed(2).toLocaleString()}<br>
+                • Indirect upline gets: RM${totalFund.toFixed(2).toLocaleString()} × ${upline2Pct}% = RM${(totalFund * upline2Pct/100).toFixed(2).toLocaleString()}<br>
+                • Company keeps: RM${totalFund.toFixed(2).toLocaleString()} × ${companyPct}% = RM${(totalFund * companyPct/100).toFixed(2).toLocaleString()}
+            `;
+            
+            document.getElementById('example_text').innerHTML = exampleText;
+        }
+        
+        function validateCommissionTotal() {
+            const structure = document.getElementById('commission_structure').value;
+            
+            if (structure === 'fund_based') {
+                const agentPct = parseFloat(document.getElementById('agent_fund_pct').value) || 0;
+                const uplinePct = parseFloat(document.getElementById('upline_fund_pct').value) || 0;
+                const upline2Pct = parseFloat(document.getElementById('upline2_fund_pct').value) || 0;
+                const companyPct = parseFloat(document.getElementById('company_fund_pct').value) || 0;
                 
-                const exampleDiv = document.querySelector('.commission-section > div:last-child');
-                if (exampleDiv) {
-                    exampleDiv.innerHTML = `
-                        <strong>💡 Example for RM10,000 sale:</strong><br>
-                        • Agent earns: RM10,000 × ${selfRate}% = <strong>RM${(10000 * selfRate/100).toFixed(2)}</strong><br>
-                        • Direct upline gets: RM10,000 × ${uplineRate}% = <strong>RM${(10000 * uplineRate/100).toFixed(2)}</strong><br>
-                        • Indirect upline gets: RM10,000 × ${upline2Rate}% = <strong>RM${(10000 * upline2Rate/100).toFixed(2)}</strong>
-                    `;
+                const total = agentPct + uplinePct + upline2Pct + companyPct;
+                
+                if (Math.abs(total - 100.0) > 0.1) {
+                    if (!confirm(`Commission percentages total ${total.toFixed(1)}%, not 100%. Are you sure you want to save?`)) {
+                        return false;
+                    }
                 }
             }
             
-            // Attach event listeners to commission rate inputs
-            document.querySelectorAll('input[name="upline_commission_rate"], input[name="upline2_commission_rate"], input[name="commission_rate"]').forEach(input => {
-                input.addEventListener('input', updateExample);
-                input.addEventListener('change', updateExample);
+            return true;
+        }
+        
+        // Attach event listeners
+        const commissionInputs = [
+            'agent_fund_pct', 'upline_fund_pct', 'upline2_fund_pct', 'company_fund_pct', 'total_fund_pct'
+        ];
+        
+        commissionInputs.forEach(id => {
+            document.getElementById(id).addEventListener('input', function() {
+                updateCommissionTotal();
+                updateExample();
             });
-            
-            // Initial update
-            updateExample();
         });
         </script>
     </body>
     </html>
     """
-
+    
     return render_template_string(
         edit_agent_template,
         agent_id=agent[0],
@@ -9377,10 +7786,13 @@ def edit_agent(agent_id):
         upline_id=agent[5],
         upline_name=upline_name,
         upline2_name=upline2_name,
-        upline_commission_rate=agent[6] if agent[6] else 5.0,
-        upline2_commission_rate=agent[9] if len(agent) > 9 and agent[9] else 2.5,
-        commission_rate=agent[10] if len(agent) > 10 and agent[10] else 10.0,
-        join_date=agent[7][:10] if agent[7] else "Unknown",
+        commission_structure=agent[10] if len(agent) > 10 and agent[10] else 'fund_based',
+        total_fund_pct=agent[11] if len(agent) > 11 and agent[11] else 2.0,
+        agent_fund_pct=agent[12] if len(agent) > 12 and agent[12] else 80.0,
+        upline_fund_pct=agent[13] if len(agent) > 13 and agent[13] else 10.0,
+        upline2_fund_pct=agent[14] if len(agent) > 14 and agent[14] else 5.0,
+        company_fund_pct=agent[15] if len(agent) > 15 and agent[15] else 5.0,
+        join_date=agent[6][:10] if agent[6] else "Unknown",
         existing_agents=existing_agents,
     )
 
@@ -10334,101 +8746,6 @@ def update_payment_settings():
         return redirect(f"/admin/settings?error={str(e)}")
 
 
-def notify_agent_status_change(listing_id, agent_id, new_status, admin_name):
-    """Notify agent when admin changes their submission status"""
-    conn = sqlite3.connect("real_estate.db")
-    cursor = conn.cursor()
-
-    # Get agent details
-    cursor.execute("SELECT email, name FROM users WHERE id = ?", (agent_id,))
-    agent = cursor.fetchone()
-
-    if not agent:
-        conn.close()
-        return False
-
-    agent_email, agent_name = agent
-
-    # Get listing details
-    cursor.execute(
-        "SELECT customer_name FROM property_listings WHERE id = ?", (listing_id,)
-    )
-    listing = cursor.fetchone()
-    customer_name = listing[0] if listing else "Unknown"
-
-    conn.close()
-
-    # Create notification email
-    subject = f"Submission #{listing_id} Status Updated"
-
-    if new_status == "draft":
-        body = f"""
-Dear {agent_name},
-
-Your submission #{listing_id} (Customer: {customer_name}) has been updated by admin.
-
-**New Status: DRAFT**
-
-📋 **What This Means:**
-- You can now reupload or update documents
-- Please review the submission and upload any missing documents
-- Resubmit when all documents are complete
-
-🔧 **Required Action:**
-1. Go to "My Submissions" page
-2. Click on submission #{listing_id}
-3. Use the "Add/Replace Documents" button
-4. Upload required documents
-5. Resubmit for approval
-
-📎 **Document Checklist:**
-- ✅ Signed Sales & Purchase Agreement
-- ✅ Customer ID Proof
-- ✅ Property Title/Deed
-- ✅ Commission Agreement (if separate)
-
-**Changed by:** {admin_name}
-**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-Click here to access your submission: [Your Submissions]
-
-If you have any questions, please contact the admin team.
-
-Best regards,
-Real Estate Commission System
-"""
-    else:
-        # For other status changes
-        body = f"""
-Dear {agent_name},
-
-Your submission #{listing_id} (Customer: {customer_name}) has been updated.
-
-**New Status: {new_status.upper()}**
-
-**Changed by:** {admin_name}
-**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-Click here to view your submission: [Your Submissions]
-
-Best regards,
-Real Estate Commission System
-"""
-
-    # Send email
-    success, message = send_email(
-        recipient_email=agent_email,
-        recipient_name=agent_name,
-        subject=subject,
-        body=body,
-        email_type="status_change",
-        related_id=listing_id,
-        related_type="listing",
-    )
-
-    return success
-
-
 @app.route("/admin/update-notification-settings", methods=["POST"])
 def update_notification_settings():
     """Update notification settings"""
@@ -10465,13 +8782,9 @@ def update_notification_settings():
         return redirect(f"/admin/settings?error={str(e)}")
 
 
-# ============ EMAIL SYSTEM FUNCTIONS ============
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+# ============ VOUCHER SYSTEM FUNCTIONS ============
 import random
 import string
-
 
 def generate_voucher_number(prefix="PAY"):
     """Generate unique voucher number"""
@@ -10479,15 +8792,10 @@ def generate_voucher_number(prefix="PAY"):
     random_str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     return f"{prefix}-{timestamp}-{random_str}"
 
-
 def create_payment_voucher(payment_id, agent_id, amount, payment_date, payment_method):
-    """Create payment voucher record - FIXED VERSION"""
-    conn = None
-    cursor = None
-
+    """Create payment voucher record - SIMPLIFIED VERSION"""
     try:
-        # Use the existing connection function
-        conn = get_db_connection(timeout=30)
+        conn = get_db_connection()
         cursor = conn.cursor()
 
         voucher_number = generate_voucher_number(
@@ -10500,523 +8808,24 @@ def create_payment_voucher(payment_id, agent_id, amount, payment_date, payment_m
             (voucher_number, payment_id, agent_id, amount, payment_date, payment_method, status)
             VALUES (?, ?, ?, ?, ?, ?, 'pending')
         """,
-            (
-                voucher_number,
-                payment_id,
-                agent_id,
-                amount,
-                payment_date,
-                payment_method,
-            ),
+            (voucher_number, payment_id, agent_id, amount, payment_date, payment_method),
         )
 
         voucher_id = cursor.lastrowid
         conn.commit()
-
+        
         return voucher_id, voucher_number
 
-    except sqlite3.OperationalError as e:
-        print(f" Database error in create_payment_voucher: {e}")
-        if conn:
-            conn.rollback()
-
-        # Retry once with a fresh connection
-        try:
-            conn = sqlite3.connect("real_estate.db", timeout=30)
-            cursor = conn.cursor()
-
-            voucher_number = generate_voucher_number(
-                get_system_setting("payment", "voucher_prefix", "PAY")
-            )
-
-            cursor.execute(
-                """
-                INSERT INTO payment_vouchers 
-                (voucher_number, payment_id, agent_id, amount, payment_date, payment_method, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending')
-            """,
-                (
-                    voucher_number,
-                    payment_id,
-                    agent_id,
-                    amount,
-                    payment_date,
-                    payment_method,
-                ),
-            )
-
-            voucher_id = cursor.lastrowid
-            conn.commit()
-
-            return voucher_id, voucher_number
-
-        except Exception as retry_error:
-            print(f"❌ Retry also failed: {retry_error}")
-            raise retry_error
-
     except Exception as e:
-        print(f"❌ Error in create_payment_voucher: {e}")
-        if conn:
-            conn.rollback()
+        print(f"❌ Error creating payment voucher: {e}")
         raise e
-
-    finally:
-        # Always close connections
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-
-def send_payment_voucher_email(voucher_id):
-    """Send payment voucher email to agent - FIXED VERSION"""
-    conn = None
-    cursor = None
-
-    try:
-        conn = get_db_connection(timeout=30)
-        cursor = conn.cursor()
-
-        # Get voucher details
-        cursor.execute(
-            """
-            SELECT pv.*, u.email, u.name as agent_name, 
-                   cp.transaction_id, cp.notes as payment_notes,
-                   pl.customer_name, pl.property_address, pl.sale_price
-            FROM payment_vouchers pv
-            JOIN users u ON pv.agent_id = u.id
-            JOIN commission_payments cp ON pv.payment_id = cp.id
-            JOIN property_listings pl ON cp.listing_id = pl.id
-            WHERE pv.id = ?
-        """,
-            (voucher_id,),
-        )
-
-        voucher = cursor.fetchone()
-
-        if not voucher:
-            return False, "Voucher not found"
-
-        # Get email template based on settings
-        template_type = get_system_setting("payment", "voucher_template", "detailed")
-        email_subject = f"Payment Voucher #{voucher[1]} - Real Estate Commission"
-
-        # Create email content
-        email_body = create_voucher_email_body(voucher, template_type)
-
-        # Send email
-        success, message = send_email(
-            recipient_email=voucher[12] if len(voucher) > 12 else "",  # agent email
-            recipient_name=voucher[13] if len(voucher) > 13 else "",  # agent name
-            subject=email_subject,
-            body=email_body,
-            email_type="payment_voucher",
-            related_id=voucher_id,
-            related_type="voucher",
-        )
-
-        # Update voucher status
-        success = True  # Assuming email sent successfully
-        if success:
-            cursor.execute(
-                """
-                UPDATE payment_vouchers 
-                SET status = 'sent', 
-                    email_sent_at = ?,
-                    email_status = 'success'
-                WHERE id = ?
-            """,
-                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), voucher_id),
-            )
-        else:
-            cursor.execute(
-                """
-                UPDATE payment_vouchers 
-                SET status = 'failed',
-                    email_status = ?
-                WHERE id = ?
-            """,
-                ("Email sending failed", voucher_id),
-            )
-
-        conn.commit()
-
-        return success, "Email sent successfully"
-
-    except Exception as e:
-        print(f"❌ Error in send_payment_voucher_email: {e}")
-        if conn:
-            conn.rollback()
-        return False, f"Failed to send email: {str(e)}"
-
-    finally:
-        if cursor:
-            cursor.close()
-
-
-def create_voucher_email_body(voucher, template_type="detailed"):
-    """Create email body for payment voucher"""
-
-    # Simple text template
-    if template_type == "simple":
-        return f"""
-Payment Voucher: {voucher[1]}
-Amount: RM{voucher[4]:,.2f}
-Date: {voucher[5]}
-Payment Method: {voucher[6] or 'Bank Transfer'}
-
-Transaction ID: {voucher[14] or 'N/A'}
-Customer: {voucher[16]}
-Property: {voucher[17]}
-Sale Price: RM{voucher[18]:,.2f}
-
-This payment has been processed and credited to your account.
-
-Thank you for your hard work!
-
-{get_system_setting('notification', 'email_footer', '© 2024 Real Estate System')}
-"""
-
-    # Detailed HTML template
-    elif template_type == "detailed":
-        return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }}
-        .voucher-box {{ border: 2px solid #28a745; padding: 25px; margin: 20px 0; border-radius: 10px; background: #f8fff9; }}
-        .amount {{ font-size: 32px; font-weight: bold; color: #28a745; text-align: center; margin: 15px 0; }}
-        .details-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-        .details-table td {{ padding: 10px; border-bottom: 1px solid #eee; }}
-        .details-table tr:last-child td {{ border-bottom: none; }}
-        .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px; text-align: center; }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>💰 Payment Voucher</h1>
-        <p>Your commission payment has been processed</p>
-    </div>
-    
-    <div class="voucher-box">
-        <div style="text-align: center; margin-bottom: 20px;">
-            <div style="font-size: 14px; color: #666;">Voucher Number</div>
-            <div style="font-size: 24px; font-weight: bold; color: #2c3e50;">{voucher[1]}</div>
-        </div>
-        
-        <div class="amount">RM{voucher[4]:,.2f}</div>
-        
-        <table class="details-table">
-            <tr>
-                <td><strong>Payment Date:</strong></td>
-                <td>{voucher[5]}</td>
-            </tr>
-            <tr>
-                <td><strong>Payment Method:</strong></td>
-                <td>{voucher[6] or 'Bank Transfer'}</td>
-            </tr>
-            <tr>
-                <td><strong>Transaction ID:</strong></td>
-                <td>{voucher[14] or 'N/A'}</td>
-            </tr>
-            <tr>
-                <td><strong>Agent Name:</strong></td>
-                <td>{voucher[13]}</td>
-            </tr>
-            <tr>
-                <td><strong>Customer:</strong></td>
-                <td>{voucher[16]}</td>
-            </tr>
-            <tr>
-                <td><strong>Property:</strong></td>
-                <td>{voucher[17]}</td>
-            </tr>
-            <tr>
-                <td><strong>Sale Price:</strong></td>
-                <td>RM{voucher[18]:,.2f}</td>
-            </tr>
-            <tr>
-                <td><strong>Status:</strong></td>
-                <td><span style="color: #28a745; font-weight: bold;">PAID</span></td>
-            </tr>
-        </table>
-        
-        {f'<div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;"><strong>Notes:</strong><br>{voucher[15]}</div>' if voucher[15] else ''}
-    </div>
-    
-    <div style="text-align: center; margin: 25px 0;">
-        <p>This payment has been processed and will reflect in your account according to your bank's processing time.</p>
-        <p>Thank you for your excellent work!</p>
-    </div>
-    
-    <div class="footer">
-        {get_system_setting('notification', 'email_footer', '© 2024 Real Estate System. All rights reserved.')}
-        <br>
-        <small>This is an automated email, please do not reply.</small>
-    </div>
-</body>
-</html>
-"""
-
-    # Official receipt template
-    else:  # receipt template
-        return f"""
-OFFICIAL PAYMENT RECEIPT
-========================
-
-Voucher: {voucher[1]}
-Date: {datetime.now().strftime('%d %B %Y')}
-
-PAYMENT TO:
-{voucher[13]}
-{voucher[12]}
-
-AMOUNT PAID: RM{voucher[4]:,.2f}
-
-PAYMENT DETAILS:
-----------------
-Payment Method: {voucher[6] or 'Bank Transfer'}
-Transaction ID: {voucher[14] or 'N/A'}
-Payment Date: {voucher[5]}
-
-FOR SERVICES RENDERED:
-----------------------
-Customer: {voucher[16]}
-Property: {voucher[17]}
-Sale Price: RM{voucher[18]:,.2f}
-
-STATUS: PAID IN FULL
-
-Authorized Signature:
-____________________
-Real Estate Commission System
-
-{get_system_setting('notification', 'email_footer', '© 2024 Real Estate System')}
-"""
-
-
-def send_email(
-    recipient_email,
-    recipient_name,
-    subject,
-    body,
-    email_type,
-    related_id=None,
-    related_type=None,
-):
-    """Send email using configured SMTP settings"""
-
-    # Get email settings
-    notification_settings = get_notification_settings()
-
-    conn = None
-    try:
-        # Log email attempt - use a separate connection
-        conn = sqlite3.connect("real_estate.db", timeout=30)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO email_logs 
-            (recipient_email, recipient_name, subject, email_type, status, related_id, related_type)
-            VALUES (?, ?, ?, ?, 'pending', ?, ?)
-        """,
-            (
-                recipient_email,
-                recipient_name,
-                subject,
-                email_type,
-                related_id,
-                related_type,
-            ),
-        )
-
-        email_log_id = cursor.lastrowid
-        conn.commit()
-
-        # Create message
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = notification_settings["system_from_email"]
-        msg["To"] = recipient_email
-
-        # Check if body is HTML
-        if "<html>" in body.lower():
-            msg.attach(MIMEText(body, "html"))
-        else:
-            msg.attach(MIMEText(body, "plain"))
-
-        # Send email
-        if (
-            notification_settings["smtp_server"]
-            and notification_settings["smtp_username"]
-        ):
-            # Use custom SMTP
-            server = smtplib.SMTP(
-                notification_settings["smtp_server"],
-                int(notification_settings["smtp_port"] or 587),
-            )
-            server.starttls()
-            server.login(
-                notification_settings["smtp_username"],
-                notification_settings["smtp_password"],
-            )
-            server.send_message(msg)
-            server.quit()
-        else:
-            # Use default (development - prints to console)
-            print(f"\n" + "=" * 50)
-            print(f"EMAIL SENT TO: {recipient_email}")
-            print(f"SUBJECT: {subject}")
-            print(f"BODY:\n{body}")
-            print("=" * 50 + "\n")
-
-        # Update email log - use same connection
-        cursor.execute(
-            """
-            UPDATE email_logs 
-            SET status = 'sent', sent_at = ?
-            WHERE id = ?
-        """,
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), email_log_id),
-        )
-
-        conn.commit()
-
-        return True, "Email sent successfully"
-
-    except Exception as e:
-        # Update email log with error
-        if conn:
-            try:
-                cursor.execute(
-                    """
-                    UPDATE email_logs 
-                    SET status = 'failed', error_message = ?
-                    WHERE id = ?
-                """,
-                    (str(e), email_log_id),
-                )
-                conn.commit()
-            except:
-                pass
-
-        return False, f"Failed to send email: {str(e)}"
-
     finally:
         if conn:
             conn.close()
-
-
-# ============ TEST EMAIL ROUTES ============
-@app.route("/admin/test-email")
-def test_email_system():
-    """Test email system"""
-    if "user_id" not in session or session["user_role"] != "admin":
-        return redirect("/login")
-
-    # Send test email to admin
-    admin_email = get_system_setting("notification", "admin_email", "admin@example.com")
-
-    success, message = send_email(
-        recipient_email=admin_email,
-        recipient_name="Admin",
-        subject="Test Email - Real Estate System",
-        body=f"""
-This is a test email from your Real Estate System.
-
-System Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-SMTP Configured: {'Yes' if get_system_setting('notification', 'smtp_server') else 'No (using console)'}
-
-If you received this email, your email system is working correctly.
-        """,
-        email_type="test",
-        related_id=session["user_id"],
-        related_type="admin",
-    )
-
-    if success:
-        return redirect("/admin/settings?success=Test+email+sent+successfully")
-    else:
-        return redirect(f"/admin/settings?error=Test+email+failed:+{message}")
-
-
-@app.route("/admin/send-test-voucher")
-def send_test_voucher():
-    """Send test payment voucher"""
-    if "user_id" not in session or session["user_role"] != "admin":
-        return redirect("/login")
-
-    conn = get_db_connection()
-
-    try:
-        cursor = conn.cursor()
-
-        # Get admin user
-        cursor.execute(
-            "SELECT id, email, name FROM users WHERE id = ?", (session["user_id"],)
-        )
-        admin_user = cursor.fetchone()
-
-        if admin_user:
-            # Create test payment record
-            cursor.execute(
-                """
-                INSERT INTO commission_payments 
-                (listing_id, agent_id, commission_amount, payment_status, payment_date, payment_method, transaction_id)
-                VALUES (?, ?, ?, 'paid', ?, ?, ?)
-            """,
-                (
-                    0,
-                    admin_user[0],
-                    1000.00,
-                    datetime.now().strftime("%Y-%m-%d"),
-                    "test",
-                    "TEST-12345",
-                ),
-            )
-
-            payment_id = cursor.lastrowid
-
-            # Create voucher
-            voucher_id, voucher_number = create_payment_voucher(
-                payment_id=payment_id,
-                agent_id=admin_user[0],
-                amount=1000.00,
-                payment_date=datetime.now().strftime("%Y-%m-%d"),
-                payment_method="test",
-            )
-
-            conn.commit()
-
-            # Send voucher email
-            success, message = send_payment_voucher_email(voucher_id)
-
-            if success:
-                return redirect(
-                    "/admin/settings?success=Test+voucher+email+sent+successfully"
-                )
-            else:
-                return redirect(f"/admin/settings?error=Test+voucher+failed:+{message}")
-
-        return redirect("/admin/settings?error=Cannot+find+user+account")
-
-    except Exception as e:
-        print(f"Error in send_test_voucher: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return redirect(f"/admin/settings?error=Database+error:+{str(e)}")
-
-    finally:
-        conn.close()
-
 
 @app.route("/admin/approve/<int:listing_id>")
 def approve_listing(listing_id):
-    """CLEAN VERSION: Approve listing with all logic in one transaction"""
+    """UPDATED: Approve listing using FUND-BASED commission system"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
@@ -11025,10 +8834,20 @@ def approve_listing(listing_id):
         conn = sqlite3.connect("real_estate.db")
         cursor = conn.cursor()
 
-        # 1. Get listing details
+        # 1. Get listing details WITH FUND-BASED FIELDS
         cursor.execute(
             """
-            SELECT pl.*, u.name as agent_name, u.upline_id, u.upline_commission_rate
+            SELECT pl.*, 
+                   u.name as agent_name, 
+                   u.upline_id, 
+                   u.upline2_id,
+                   -- FUND-BASED FIELDS:
+                   u.commission_structure,
+                   u.total_commission_fund_pct,
+                   u.agent_fund_pct,
+                   u.upline_fund_pct,
+                   u.upline2_fund_pct,
+                   u.company_fund_pct
             FROM property_listings pl
             JOIN users u ON pl.agent_id = u.id
             WHERE pl.id = ?
@@ -11048,9 +8867,17 @@ def approve_listing(listing_id):
 
         agent_id = listing[1]
         agent_name = listing[20] if len(listing) > 20 else "Unknown"
-        commission_amount = listing[9]
+        sale_price = listing[7]  # sale_price column
         direct_upline_id = listing[22] if len(listing) > 22 else None
-        upline_rate = listing[23] if len(listing) > 23 else 5.0
+        upline2_id = listing[23] if len(listing) > 23 else None
+        
+        # FUND-BASED FIELDS (indices based on SELECT query above)
+        commission_structure = listing[24] if len(listing) > 24 else 'fund_based'
+        total_fund_pct = float(listing[25]) if len(listing) > 25 and listing[25] is not None else 2.0
+        agent_fund_pct = float(listing[26]) if len(listing) > 26 and listing[26] is not None else 80.0
+        upline_fund_pct = float(listing[27]) if len(listing) > 27 and listing[27] is not None else 10.0
+        upline2_fund_pct = float(listing[28]) if len(listing) > 28 and listing[28] is not None else 5.0
+        company_fund_pct = float(listing[29]) if len(listing) > 29 and listing[29] is not None else 5.0
 
         # 2. Update listing status
         cursor.execute(
@@ -11069,8 +8896,14 @@ def approve_listing(listing_id):
             ),
         )
 
-        # 3. Create AGENT commission payment (agent gets 95%)
-        agent_payment_amount = commission_amount * 0.95
+        # 3. FUND-BASED COMMISSION CALCULATION
+        # Calculate total commission fund
+        total_fund = sale_price * (total_fund_pct / 100)
+        
+        # Agent's share
+        agent_payment_amount = total_fund * (agent_fund_pct / 100)
+        
+        # Create AGENT commission payment
         cursor.execute(
             """
             INSERT INTO commission_payments
@@ -11085,26 +8918,11 @@ def approve_listing(listing_id):
             ),
         )
 
-        # 4. Create DIRECT upline commission (to John) if exists
-        if direct_upline_id and upline_rate:
-            direct_commission = commission_amount * (upline_rate / 100)
+        # 4. Create DIRECT upline commission using FUND-BASED rate
+        if direct_upline_id and upline_fund_pct > 0:
+            direct_commission = total_fund * (upline_fund_pct / 100)
 
-            # 4a. Commission payment for direct upline
-            cursor.execute(
-                """
-                INSERT INTO commission_payments
-                (listing_id, agent_id, commission_amount, payment_status, created_at)
-                VALUES (?, ?, ?, 'pending', ?)
-            """,
-                (
-                    listing_id,
-                    direct_upline_id,
-                    direct_commission,
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ),
-            )
-
-            # 4b. Upline commission record (direct)
+            # 4a. Upline commission record (direct) - USE FUND-BASED RATE
             cursor.execute(
                 """
                 INSERT INTO upline_commissions
@@ -11117,41 +8935,97 @@ def approve_listing(listing_id):
                     agent_id,
                     direct_upline_id,
                     direct_commission,
-                    upline_rate,
+                    upline_fund_pct,  # USE FUND-BASED RATE (10%), not legacy 5%
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
 
-            # 5. Check for INDIRECT upline (John's upline = Edmond)
+        # 5. Create INDIRECT upline commission using FUND-BASED rate
+        if upline2_id and upline2_fund_pct > 0:
+            indirect_commission = total_fund * (upline2_fund_pct / 100)
+
+            # NO commission_payments for indirect upline either!
+            # Only upline_commissions record
+            cursor.execute("""
+                INSERT INTO upline_commissions
+                (listing_id, agent_id, upline_id, amount, status, 
+                 commission_type, commission_rate, created_at)
+                VALUES (?, ?, ?, ?, 'pending', 'indirect', ?, ?)
+            """, (
+                listing_id,
+                agent_id,  # Selling agent (Erwin)
+                upline2_id,  # Indirect upline (Edmond)
+                indirect_commission,
+                upline2_fund_pct,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ))
+
+        # 6. COMPANY balance (optional - can be saved to separate table)
+        if company_fund_pct > 0:
+            company_balance = total_fund * (company_fund_pct / 100)
+            # You might want to save this to a company_earnings table
+            # cursor.execute("INSERT INTO company_earnings ...", (listing_id, company_balance, ...))
+
+        # 7. Save calculation details to commission_calculations table
+        cursor.execute(
+            """
+            INSERT INTO commission_calculations
+            (listing_id, agent_id, sale_price, base_rate, commission, calculation_details)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            (
+                listing_id,
+                agent_id,
+                sale_price,
+                total_fund_pct,
+                agent_payment_amount,
+                json.dumps({
+                    "commission_source": "fund_based",
+                    "total_fund_percentage": total_fund_pct,
+                    "total_commission_fund": float(total_fund),
+                    "agent_fund_pct": agent_fund_pct,
+                    "upline_fund_pct": upline_fund_pct,
+                    "upline2_fund_pct": upline2_fund_pct,
+                    "company_fund_pct": company_fund_pct,
+                    "commission_structure": commission_structure,
+                    "calculated_at": datetime.now().isoformat()
+                })
+            ),
+        )
+
+        # 8. Update agent's total commission
+        cursor.execute(
+            """
+            UPDATE users 
+            SET total_commission = COALESCE(total_commission, 0) + ? 
+            WHERE id = ?
+        """,
+            (agent_payment_amount, agent_id),
+        )
+
+        # Update direct upline's total commission
+        if direct_upline_id and upline_fund_pct > 0:
             cursor.execute(
-                "SELECT upline_id FROM users WHERE id = ?", (direct_upline_id,)
+                """
+                UPDATE users 
+                SET total_commission = COALESCE(total_commission, 0) + ? 
+                WHERE id = ?
+            """,
+                (direct_commission, direct_upline_id),
             )
-            indirect_result = cursor.fetchone()
 
-            if indirect_result and indirect_result[0]:
-                indirect_upline_id = indirect_result[0]
-                indirect_rate = upline_rate / 2
-                indirect_commission = commission_amount * (indirect_rate / 100)
+        # Update indirect upline's total commission
+        if upline2_id and upline2_fund_pct > 0:
+            cursor.execute(
+                """
+                UPDATE users 
+                SET total_commission = COALESCE(total_commission, 0) + ? 
+                WHERE id = ?
+            """,
+                (indirect_commission, upline2_id),
+            )
 
-                # 5a. Upline commission record (indirect)
-                cursor.execute(
-                    """
-                    INSERT INTO upline_commissions
-                    (listing_id, agent_id, upline_id, amount, status, 
-                     commission_type, commission_rate, created_at)
-                    VALUES (?, ?, ?, ?, 'pending', 'indirect', ?, ?)
-                """,
-                    (
-                        listing_id,
-                        agent_id,
-                        indirect_upline_id,
-                        indirect_commission,
-                        indirect_rate,
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    ),
-                )
-
-        # 6. Create notification for agent
+        # 9. Create notification for agent
         cursor.execute(
             """
             INSERT INTO agent_notifications
@@ -11171,11 +9045,11 @@ def approve_listing(listing_id):
             ),
         )
 
-        # 7. COMMIT EVERYTHING
+        # 10. COMMIT EVERYTHING
         conn.commit()
         conn.close()
 
-        flash(f"✅ Listing #{listing_id} approved! Commissions calculated.", "success")
+        flash(f"✅ Listing #{listing_id} approved! Fund-based commissions calculated.", "success")
         return redirect(f"/admin/documents/{listing_id}")
 
     except Exception as e:
@@ -11372,7 +9246,6 @@ def reject_listing(listing_id):
 
     return render_template_string(rejection_template)
 
-
 @app.route("/admin/payments")
 def admin_payments():
     """Payment management page with BOTH agent and upline payments"""
@@ -11525,8 +9398,8 @@ def admin_payments():
                 ua.name as from_agent_name,
                 ua.email as from_agent_email,
                 pl.agent_id as from_agent_id,
-                COALESCE(uc.commission_type, 'direct') as commission_type,  -- NEW
-                uc.commission_rate  -- NEW
+                COALESCE(uc.commission_type, 'direct') as commission_type,
+                uc.commission_rate
             FROM upline_commissions uc
             LEFT JOIN users uu ON uc.upline_id = uu.id
             LEFT JOIN property_listings pl ON uc.listing_id = pl.id
@@ -11544,16 +9417,55 @@ def admin_payments():
 
         cursor.execute(query_upline_simple, params_upline)
         upline_payments = cursor.fetchall()
-        # Add None for project_name column
-        # No need to add extra columns
 
-    # ============ 3. CORRECTED COMBINED PAYMENTS STATS ============
+    # ============ 3. CALCULATE SEPARATE STATS ============
+    # Agent payments: only from commission_payments where agent is the listing agent
+    agent_pending_ids = set()  # Track agent payment IDs
+    total_agent_amount = 0
+    total_agent_paid = 0
+    total_agent_pending = 0
+    
+    for payment in agent_payments:
+        amount = payment[5] or 0  # commission_amount
+        status = payment[6]  # payment_status
+        
+        total_agent_amount += amount
+        
+        if status == "paid":
+            total_agent_paid += amount
+        elif status == "pending":
+            total_agent_pending += amount
+            agent_pending_ids.add(payment[0])  # Store payment ID
+
+    # Upline payments: only from upline_commissions
+    upline_pending_ids = set()  # Track upline payment IDs  
+    total_upline_amount = 0
+    total_upline_paid = 0
+    total_upline_pending = 0
+    
+    for payment in upline_payments:
+        amount = payment[5] or 0  # amount
+        status = payment[6]  # status
+        
+        total_upline_amount += amount
+        
+        if status == "paid":
+            total_upline_paid += amount
+        elif status == "pending":
+            total_upline_pending += amount
+            upline_pending_ids.add(payment[0])  # Store payment ID
+
+    print(f"DEBUG: Agent pending amount: {total_agent_pending}")
+    print(f"DEBUG: Upline pending amount: {total_upline_pending}")
+    print(f"DEBUG: Total pending should be: {total_agent_pending + total_upline_pending}")
+
+    # ============ 4. GET COMBINED STATS FROM DATABASE ============
     # Get stats from commission_payments table
     query_cp_stats = """
         SELECT 
             COUNT(*) as total_agent_payments,
             SUM(CASE WHEN payment_status = 'paid' THEN commission_amount ELSE 0 END) as total_agent_paid,
-            SUM(CASE WHEN payment_status = 'pending' THEN commission_amount ELSE 0 END) as total_agent_pending,
+            SUM(CASE WHEN payment_status = 'pending' THEN commission_amount ELSE 0 END) as total_agent_pending_db,
             SUM(CASE WHEN payment_status = 'processing' THEN commission_amount ELSE 0 END) as total_agent_processing
         FROM commission_payments
     """
@@ -11565,19 +9477,20 @@ def admin_payments():
     query_uc_stats = """
         SELECT 
             COUNT(*) as total_upline_payments,
-            SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_upline_paid,
-            SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_upline_pending
+            SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_upline_paid_db,
+            SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_upline_pending_db
         FROM upline_commissions
     """
 
     cursor.execute(query_uc_stats)
     uc_stats = cursor.fetchone()
 
-    # Combine stats CORRECTLY
-    total_payments = (cp_stats[0] or 0) + (uc_stats[0] or 0)
-    total_paid = (cp_stats[1] or 0) + (uc_stats[1] or 0)
-    total_pending = (cp_stats[2] or 0) + (uc_stats[2] or 0)
-    total_processing = cp_stats[3] or 0
+    # ============ 5. CALCULATE COMBINED STATS ============
+    # Use the calculated values instead of database values to ensure consistency
+    total_payments = len(agent_payments) + len(upline_payments)
+    total_paid = total_agent_paid + total_upline_paid
+    total_pending = total_agent_pending + total_upline_pending
+    total_processing = cp_stats[3] or 0 if cp_stats else 0
 
     stats = (total_payments, total_paid, total_pending, total_processing)
 
@@ -11587,387 +9500,9 @@ def admin_payments():
 
     conn.close()
 
-    # ============ 4. CALCULATE SEPARATE STATS ============
-    total_agent_amount = sum(p[5] or 0 for p in agent_payments if p[6] == "pending")
-    total_upline_amount = sum(p[5] or 0 for p in upline_payments if p[6] == "pending")
-
-    # ============ 5. RENDER TEMPLATE ============
-    return render_template_string(
-        """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Payment Management</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 1800px; margin: 0 auto; }
-        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; margin-bottom: 20px; }
-        .stat-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
-        .stat-value { font-size: 24px; font-weight: bold; margin: 10px 0; }
-        .filter-card { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .filter-form { display: grid; grid-template-columns: auto auto auto 1fr; gap: 10px; align-items: center; }
-        select, input { padding: 8px; border: 1px solid #ddd; border-radius: 5px; }
-        .btn { background: #007bff; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }
-        .btn:hover { background: #0056b3; }
-        .table-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 30px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #f8f9fa; font-weight: bold; }
-        tr:hover { background: #f8f9fa; }
-        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .status-pending { background: #fff3cd; color: #856404; }
-        .status-paid { background: #d4edda; color: #155724; }
-        .status-processing { background: #cce5ff; color: #004085; }
-        .actions { display: flex; gap: 5px; }
-        .action-btn { padding: 4px 8px; border-radius: 4px; text-decoration: none; font-size: 12px; }
-        .view-btn { background: #17a2b8; color: white; }
-        .pay-btn { background: #28a745; color: white; }
-        .payment-type { font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 5px; }
-        .agent-payment { background: #e3f2fd; color: #1565c0; }
-        .upline-payment { background: #f3e5f5; color: #7b1fa2; }
-        .upline-direct { background: #e3f2fd; color: #1565c0; }
-        .upline-indirect { background: #fff3cd; color: #856404; }
-        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .section-title { display: flex; align-items: center; gap: 10px; }
-        .badge-count { background: #6c757d; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
-        .database-info { background: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 12px; color: #004085; }
-        .info-message { background: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #c3e6cb; }
-        .success-message { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #bee5eb; }
-        .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #f5c6cb; }
-        .header-links { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
-        .listing-info { font-size: 12px; color: #666; }
-        .project-name { font-weight: bold; color: #0056b3; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>💰 Payment Management</h1>
-            <div class="header-links">
-                <a href="/admin/dashboard" class="btn" style="background: #6c757d;">← Dashboard</a>
-                <a href="/admin/export-data?type=payments" class="btn" style="background: #20c997;">📤 Export</a>
-                <a href="/admin/sync-payments" class="btn" style="background: #17a2b8;">💳 Sync & Create Payments</a>
-            </div>
-        </div>
-        
-        {% if info_message %}
-        <div class="info-message">
-            ℹ️ {{ info_message }}
-        </div>
-        {% endif %}
-        
-        {% if success_message %}
-        <div class="success-message">
-            ✅ {{ success_message }}
-        </div>
-        {% endif %}
-        
-        {% if error_message %}
-        <div class="error-message">
-            ❌ {{ error_message }}
-        </div>
-        {% endif %}
-        
-        <!-- Database Info -->
-        <div class="database-info">
-            <strong>Database Status:</strong> 
-            Agent Payments: {{ agent_payments|length }} | 
-            Upline Payments: {{ upline_payments|length }} |
-            Total Payments: {{ stats[0] or 0 }}
-        </div>
-        
-        <!-- Enhanced Summary Stats -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Displayed Payments</div>
-                <div class="stat-value" style="color: #6f42c1;">{{ agent_payments|length + upline_payments|length }}</div>
-                <div style="font-size: 12px; color: #999;">
-                    {{ agent_payments|length }} agent + {{ upline_payments|length }} upline
-                </div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Total Paid</div>
-                <div class="stat-value" style="color: #28a745;">RM{{ "{:,.2f}".format(stats[1] or 0) }}</div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Pending Payment</div>
-                <div class="stat-value" style="color: #fd7e14;">RM{{ "{:,.2f}".format(stats[2] or 0) }}</div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Processing</div>
-                <div class="stat-value" style="color: #17a2b8;">RM{{ "{:,.2f}".format(stats[3] or 0) }}</div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Agent Pending</div>
-                <div class="stat-value" style="color: #007bff;">RM{{ "{:,.2f}".format(total_agent_amount or 0) }}</div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Upline Pending</div>
-                <div class="stat-value" style="color: #6f42c1;">RM{{ "{:,.2f}".format(total_upline_amount or 0) }}</div>
-            </div>
-        </div>
-        
-        <!-- Filter Section -->
-        <div class="filter-card">
-            <h3 style="margin-top: 0;">Filter Payments</h3>
-            <form method="get" class="filter-form">
-                <select name="status">
-                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
-                    <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
-                    <option value="processing" {% if status_filter == 'processing' %}selected{% endif %}>Processing</option>
-                    <option value="paid" {% if status_filter == 'paid' %}selected{% endif %}>Paid</option>
-                </select>
-                
-                <select name="agent">
-                    <option value="all" {% if agent_filter == 'all' %}selected{% endif %}>All Agents</option>
-                    {% for agent in agents %}
-                    <option value="{{ agent[0] }}" {% if agent_filter == agent[0]|string %}selected{% endif %}>{{ agent[1] }}</option>
-                    {% endfor %}
-                </select>
-                
-                <button type="submit" class="btn">🔍 Filter</button>
-                <a href="/admin/payments" class="btn" style="background: #6c757d; margin-left: auto;">Clear</a>
-            </form>
-        </div>
-        
-        <!-- Agent Payments Table -->
-        <div class="table-container">
-            <div class="section-header">
-                <div class="section-title">
-                    <h2 style="margin: 0;">👤 Agent Commission Payments</h2>
-                    <span class="badge-count">{{ agent_payments|length }} payments</span>
-                </div>
-                <span class="payment-type agent-payment">Agent's Own Commissions</span>
-            </div>
-            
-            {% if agent_payments %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>Payment ID</th>
-                        <th>Listing</th>
-                        <th>Agent</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Payment Date</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for payment in agent_payments %}
-                    <tr>
-                        <td><strong>#{{ payment[0] }}</strong></td>
-                        <td>
-                            <div class="listing-info">
-                                <strong>#{{ payment[1] }}</strong>
-                                {% if payment[12] %}
-                                <div class="project-name">{{ payment[12] }}</div>
-                                {% endif %}
-                                {% if payment[10] %}
-                                <div>{{ payment[10] }}</div>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <td>
-                            {{ payment[3] }}
-                            <div style="font-size: 12px; color: #666;">{{ payment[4] }}</div>
-                        </td>
-                        <td><strong>RM{{ "{:,.2f}".format(payment[5] or 0) }}</strong></td>
-                        <td>
-                            {% if payment[6] == 'pending' %}
-                            <span class="status-badge status-pending">Pending</span>
-                            {% elif payment[6] == 'processing' %}
-                            <span class="status-badge status-processing">Processing</span>
-                            {% elif payment[6] == 'paid' %}
-                            <span class="status-badge status-paid">Paid</span>
-                            {% else %}
-                            <span class="status-badge">{{ payment[6] }}</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ payment[7] if payment[7] else 'Not paid' }}</td>
-                        <td>{{ payment[8].split()[0] if payment[8] else '' }}</td>
-                        <td class="actions">
-                            <a href="/admin/payment/{{ payment[0] }}" class="action-btn view-btn">👁️ View</a>
-                            {% if payment[6] != 'paid' %}
-                            <a href="/admin/mark-commission-paid/CP-{{ payment[0] }}" 
-                               class="action-btn pay-btn" 
-                               onclick="return confirm('Mark agent payment #{{ payment[0] }} as paid?')">
-                               💰 Mark Paid
-                            </a>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p>No agent commission payments found.</p>
-            {% endif %}
-        </div>
-        
-        <!-- Upline Payments Table -->
-        <div class="table-container">
-            <div class="section-header">
-                <div class="section-title">
-                    <h2 style="margin: 0;">👥 Upline Commission Payments</h2>
-                    <span class="badge-count">{{ upline_payments|length }} payments</span>
-                </div>
-                <span class="payment-type upline-payment">Commissions from Downline Agents</span>
-            </div>
-            
-            {% if upline_payments %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Listing</th>
-                        <th>Upline Agent</th>
-                        <th>From Agent</th>
-                        <th>Type</th>
-                        <th>Rate</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Payment Date</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for payment in upline_payments %}
-                    <tr>
-                        <td><strong>UC-{{ payment[0] }}</strong></td>
-                        <td>
-                            <div class="listing-info">
-                                <strong>#{{ payment[1] }}</strong>
-                                {% if payment[14] %}
-                                <div class="project-name">{{ payment[14] }}</div>
-                                {% endif %}
-                                {% if payment[9] %}
-                                <div>{{ payment[9] }}</div>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <td>
-                            {{ payment[3] if payment[3] else 'Unknown' }}
-                            <div style="font-size: 12px; color: #666;">{{ payment[4] if payment[4] else '' }}</div>
-                        </td>
-                        <td>
-                            {{ payment[11] if payment[11] else 'N/A' }}
-                            <div style="font-size: 12px; color: #666;">{{ payment[12] if payment[12] else '' }}</div>
-                        </td>
-                        <td>
-                            {% if payment[15] == 'indirect' %}
-                                <span class="payment-type upline-indirect">Indirect</span>
-                            {% else %}
-                                <span class="payment-type upline-direct">Direct</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {{ payment[16] or 0 }}%
-                        </td>
-                        <td><strong>RM{{ "{:,.2f}".format(payment[5] or 0) }}</strong></td>
-                        <td>
-                            {% if payment[6] == 'pending' %}
-                            <span class="status-badge status-pending">Pending</span>
-                            {% elif payment[6] == 'paid' %}
-                            <span class="status-badge status-paid">Paid</span>
-                            {% elif payment[6] == 'processing' %}
-                            <span class="status-badge status-processing">Processing</span>
-                            {% else %}
-                            <span class="status-badge">{{ payment[6] }}</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if payment[8] %}
-                            {{ payment[8].split()[0] if payment[8] else '' }}
-                            {% else %}
-                            Not paid
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if payment[7] %}
-                            {{ payment[7].split()[0] if payment[7] else '' }}
-                            {% else %}
-                            N/A
-                            {% endif %}
-                        </td>
-                        <td class="actions">
-                            {% if payment[6] == 'pending' %}
-                            <a href="/admin/mark-commission-paid/UC-{{ payment[0] }}" 
-                               class="action-btn pay-btn" 
-                               onclick="return confirm('Mark upline commission UC-{{ payment[0] }} as paid? Amount: RM{{ "{:,.2f}".format(payment[5] or 0) }}')">
-                               💰 Mark Paid
-                            </a>
-                            {% else %}
-                            <span class="status-badge">{{ payment[6] }}</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; text-align: center;">
-                <h3 style="color: #6c757d; margin-bottom: 10px;">No Upline Commission Payments Found</h3>
-                <p style="color: #666; margin-bottom: 15px;">This could be because:</p>
-                <ul style="text-align: left; display: inline-block; color: #666; margin-bottom: 20px;">
-                    <li>No upline relationships have been set up</li>
-                    <li>Agents don't have uplines assigned</li>
-                    <li>No commissions have been approved yet</li>
-                    <li>All upline commissions have already been paid</li>
-                </ul>
-                <div style="margin-top: 15px;">
-                    <a href="/admin/set-upline" class="btn" style="background: #17a2b8; margin: 5px;">👥 Set Upline Relationships</a>
-                    <a href="/admin/agents" class="btn" style="background: #20c997; margin: 5px;">📋 Manage Agents</a>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-    
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Add payment type indicators
-            const agentRows = document.querySelectorAll('.table-container:first-child tbody tr');
-            agentRows.forEach(row => {
-                const typeCell = row.querySelector('td:nth-child(3)');
-                if (typeCell) {
-                    const typeBadge = document.createElement('span');
-                    typeBadge.className = 'payment-type agent-payment';
-                    typeBadge.textContent = 'Agent';
-                    typeBadge.style.marginLeft = '5px';
-                    typeBadge.style.fontSize = '10px';
-                    typeCell.appendChild(typeBadge);
-                }
-            });
-            
-            const uplineRows = document.querySelectorAll('.table-container:last-child tbody tr');
-            uplineRows.forEach(row => {
-                const typeCell = row.querySelector('td:nth-child(3)');
-                if (typeCell) {
-                    const commissionTypeCell = row.querySelector('td:nth-child(5)');
-                    if (commissionTypeCell) {
-                        const commissionType = commissionTypeCell.textContent.trim();
-                        const typeBadge = document.createElement('span');
-                        typeBadge.className = 'payment-type';
-                        typeBadge.textContent = commissionType === 'Indirect' ? 'Upline (Indirect)' : 'Upline (Direct)';
-                        typeBadge.style.marginLeft = '5px';
-                        typeBadge.style.fontSize = '10px';
-                        typeBadge.style.background = commissionType === 'Indirect' ? '#ffc107' : '#e3f2fd';
-                        typeBadge.style.color = commissionType === 'Indirect' ? '#000' : '#1565c0';
-                        typeBadge.style.padding = '2px 6px';
-                        typeBadge.style.borderRadius = '10px';
-                        typeCell.appendChild(typeBadge);
-                    }
-                }
-            });
-        });
-    </script>
-</body>
-</html>
-    """,
+    # ============ 6. RENDER TEMPLATE ============
+    return render_template(
+        "admin/payments.html",
         agent_payments=agent_payments,
         upline_payments=upline_payments,
         stats=stats,
@@ -11976,11 +9511,13 @@ def admin_payments():
         agent_filter=agent_filter,
         total_agent_amount=total_agent_amount,
         total_upline_amount=total_upline_amount,
+        total_agent_pending=total_agent_pending,
+        total_upline_pending=total_upline_pending,
+        total_pending_correct=total_pending,  # Already calculated above
         info_message=info_message,
         success_message=success_message,
         error_message=error_message,
     )
-
 
 @app.route("/admin/set-upline")
 def set_upline():

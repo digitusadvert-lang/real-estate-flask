@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Resubmit Submission #{{ listing_id }}</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px; 
+            background: #f5f5f5; 
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 30px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1); 
+        }
+        .header { 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #007bff;
+        }
+        .rejection-alert {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .existing-data {
+            background: #e8f4ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .form-section { 
+            border: 1px solid #e0e0e0; 
+            padding: 20px; 
+            margin-bottom: 20px; 
+            border-radius: 8px; 
+        }
+        .form-group { 
+            margin-bottom: 15px; 
+        }
+        label { 
+            display: block; 
+            margin-bottom: 5px; 
+            font-weight: bold; 
+            color: #555; 
+        }
+        .required:after { 
+            content: " *"; 
+            color: red; 
+        }
+        input, select, textarea { 
+            width: 100%; 
+            padding: 10px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            box-sizing: border-box; 
+        }
+        .btn { 
+            padding: 12px 25px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            margin-right: 10px; 
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary { 
+            background: #28a745; 
+            color: white; 
+        }
+        .btn-secondary { 
+            background: #6c757d; 
+            color: white; 
+        }
+        .document-list {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✏️ Resubmit Submission #{{ listing_id }}</h1>
+            <div>
+                <a href="/agent/submission/{{ listing_id }}" class="btn btn-secondary">← Back to Submission</a>
+            </div>
+        </div>
+        
+        <div class="rejection-alert">
+            <h3 style="margin-top: 0;"> Previous Rejection Reason:</h3>
+            <p><strong>{{ sub_data['rejection_reason'] or 'No reason provided' }}</strong></p>
+            <p>Please fix the issues mentioned above before resubmitting.</p>
+        </div>
+        
+        <form method="POST" action="/agent/resubmit/{{ listing_id }}" enctype="multipart/form-data">
+            
+            <!-- Customer Information -->
+            <div class="form-section">
+                <h2>👤 Customer Information</h2>
+                <div class="existing-data">
+                    <strong>Current Data:</strong> {{ sub_data['customer_name'] }} | {{ sub_data['customer_email'] }} | {{ sub_data['customer_phone'] or 'No phone' }}
+                </div>
+                <div class="form-group">
+                    <label class="required">Customer Name</label>
+                    <input type="text" name="customer_name" value="{{ sub_data['customer_name'] }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="required">Customer Email</label>
+                    <input type="email" name="customer_email" value="{{ sub_data['customer_email'] }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Customer Phone</label>
+                    <input type="tel" name="customer_phone" value="{{ sub_data['customer_phone'] or '' }}">
+                </div>
+            </div>
+            
+            <!-- Property Details -->
+            <div class="form-section">
+                <h2>🏠 Property Details</h2>
+                <div class="existing-data">
+                    <strong>Current Data:</strong> RM{{ "%.2f"|format(sub_data['sale_price']) }} | {{ sub_data['closing_date'] or 'No closing date' }}
+                </div>
+                <div class="form-group">
+                    <label class="required">Property Address</label>
+                    <textarea name="property_address" rows="3" required>{{ sub_data['property_address'] }}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="required">Sale Price (RM)</label>
+                    <input type="number" name="sale_price" value="{{ sub_data['sale_price'] }}" min="0" step="1000" required>
+                </div>
+                <div class="form-group">
+                    <label>Closing Date</label>
+                    <input type="date" name="closing_date" value="{{ sub_data['closing_date'] or '' }}">
+                </div>
+            </div>
+            
+            <!-- Document Update -->
+            <div class="form-section">
+                <h2>📎 Update Documents</h2>
+                <div class="existing-data">
+                    <strong>Existing Documents:</strong> {{ existing_docs|length }} file(s) uploaded
+                    <div class="document-list">
+                        {% for doc in existing_docs[:5] %}
+                        📄 {{ doc }}<br>
+                        {% endfor %}
+                        {% if existing_docs|length > 5 %}
+                        ... and {{ existing_docs|length - 5 }} more
+                        {% endif %}
+                    </div>
+                </div>
+                <p style="color: #666; margin-bottom: 15px;">
+                    You can upload new documents or replacements. Existing documents will be kept unless you upload files with the same names.
+                </p>
+                
+                <div class="form-group">
+                    <label>Update Agreement</label>
+                    <input type="file" name="agreement" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                    <small>Upload new version if needed</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Update ID Proof</label>
+                    <input type="file" name="id_proof" accept=".pdf,.jpg,.jpeg,.png">
+                    <small>Upload new version if needed</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Additional Documents</label>
+                    <input type="file" name="additional_docs" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                    <small>Hold CTRL to select multiple files</small>
+                </div>
+            </div>
+            
+            <!-- Additional Information -->
+            <div class="form-section">
+                <h2>📋 Additional Information</h2>
+                <div class="form-group">
+                    <label>Special Notes</label>
+                    <textarea name="notes" rows="4" placeholder="Any special conditions, requirements, or notes...">{{ sub_data['notes'] }}</textarea>
+                </div>
+            </div>
+            
+            <div style="margin-top: 30px; text-align: center;">
+                <button type="submit" class="btn btn-primary">✅ Submit for Review</button>
+                <a href="/agent/submission/{{ listing_id }}" class="btn btn-secondary">Cancel</a>
+                <a href="/new-listing" class="btn" style="background: #007bff; color: white;">➕ Create New Instead</a>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

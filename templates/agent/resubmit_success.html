@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Resubmission Successful</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        .success-box { border: 2px solid #28a745; padding: 30px; border-radius: 10px; text-align: center; }
+        h2 { color: #28a745; }
+        .details { text-align: left; background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="success-box">
+        <h2>✅ Submission Resubmitted Successfully!</h2>
+        <p>Reference ID: <strong>#{{ listing_id }}</strong></p>
+        
+        <div class="details">
+            <p><strong>Customer:</strong> {{ customer_name }}</p>
+            <p><strong>Property:</strong> {{ property_address }}...</p>
+            <p><strong>Sale Price:</strong> RM{{ "%.2f"|format(sale_price|float) }}</p>
+            <p><strong>Status:</strong> Submitted for Review</p>
+            {% if uploaded_files %}
+            <p><strong>Uploaded Files:</strong> {{ uploaded_files|length }} new file(s)</p>
+            {% endif %}
+        </div>
+        
+        <p>Your resubmission is now pending admin approval.</p>
+        <div style="margin-top: 30px;">
+            <a href="/agent/submission/{{ listing_id }}" style="background: #007bff; color: white; padding: 10px 20px; 
+               text-decoration: none; border-radius: 5px; margin-right: 10px;">📄 View Submission</a>
+            <a href="/agent/submissions" style="background: #6c757d; color: white; padding: 10px 20px; 
+               text-decoration: none; border-radius: 5px;">📋 My Submissions</a>
+        </div>
+    </div>
+</body>
+</html>
