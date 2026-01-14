@@ -1,8 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Downline Network</title>
     <style>
         body { 
@@ -83,45 +81,33 @@
             background: #2c3e50; 
             color: white; 
         }
-        .system-badge {
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-            background: #4a6fa5;
-            color: white;
+        .type-badge { 
+            padding: 4px 10px; 
+            border-radius: 12px; 
+            font-size: 12px; 
+            font-weight: bold; 
         }
-        .type-badge {
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
+        .type-direct { 
+            background: #cce5ff; 
+            color: #004085; 
         }
-        .type-direct {
-            background: #cce5ff;
-            color: #004085;
+        .type-indirect { 
+            background: #d4edda; 
+            color: #155724; 
         }
-        .type-indirect {
-            background: #d4edda;
-            color: #155724;
+        .status-badge { 
+            padding: 4px 10px; 
+            border-radius: 12px; 
+            font-size: 12px; 
+            font-weight: bold; 
         }
-        .status-badge {
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
+        .status-active { 
+            background: #d4edda; 
+            color: #155724; 
         }
-        .status-active {
-            background: #d4edda;
-            color: #155724;
-        }
-        .status-pending {
-            background: #fff3cd;
-            color: #856404;
-        }
-        .status-inactive {
-            background: #f8d7da;
-            color: #721c24;
+        .status-pending { 
+            background: #fff3cd; 
+            color: #856404; 
         }
         .action-btn { 
             padding: 4px 8px; 
@@ -134,14 +120,8 @@
         .btn-view { 
             background: #17a2b8; 
         }
-        .btn-view:hover {
-            background: #138496;
-        }
         .btn-performance { 
             background: #28a745; 
-        }
-        .btn-performance:hover {
-            background: #218838;
         }
         .empty-state { 
             text-align: center; 
@@ -150,30 +130,12 @@
             border-radius: 10px; 
             color: #666; 
         }
-        .commission-structure {
-            font-weight: bold;
-        }
-        .structure-fund {
-            color: #28a745;
-        }
-        .structure-legacy {
-            color: #6c757d;
-        }
-        .earnings {
-            font-weight: bold;
-        }
-        .earnings-approved {
-            color: #28a745;
-        }
-        .earnings-pending {
-            color: #fd7e14;
-        }
-        .system-info {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        .system-info { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-top: 20px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
         }
         .info-grid {
             display: grid;
@@ -212,6 +174,15 @@
             position: absolute;
             left: 0;
         }
+        .commission-amount {
+            font-weight: bold;
+        }
+        .commission-earned {
+            color: #28a745;
+        }
+        .commission-pending {
+            color: #fd7e14;
+        }
     </style>
 </head>
 <body>
@@ -219,12 +190,8 @@
         <h1>👥 My Downline Network</h1>
         <div>
             <a href="/agent/dashboard" class="btn">← Dashboard</a>
-            <span class="system-badge" style="margin-left: 20px;">
-                {% if stats.commission_structure == 'fund_based' %}
-                    💰 Fund-Based System
-                {% else %}
-                    ⚡ Legacy System
-                {% endif %}
+            <span style="margin-left: 20px; padding: 6px 12px; background: #4a6fa5; color: white; border-radius: 12px; font-size: 12px; font-weight: bold;">
+                {% if stats.commission_structure == 'fund_based' %}💰 Fund-Based System{% else %}⚡ Legacy System{% endif %}
             </span>
         </div>
     </div>
@@ -232,29 +199,29 @@
     <div class="stats">
         <div class="stat-card">
             <div style="font-size: 14px; color: #666;">Total Downline</div>
-            <div class="stat-value" style="color: #007bff;">{{ stats.total_downline }}</div>
+            <div class="stat-value" style="color: #007bff;">{{ stats.total_downline|default(0) }}</div>
             <div style="font-size: 12px; color: #888; margin-top: 5px;">
-                {{ stats.direct_downline_count }} direct + {{ stats.indirect_downline_count }} indirect
+                {{ stats.direct_downline_count|default(0) }} direct + {{ stats.indirect_downline_count|default(0) }} indirect
             </div>
         </div>
         <div class="stat-card">
             <div style="font-size: 14px; color: #666;">Total Earned</div>
-            <div class="stat-value" style="color: #28a745;">RM{{ "%.2f"|format(stats.total_your_earnings|float) }}</div>
+            <div class="stat-value" style="color: #28a745;">RM{{ "%.2f"|format(stats.total_your_earnings|default(0)|float) }}</div>
             <div style="font-size: 12px; color: #888; margin-top: 5px;">
-                Direct: RM{{ "%.2f"|format(stats.total_direct_earnings|float) }}
+                Direct: RM{{ "%.2f"|format(stats.total_direct_earnings|default(0)|float) }}
             </div>
         </div>
         <div class="stat-card">
             <div style="font-size: 14px; color: #666;">Pending</div>
-            <div class="stat-value" style="color: #fd7e14;">RM{{ "%.2f"|format(stats.total_your_pending|float) }}</div>
+            <div class="stat-value" style="color: #fd7e14;">RM{{ "%.2f"|format(stats.total_your_pending|default(0)|float) }}</div>
             <div style="font-size: 12px; color: #888; margin-top: 5px;">
-                Direct: RM{{ "%.2f"|format(stats.total_direct_pending|float) }}
+                Direct: RM{{ "%.2f"|format(stats.total_direct_pending|default(0)|float) }}
             </div>
         </div>
         <div class="stat-card">
             <div style="font-size: 14px; color: #666;">Commission Rate</div>
             <div class="stat-value" style="color: #6f42c1;">
-                {{ stats.direct_rate }}% / {{ stats.indirect_rate }}%
+                {{ stats.direct_rate|default(0) }}% / {{ stats.indirect_rate|default(0) }}%
             </div>
             <div style="font-size: 12px; color: #888; margin-top: 5px;">
                 Direct / Indirect
@@ -275,10 +242,9 @@
                 <option value="all">All Status</option>
                 <option value="active">Active</option>
                 <option value="pending">Has Pending</option>
-                <option value="inactive">Inactive</option>
             </select>
             
-            <input type="text" name="search" placeholder="Search by name or email...">
+            <input type="text" name="search" placeholder="Search by name or email..." value="{{ search_query|default('') }}">
             
             <button type="submit" class="btn">🔍 Filter</button>
             <a href="/agent/downline" class="btn" style="background: #6c757d;">Clear</a>
@@ -292,7 +258,6 @@
                 <th>Agent</th>
                 <th>Type</th>
                 <th>Commission</th>
-                <th>System</th>
                 <th>Earned</th>
                 <th>Pending</th>
                 <th>Status</th>
@@ -305,8 +270,8 @@
             {% for agent in direct_downline_agents %}
             <tr>
                 <td>
-                    <div style="font-weight: bold;">{{ agent.name }}</div>
-                    <div style="font-size: 12px; color: #666;">{{ agent.email }}</div>
+                    <div style="font-weight: bold;">{{ agent.name|default('Agent #' ~ agent.id) }}</div>
+                    <div style="font-size: 12px; color: #666;">{{ agent.email|default('No email') }}</div>
                     <div style="font-size: 11px; color: #999;">ID: #{{ agent.id }}</div>
                 </td>
                 <td>
@@ -314,30 +279,25 @@
                 </td>
                 <td>
                     <span style="font-weight: bold; color: #004085;">
-                        {{ agent.commission_percentage }}%
+                        {{ agent.commission_percentage|default(0) }}%
                     </span>
                 </td>
                 <td>
-                    <span class="commission-structure {% if agent.commission_structure == 'fund_based' %}structure-fund{% else %}structure-legacy{% endif %}">
-                        {% if agent.commission_structure == 'fund_based' %}💰 Fund{% else %}⚡ Legacy{% endif %}
+                    <span class="commission-amount commission-earned">
+                        RM{{ "%.2f"|format(agent.earned_from_agent|default(0)|float) }}
                     </span>
-                </td>
-                <td>
-                    <span class="earnings earnings-approved">
-                        RM{{ "%.2f"|format(agent.earned_from_agent|float) }}
-                    </span>
-                    {% if agent.earned_count > 0 %}
+                    {% if agent.earned_count|default(0) > 0 %}
                     <div style="font-size: 11px; color: #666;">
                         {{ agent.earned_count }} sales
                     </div>
                     {% endif %}
                 </td>
                 <td>
-                    {% if agent.pending_from_agent > 0 %}
-                    <span class="earnings earnings-pending">
-                        RM{{ "%.2f"|format(agent.pending_from_agent|float) }}
+                    {% if agent.pending_from_agent|default(0) > 0 %}
+                    <span class="commission-amount commission-pending">
+                        RM{{ "%.2f"|format(agent.pending_from_agent|default(0)|float) }}
                     </span>
-                    {% if agent.pending_count > 0 %}
+                    {% if agent.pending_count|default(0) > 0 %}
                     <div style="font-size: 11px; color: #666;">
                         {{ agent.pending_count }} sales
                     </div>
@@ -347,14 +307,14 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if agent.pending_from_agent > 0 %}
+                    {% if agent.pending_from_agent|default(0) > 0 %}
                     <span class="status-badge status-pending">Has Pending</span>
                     {% else %}
                     <span class="status-badge status-active">Active</span>
                     {% endif %}
                 </td>
                 <td>
-                    {{ agent.join_date }}
+                    {{ agent.join_date|default('N/A') }}
                 </td>
                 <td>
                     <a href="/agent/downline-performance/{{ agent.id }}" class="action-btn btn-performance">📈 Performance</a>
@@ -367,42 +327,39 @@
             {% for agent in indirect_downline_agents %}
             <tr>
                 <td>
-                    <div style="font-weight: bold;">{{ agent.name }}</div>
-                    <div style="font-size: 12px; color: #666;">{{ agent.email }}</div>
+                    <div style="font-weight: bold;">{{ agent.name|default('Agent #' ~ agent.id) }}</div>
+                    <div style="font-size: 12px; color: #666;">{{ agent.email|default('No email') }}</div>
                     <div style="font-size: 11px; color: #999;">ID: #{{ agent.id }}</div>
+                    {% if agent.direct_upline_name %}
                     <div style="font-size: 11px; color: #6c757d;">
                         Via: {{ agent.direct_upline_name }}
                     </div>
+                    {% endif %}
                 </td>
                 <td>
                     <span class="type-badge type-indirect">Indirect</span>
                 </td>
                 <td>
                     <span style="font-weight: bold; color: #155724;">
-                        {{ agent.commission_percentage }}%
+                        {{ agent.commission_percentage|default(0) }}%
                     </span>
                 </td>
                 <td>
-                    <span class="commission-structure {% if agent.commission_structure == 'fund_based' %}structure-fund{% else %}structure-legacy{% endif %}">
-                        {% if agent.commission_structure == 'fund_based' %}💰 Fund{% else %}⚡ Legacy{% endif %}
+                    <span class="commission-amount commission-earned">
+                        RM{{ "%.2f"|format(agent.earned_from_agent|default(0)|float) }}
                     </span>
-                </td>
-                <td>
-                    <span class="earnings earnings-approved">
-                        RM{{ "%.2f"|format(agent.earned_from_agent|float) }}
-                    </span>
-                    {% if agent.earned_count > 0 %}
+                    {% if agent.earned_count|default(0) > 0 %}
                     <div style="font-size: 11px; color: #666;">
                         {{ agent.earned_count }} sales
                     </div>
                     {% endif %}
                 </td>
                 <td>
-                    {% if agent.pending_from_agent > 0 %}
-                    <span class="earnings earnings-pending">
-                        RM{{ "%.2f"|format(agent.pending_from_agent|float) }}
+                    {% if agent.pending_from_agent|default(0) > 0 %}
+                    <span class="commission-amount commission-pending">
+                        RM{{ "%.2f"|format(agent.pending_from_agent|default(0)|float) }}
                     </span>
-                    {% if agent.pending_count > 0 %}
+                    {% if agent.pending_count|default(0) > 0 %}
                     <div style="font-size: 11px; color: #666;">
                         {{ agent.pending_count }} sales
                     </div>
@@ -412,14 +369,14 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if agent.pending_from_agent > 0 %}
+                    {% if agent.pending_from_agent|default(0) > 0 %}
                     <span class="status-badge status-pending">Has Pending</span>
                     {% else %}
                     <span class="status-badge status-active">Active</span>
                     {% endif %}
                 </td>
                 <td>
-                    {{ agent.join_date }}
+                    {{ agent.join_date|default('N/A') }}
                 </td>
                 <td>
                     <a href="/agent/downline-performance/{{ agent.id }}" class="action-btn btn-performance">📈 Performance</a>
@@ -439,7 +396,6 @@
     </div>
     {% endif %}
     
-    <!-- System Information -->
     <div class="system-info">
         <h3>{% if stats.commission_structure == 'fund_based' %}💰 Fund-Based Commission System{% else %}⚡ Legacy Commission System{% endif %}</h3>
         
@@ -448,13 +404,13 @@
                 <strong>Your Earnings Structure:</strong>
                 <ul>
                     {% if stats.commission_structure == 'fund_based' %}
-                        <li><strong>Direct Downlines:</strong> {{ stats.direct_rate }}% of commission fund</li>
-                        <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate }}% of commission fund</li>
-                        <li><strong>Commission Fund:</strong> {{ stats.total_fund_pct }}% of sale price</li>
+                        <li><strong>Direct Downlines:</strong> {{ stats.direct_rate|default(10) }}% of commission fund</li>
+                        <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate|default(5) }}% of commission fund</li>
+                        <li><strong>Commission Fund:</strong> {{ stats.total_fund_pct|default(2) }}% of sale price</li>
                         <li><strong>Payout Frequency:</strong> Weekly or Monthly commissions</li>
                     {% else %}
-                        <li><strong>Direct Downlines:</strong> {{ stats.direct_rate }}% of their commission</li>
-                        <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate }}% of their commission</li>
+                        <li><strong>Direct Downlines:</strong> {{ stats.direct_rate|default(10) }}% of their commission</li>
+                        <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate|default(5) }}% of their commission</li>
                         <li><strong>Network Depth:</strong> Current system supports 2 levels</li>
                         <li><strong>Payout Frequency:</strong> Weekly or Monthly commissions</li>
                     {% endif %}
@@ -464,11 +420,11 @@
             <div class="info-section">
                 <strong>Network Status Summary:</strong>
                 <ul>
-                    <li><strong>Total Network:</strong> {{ stats.total_downline }} agents</li>
-                    <li><strong>Direct Downlines:</strong> {{ stats.direct_downline_count }} agents</li>
-                    <li><strong>Indirect Downlines:</strong> {{ stats.indirect_downline_count }} agents</li>
-                    <li><strong>Total Earned:</strong> RM{{ "%.2f"|format(stats.total_your_earnings|float) }}</li>
-                    <li><strong>Total Pending:</strong> RM{{ "%.2f"|format(stats.total_your_pending|float) }}</li>
+                    <li><strong>Total Network:</strong> {{ stats.total_downline|default(0) }} agents</li>
+                    <li><strong>Direct Downlines:</strong> {{ stats.direct_downline_count|default(0) }} agents</li>
+                    <li><strong>Indirect Downlines:</strong> {{ stats.indirect_downline_count|default(0) }} agents</li>
+                    <li><strong>Total Earned:</strong> RM{{ "%.2f"|format(stats.total_your_earnings|default(0)|float) }}</li>
+                    <li><strong>Total Pending:</strong> RM{{ "%.2f"|format(stats.total_your_pending|default(0)|float) }}</li>
                 </ul>
             </div>
         </div>
