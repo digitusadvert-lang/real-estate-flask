@@ -688,7 +688,8 @@
         <div class="commission-flow">
             <h4>💰 How Commissions Work in Your Network</h4>
             <p>• <strong>Your Sales:</strong> You earn commission from your own property sales</p>
-            <p>• <strong>Upline:</strong> Agent who supervises you (earns {{ upline_info.commission_rate if upline_info else 0 }}% of your commission)</p>
+            <p>• <strong>Direct Upline:</strong> Agent who directly supervises you (earns {{ upline_info.direct_rate if upline_info else 10 }}% of your commission fund)</p>
+            <p>• <strong>Indirect Upline:</strong> Second-level supervisor (earns {{ upline_info.indirect_rate if upline_info else 5 }}% of your commission fund)</p>
             <p>• <strong>Downline:</strong> Agents you supervise (you earn commission from their sales)</p>
             <p>• <strong>Your Upline Earnings:</strong> You have earned <strong>RM{{ "{:,.2f}".format(upline_earnings or 0) }}</strong> from your downline network</p>
         </div>
@@ -707,23 +708,44 @@
                             <small>{{ upline_info.email }}</small>
                             <div style="margin-top: 8px;">
                                 <span class="commission-badge">
-                                    Earns {{ upline_info.commission_rate }}% of your commissions
+                                    Direct Upline: Earns {{ upline_info.direct_rate }}% of your commission fund
                                 </span>
                             </div>
                         </div>
                     </div>
                 </div>
                 
+                <!-- If there's an indirect upline -->
+                {% if upline_info.indirect_name %}
+                <div class="network-member" style="margin-top: 10px; background: #f0f8ff;">
+                    <div class="member-icon">👨‍💼</div>
+                    <div class="member-details">
+                        <strong>{{ upline_info.indirect_name }}</strong>
+                        <div class="member-meta">
+                            <small>{{ upline_info.indirect_email }}</small>
+                            <div style="margin-top: 8px;">
+                                <span class="commission-badge">
+                                    Indirect Upline: Earns {{ upline_info.indirect_rate }}% of your commission fund
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
                 <div class="network-stats">
-                    <strong>📊 Commission Flow:</strong>
-                    <small>{{ upline_info.commission_rate }}% of your approved commissions goes to your upline</small>
+                    <strong>📊 Commission Flow (Fund-Based):</strong>
+                    <small>Total Fund: 2% of sale price</small><br>
+                    <small>You get: {{ agent_commission_rate or 80 }}% of fund</small><br>
+                    <small>Direct Upline gets: {{ upline_info.direct_rate if upline_info else 10 }}% of fund</small><br>
+                    <small>Indirect Upline gets: {{ upline_info.indirect_rate if upline_info else 5 }}% of fund</small>
                 </div>
                 {% else %}
                 <div class="empty-network">
                     <span class="icon">👑</span>
                     <h4>Top Level Agent</h4>
                     <p>You don't have an upline assigned</p>
-                    <small>You keep 100% of your commissions</small>
+                    <small>You keep 100% of your commission fund</small>
                 </div>
                 {% endif %}
             </div>
@@ -743,8 +765,14 @@
                                 <small>{{ agent.email }}</small>
                                 <div style="margin-top: 5px;">
                                     <span class="commission-badge">
-                                        Earn {{ agent.commission_rate }}% of their commissions
+                                        You earn {{ agent.direct_rate }}% as their Direct Upline
                                     </span>
+                                    {% if agent.indirect_rate %}
+                                    <br>
+                                    <span class="commission-badge" style="background: #e8f4ff; color: #004d99; margin-top: 3px;">
+                                        +{{ agent.indirect_rate }}% if you're also Indirect Upline
+                                    </span>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -756,7 +784,10 @@
                     <strong>📊 Downline Performance:</strong>
                     <small>{{ downline_stats.count }} agent(s) under your supervision</small><br>
                     <small>You have earned <strong>RM{{ "{:,.2f}".format(upline_earnings or 0) }}</strong> from downline</small><br>
-                    <small>Average rate: {{ "{:.1f}".format(downline_stats.total_commission_rate / downline_stats.count if downline_stats.count > 0 else 0) }}% per agent</small>
+                    <small>Direct Upline rate: {{ "{:.1f}".format(downline_stats.avg_direct_rate or 10) }}%</small>
+                    {% if downline_stats.avg_indirect_rate %}
+                    <br><small>Indirect Upline rate: {{ "{:.1f}".format(downline_stats.avg_indirect_rate) }}%</small>
+                    {% endif %}
                 </div>
                 {% else %}
                 <div class="empty-network">

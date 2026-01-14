@@ -2487,7 +2487,9 @@ def agent_dashboard():
         upline_info = {
             "name": upline_info_result[0],
             "email": upline_info_result[1],
-            "commission_rate": upline_info_result[2] if upline_info_result[2] else 0,
+            "direct_rate": 10,  # ← FIXED: 10% for direct upline in fund-based
+            "indirect_rate": 5,  # ← FIXED: 5% for indirect upline in fund-based
+            # Note: We removed "commission_rate" and added "direct_rate"/"indirect_rate"
         }
 
     # ============ 5. GET DOWNLINE AGENTS ============
@@ -2513,8 +2515,10 @@ def agent_dashboard():
             "id": row[0],
             "name": row[1],
             "email": row[2],
-            "commission_rate": row[3] if row[3] else 0,
+            "direct_rate": 10,  # ← FIXED: You earn 10% as their direct upline
+            "indirect_rate": 5,  # ← FIXED: You earn 5% as their indirect upline
             "join_date": row[4][:10] if row[4] else "",
+            # Note: We removed "commission_rate" and added "direct_rate"/"indirect_rate"
         })
 
     # ============ 6. GET RECENT SALES ============
@@ -2700,7 +2704,9 @@ def agent_dashboard():
     # ============ 10. CALCULATE ADDITIONAL STATS ============
     downline_stats = {
         "count": len(downline_agents),
-        "total_commission_rate": sum(d.get("commission_rate", 0) for d in downline_agents),
+        "avg_direct_rate": 10.0 if downline_agents else 0.0,  # ← ADDED
+        "avg_indirect_rate": 5.0 if downline_agents else 0.0,  # ← ADDED
+        "total_commission_rate": 0,  # ← Not used anymore
         "upline_earnings": upline_earnings,
         "upline_payments_count": upline_payments_count,
     }
@@ -2729,6 +2735,7 @@ def agent_dashboard():
         upline_payments_count=upline_payments_count,
         total_paid=total_paid,  # PASS THE NUMBER, NOT FORMATTED STRING
         total_payments=total_payments,
+        agent_commission_rate=80,
     )
 
 @app.route("/agent/my-downline")

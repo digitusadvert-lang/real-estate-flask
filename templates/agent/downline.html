@@ -5,907 +5,473 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Downline Network</title>
     <style>
-        /* Base Styles - Light Background */
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+        body { 
+            font-family: Arial, sans-serif;
+            margin: 20px; 
+            background: #f5f5f5; 
         }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: #f5f5f5;
-            min-height: 100vh;
-            color: #333;
+        .header { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
         }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
+        .stats { 
+            display: flex; 
+            gap: 15px; 
+            margin: 20px 0; 
+            flex-wrap: wrap; 
         }
-        
-        /* Header Styles */
-        .header {
-            background: white;
-            padding: 25px 30px;
-            border-radius: 15px;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-            border-left: 5px solid #4a6fa5;
+        .stat-card { 
+            background: white; 
+            padding: 15px; 
+            border-radius: 8px; 
+            flex: 1; 
+            min-width: 120px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            text-align: center; 
         }
-        
-        .header h1 {
-            color: #2c3e50;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 2rem;
+        .stat-value { 
+            font-size: 1.8em; 
+            font-weight: bold; 
         }
-        
-        .header-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 15px;
+        .filters { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
         }
-        
-        /* Button Styles */
-        .btn {
-            padding: 10px 20px;
-            border-radius: 8px;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            transition: all 0.2s ease;
-            border: none;
-            cursor: pointer;
-            font-size: 14px;
+        .filter-group { 
+            display: flex; 
+            gap: 15px; 
+            align-items: center; 
         }
-        
-        .btn-back {
-            background: #6c757d;
-            color: white;
+        select, input { 
+            padding: 8px 12px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
         }
-        
-        .btn-back:hover {
-            background: #5a6268;
-            transform: translateY(-1px);
+        .btn { 
+            padding: 8px 16px; 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            text-decoration: none; 
+            display: inline-block;
         }
-        
+        .btn:hover {
+            background: #0056b3;
+        }
+        table { 
+            width: 100%; 
+            background: white; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            margin: 20px 0; 
+        }
+        th, td { 
+            padding: 12px 15px; 
+            text-align: left; 
+            border-bottom: 1px solid #eee; 
+        }
+        th { 
+            background: #2c3e50; 
+            color: white; 
+        }
         .system-badge {
-            background: #4a6fa5;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        /* Stats Section */
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 25px;
-            border-radius: 15px;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-            border: 1px solid #e0e0e0;
-        }
-        
-        .stat-card:hover {
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
-        }
-        
-        .stat-label {
-            font-size: 14px;
-            color: #6c757d;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-        
-        .stat-value {
-            font-size: 2.2rem;
-            font-weight: 700;
-            margin-bottom: 10px;
-            color: #2c3e50;
-        }
-        
-        .stat-subtext {
-            font-size: 13px;
-            color: #888;
-            margin-bottom: 15px;
-        }
-        
-        .pending-badge {
-            background: #ffc107;
-            color: #856404;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            margin-top: 8px;
-        }
-        
-        .total-pending-badge {
-            background: #dc3545;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        
-        /* Section Headers */
-        .section-header {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            margin: 40px 0 20px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-            border-left: 4px solid;
-        }
-        
-        .direct-section {
-            border-left-color: #4a6fa5;
-        }
-        
-        .indirect-section {
-            border-left-color: #6f42c1;
-        }
-        
-        .section-title {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 1.3rem;
-            color: #2c3e50;
-            margin-bottom: 15px;
-        }
-        
-        .commission-summary {
-            display: flex;
-            align-items: center;
-            gap: 25px;
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 10px;
-            flex-wrap: wrap;
-        }
-        
-        .commission-item {
-            text-align: center;
-            padding: 0 15px;
-        }
-        
-        .commission-label {
-            font-size: 11px;
-            color: #6c757d;
-            font-weight: 600;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-        }
-        
-        .commission-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            line-height: 1;
-        }
-        
-        .commission-direct {
-            color: #4a6fa5;
-        }
-        
-        .commission-earned {
-            color: #28a745;
-        }
-        
-        .commission-pending {
-            color: #ff6b35;
-        }
-        
-        .commission-indirect {
-            color: #6f42c1;
-        }
-        
-        /* Downline Grid */
-        .downline-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-        
-        .downline-card {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-            border: 1px solid #e0e0e0;
-        }
-        
-        .downline-card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        /* Agent Info */
-        .agent-info {
-            display: flex;
-            align-items: flex-start;
-            margin-bottom: 15px;
-            gap: 15px;
-        }
-        
-        .agent-avatar {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: #4a6fa5;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 24px;
-            flex-shrink: 0;
-        }
-        
-        .agent-details {
-            flex: 1;
-        }
-        
-        .agent-name {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 5px;
-        }
-        
-        .agent-email {
-            color: #6c757d;
-            font-size: 13px;
-            margin-bottom: 10px;
-        }
-        
-        /* Badges */
-        .badges {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-            margin-bottom: 10px;
-        }
-        
-        .badge {
             padding: 4px 10px;
             border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: bold;
+            background: #4a6fa5;
+            color: white;
         }
-        
-        .rate-badge {
-            background: #e3f2fd;
-            color: #1565c0;
+        .type-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
         }
-        
-        .indirect-badge {
-            background: #f3e5f5;
-            color: #6f42c1;
+        .type-direct {
+            background: #cce5ff;
+            color: #004085;
         }
-        
-        .fund-badge {
+        .type-indirect {
             background: #d4edda;
             color: #155724;
         }
-        
-        .legacy-badge {
-            background: #e2e3e5;
-            color: #383d41;
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
         }
-        
-        /* Commission Status */
-        .commission-status {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin: 15px 0;
-            padding: 12px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        
-        .status-item {
-            text-align: center;
-            padding: 12px;
-            border-radius: 8px;
-        }
-        
-        .status-approved {
+        .status-active {
             background: #d4edda;
-            border: 1px solid #c3e6cb;
+            color: #155724;
         }
-        
         .status-pending {
             background: #fff3cd;
-            border: 1px solid #ffeaa7;
+            color: #856404;
         }
-        
-        .status-label {
-            font-size: 11px;
-            font-weight: 600;
-            color: #495057;
-            margin-bottom: 6px;
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
         }
-        
-        .status-amount {
-            font-size: 1.2rem;
-            font-weight: 700;
-            line-height: 1;
-            margin-bottom: 5px;
+        .action-btn { 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            font-size: 12px; 
+            text-decoration: none; 
+            margin-right: 5px; 
+            color: white;
         }
-        
-        .status-approved .status-amount {
+        .btn-view { 
+            background: #17a2b8; 
+        }
+        .btn-view:hover {
+            background: #138496;
+        }
+        .btn-performance { 
+            background: #28a745; 
+        }
+        .btn-performance:hover {
+            background: #218838;
+        }
+        .empty-state { 
+            text-align: center; 
+            padding: 50px 20px; 
+            background: white; 
+            border-radius: 10px; 
+            color: #666; 
+        }
+        .commission-structure {
+            font-weight: bold;
+        }
+        .structure-fund {
             color: #28a745;
         }
-        
-        .status-pending .status-amount {
+        .structure-legacy {
+            color: #6c757d;
+        }
+        .earnings {
+            font-weight: bold;
+        }
+        .earnings-approved {
+            color: #28a745;
+        }
+        .earnings-pending {
             color: #fd7e14;
         }
-        
-        .status-count {
-            font-size: 11px;
-            color: #6c757d;
-        }
-        
-        /* Agent Meta */
-        .agent-meta {
-            border-top: 1px solid #eee;
-            padding-top: 12px;
-            margin-top: 12px;
-        }
-        
-        .meta-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            font-size: 13px;
-        }
-        
-        .meta-label {
-            color: #6c757d;
-        }
-        
-        .meta-value {
-            font-weight: 600;
-            color: #2c3e50;
-        }
-        
-        /* Action Buttons */
-        .action-buttons {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        
-        .action-btn {
-            flex: 1;
-            text-align: center;
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            color: white;
-            text-decoration: none;
-            transition: all 0.2s ease;
-        }
-        
-        .btn-performance {
-            background: #17a2b8;
-        }
-        
-        .btn-performance:hover {
-            background: #138496;
-            transform: translateY(-1px);
-        }
-        
-        /* Empty States */
-        .empty-state {
+        .system-info {
             background: white;
-            padding: 40px 20px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-            margin: 20px 0;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        
-        .empty-state h3 {
-            color: #6c757d;
-            margin-bottom: 10px;
-            font-size: 1.2rem;
-        }
-        
-        .empty-state p {
-            color: #888;
-            max-width: 500px;
-            margin: 0 auto 15px;
-        }
-        
-        /* Network Info */
-        .network-info {
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            margin-top: 30px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-            border-top: 3px solid #4a6fa5;
-        }
-        
-        .network-info h3 {
-            color: #2c3e50;
-            margin-bottom: 15px;
-            font-size: 1.3rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
         .info-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 25px;
-            margin-bottom: 20px;
+            gap: 20px;
+            margin-top: 15px;
         }
-        
         @media (max-width: 768px) {
             .info-grid {
                 grid-template-columns: 1fr;
             }
         }
-        
-        .info-section strong {
-            color: #2c3e50;
-            display: block;
-            margin-bottom: 12px;
-            font-size: 15px;
+        .info-section {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
         }
-        
+        .info-section strong {
+            display: block;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
         .info-section ul {
             list-style: none;
             padding-left: 0;
         }
-        
         .info-section li {
             margin-bottom: 8px;
             padding-left: 18px;
             position: relative;
-            color: #555;
-            font-size: 14px;
         }
-        
         .info-section li:before {
             content: "•";
-            color: #4a6fa5;
+            color: #007bff;
             font-weight: bold;
             position: absolute;
             left: 0;
         }
-        
-        .network-status {
-            background: #f0f7ff;
-            padding: 18px;
-            border-radius: 10px;
-            border-left: 4px solid #4a6fa5;
-        }
-        
-        .status-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-top: 12px;
-        }
-        
-        .status-item-detail {
-            background: white;
-            padding: 12px;
-            border-radius: 8px;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-        }
-        
-        /* Responsive */
-        @media (max-width: 768px) {
-            body {
-                padding: 15px;
-            }
-            
-            .header {
-                padding: 20px;
-            }
-            
-            .header-actions {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            
-            .system-badge {
-                justify-content: center;
-            }
-            
-            .stats {
-                grid-template-columns: 1fr;
-            }
-            
-            .commission-summary {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .commission-item {
-                width: 100%;
-                padding: 10px 0;
-                border-bottom: 1px solid #eee;
-            }
-            
-            .commission-item:last-child {
-                border-bottom: none;
-            }
-            
-            .downline-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .status-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        /* Animation for pending badges */
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.7; }
-            100% { opacity: 1; }
-        }
-        
-        .pending-badge {
-            animation: pulse 2s infinite;
-        }
-        
-        .total-pending-badge {
-            animation: pulse 1.5s infinite;
-        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>👥 My Downline Network</h1>
-            <div class="header-actions">
-                <a href="/agent/dashboard" class="btn btn-back">← Back to Dashboard</a>
-                <div class="system-badge">
-                    {% if stats.commission_structure == 'fund_based' %}
-                        💰 Fund-Based System
-                        <span style="opacity: 0.9; font-size: 13px;">{{ stats.total_fund_pct }}% fund → {{ stats.direct_rate }}% direct / {{ stats.indirect_rate }}% indirect</span>
-                    {% else %}
-                        ⚡ Legacy System
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Statistics -->
-        <div class="stats">
-            <!-- Total Downline -->
-            <div class="stat-card">
-                <div class="stat-label">Total Downline</div>
-                <div class="stat-value">{{ stats.total_downline }}</div>
-                <div class="stat-subtext">{{ stats.direct_downline_count }} direct + {{ stats.indirect_downline_count }} indirect</div>
-            </div>
-
-            <!-- Direct Earnings -->
-            <div class="stat-card">
-                <div class="stat-label">Direct Earnings</div>
-                <div class="stat-value">RM{{ "%.2f"|format(stats.total_direct_earnings|float) }}</div>
-                <div class="stat-subtext">{{ stats.direct_rate }}% from direct downlines</div>
-                {% if stats.total_direct_pending > 0 %}
-                <div class="pending-badge">
-                    ⏳ Pending: RM{{ "%.2f"|format(stats.total_direct_pending|float) }}
-                </div>
+    <div class="header">
+        <h1>👥 My Downline Network</h1>
+        <div>
+            <a href="/agent/dashboard" class="btn">← Dashboard</a>
+            <span class="system-badge" style="margin-left: 20px;">
+                {% if stats.commission_structure == 'fund_based' %}
+                    💰 Fund-Based System
+                {% else %}
+                    ⚡ Legacy System
                 {% endif %}
-            </div>
-
-            <!-- Indirect Earnings -->
-            <div class="stat-card">
-                <div class="stat-label">Indirect Earnings</div>
-                <div class="stat-value">RM{{ "%.2f"|format(stats.total_indirect_earnings|float) }}</div>
-                <div class="stat-subtext">{{ stats.indirect_rate }}% from indirect downlines</div>
-                {% if stats.total_indirect_pending > 0 %}
-                <div class="pending-badge">
-                    ⏳ Pending: RM{{ "%.2f"|format(stats.total_indirect_pending|float) }}
-                </div>
-                {% endif %}
-            </div>
-
-            <!-- Total Earnings -->
-            <div class="stat-card">
-                <div class="stat-label">Your Total Earnings</div>
-                <div class="stat-value">RM{{ "%.2f"|format(stats.total_your_earnings|float) }}</div>
-                <div class="stat-subtext">From entire network</div>
-                {% if stats.total_your_pending > 0 %}
-                <div class="total-pending-badge">
-                    ⏳ Total Pending: RM{{ "%.2f"|format(stats.total_your_pending|float) }}
-                </div>
-                {% endif %}
+            </span>
+        </div>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Total Downline</div>
+            <div class="stat-value" style="color: #007bff;">{{ stats.total_downline }}</div>
+            <div style="font-size: 12px; color: #888; margin-top: 5px;">
+                {{ stats.direct_downline_count }} direct + {{ stats.indirect_downline_count }} indirect
             </div>
         </div>
-
-        <!-- Direct Downlines Section -->
-        <div class="section-header direct-section">
-            <div class="section-title">
-                📋 Direct Downlines ({{ direct_downline_agents|length }})
-            </div>
-            <div class="commission-summary">
-                <div class="commission-item">
-                    <div class="commission-label">COMMISSION</div>
-                    <div class="commission-value commission-direct">{{ stats.direct_rate }}%</div>
-                </div>
-                <div class="commission-item">
-                    <div class="commission-label">TOTAL EARNED</div>
-                    <div class="commission-value commission-earned">RM{{ "%.2f"|format(stats.total_direct_earnings|float) }}</div>
-                </div>
-                <div class="commission-item">
-                    <div class="commission-label">TOTAL PENDING</div>
-                    <div class="commission-value commission-pending">RM{{ "%.2f"|format(stats.total_direct_pending|float) }}</div>
-                </div>
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Total Earned</div>
+            <div class="stat-value" style="color: #28a745;">RM{{ "%.2f"|format(stats.total_your_earnings|float) }}</div>
+            <div style="font-size: 12px; color: #888; margin-top: 5px;">
+                Direct: RM{{ "%.2f"|format(stats.total_direct_earnings|float) }}
             </div>
         </div>
-
-        {% if direct_downline_agents %}
-        <div class="downline-grid">
-            {% for agent in direct_downline_agents %}
-            <div class="downline-card">
-                <!-- Agent Info -->
-                <div class="agent-info">
-                    <div class="agent-avatar">👤</div>
-                    <div class="agent-details">
-                        <div class="agent-name">{{ agent.name }}</div>
-                        <div class="agent-email">{{ agent.email }}</div>
-                        <div class="badges">
-                            <span class="badge rate-badge">{{ agent.commission_percentage }} to you</span>
-                            <span class="badge {% if agent.commission_structure == 'fund_based' %}fund-badge{% else %}legacy-badge{% endif %}">
-                                {% if agent.commission_structure == 'fund_based' %}💰 Fund-Based{% else %}⚡ Legacy{% endif %}
-                            </span>
-                            {% if agent.earned_from_agent > 0 %}
-                            <span style="background: #e8f4e8; color: #2e7d32; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;">
-                                RM{{ "%.2f"|format(agent.earned_from_agent|float) }} earned
-                            </span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Commission Status -->
-                {% if agent.earned_count > 0 or agent.pending_count > 0 %}
-                <div class="commission-status">
-                    <div class="status-item status-approved">
-                        <div class="status-label">Approved</div>
-                        <div class="status-amount">RM{{ "%.2f"|format(agent.earned_from_agent|float) }}</div>
-                        <div class="status-count">{{ agent.earned_count }} sales</div>
-                    </div>
-                    <div class="status-item status-pending">
-                        <div class="status-label">Pending</div>
-                        <div class="status-amount">RM{{ "%.2f"|format(agent.pending_from_agent|float) }}</div>
-                        <div class="status-count">{{ agent.pending_count }} sales</div>
-                    </div>
-                </div>
-                {% endif %}
-
-                <!-- Agent Meta -->
-                <div class="agent-meta">
-                    <div class="meta-row">
-                        <span class="meta-label">Agent ID</span>
-                        <span class="meta-value">#{{ agent.id }}</span>
-                    </div>
-                    <div class="meta-row">
-                        <span class="meta-label">Joined</span>
-                        <span class="meta-value">{{ agent.join_date }}</span>
-                    </div>
-                    <div class="meta-row">
-                        <span class="meta-label">Relationship</span>
-                        <span class="meta-value">Direct Downline</span>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="action-buttons">
-                    <a href="/agent/downline-performance/{{ agent.id }}" class="action-btn btn-performance">View Performance</a>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <h3>No Direct Downlines Yet</h3>
-            <p>You don't have any direct agents under your supervision yet. Recruit agents to start building your network!</p>
-        </div>
-        {% endif %}
-
-        <!-- Indirect Downlines Section -->
-        {% if indirect_downline_agents %}
-        <div class="section-header indirect-section">
-            <div class="section-title">
-                📋 Indirect Downlines ({{ indirect_downline_agents|length }})
-            </div>
-            <div class="commission-summary">
-                <div class="commission-item">
-                    <div class="commission-label">COMMISSION</div>
-                    <div class="commission-value commission-indirect">{{ stats.indirect_rate }}%</div>
-                </div>
-                <div class="commission-item">
-                    <div class="commission-label">TOTAL EARNED</div>
-                    <div class="commission-value commission-earned">RM{{ "%.2f"|format(stats.total_indirect_earnings|float) }}</div>
-                </div>
-                <div class="commission-item">
-                    <div class="commission-label">TOTAL PENDING</div>
-                    <div class="commission-value commission-pending">RM{{ "%.2f"|format(stats.total_indirect_pending|float) }}</div>
-                </div>
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Pending</div>
+            <div class="stat-value" style="color: #fd7e14;">RM{{ "%.2f"|format(stats.total_your_pending|float) }}</div>
+            <div style="font-size: 12px; color: #888; margin-top: 5px;">
+                Direct: RM{{ "%.2f"|format(stats.total_direct_pending|float) }}
             </div>
         </div>
-
-        <div class="downline-grid">
-            {% for agent in indirect_downline_agents %}
-            <div class="downline-card">
-                <!-- Agent Info -->
-                <div class="agent-info">
-                    <div class="agent-avatar">👥</div>
-                    <div class="agent-details">
-                        <div class="agent-name">{{ agent.name }}</div>
-                        <div class="agent-email">{{ agent.email }}</div>
-                        <div class="badges">
-                            <span class="badge rate-badge indirect-badge">{{ agent.commission_percentage }} to you</span>
-                            <span class="badge {% if agent.commission_structure == 'fund_based' %}fund-badge{% else %}legacy-badge{% endif %}">
-                                {% if agent.commission_structure == 'fund_based' %}💰 Fund-Based{% else %}⚡ Legacy{% endif %}
-                            </span>
-                            {% if agent.earned_from_agent > 0 %}
-                            <span style="background: #e8f4e8; color: #2e7d32; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;">
-                                RM{{ "%.2f"|format(agent.earned_from_agent|float) }} earned
-                            </span>
-                            {% endif %}
-                        </div>
-                        <div style="margin-top: 8px; font-size: 13px; color: #666;">
-                            <strong>Via:</strong> {{ agent.direct_upline_name }}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Commission Status -->
-                {% if agent.earned_count > 0 or agent.pending_count > 0 %}
-                <div class="commission-status">
-                    <div class="status-item status-approved">
-                        <div class="status-label">Approved</div>
-                        <div class="status-amount">RM{{ "%.2f"|format(agent.earned_from_agent|float) }}</div>
-                        <div class="status-count">{{ agent.earned_count }} sales</div>
-                    </div>
-                    <div class="status-item status-pending">
-                        <div class="status-label">Pending</div>
-                        <div class="status-amount">RM{{ "%.2f"|format(agent.pending_from_agent|float) }}</div>
-                        <div class="status-count">{{ agent.pending_count }} sales</div>
-                    </div>
-                </div>
-                {% endif %}
-
-                <!-- Agent Meta -->
-                <div class="agent-meta">
-                    <div class="meta-row">
-                        <span class="meta-label">Agent ID</span>
-                        <span class="meta-value">#{{ agent.id }}</span>
-                    </div>
-                    <div class="meta-row">
-                        <span class="meta-label">Joined</span>
-                        <span class="meta-value">{{ agent.join_date }}</span>
-                    </div>
-                    <div class="meta-row">
-                        <span class="meta-label">Relationship</span>
-                        <span class="meta-value">Indirect Downline</span>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="action-buttons">
-                    <a href="/agent/downline-performance/{{ agent.id }}" class="action-btn btn-performance">View Profile</a>
-                </div>
+        <div class="stat-card">
+            <div style="font-size: 14px; color: #666;">Commission Rate</div>
+            <div class="stat-value" style="color: #6f42c1;">
+                {{ stats.direct_rate }}% / {{ stats.indirect_rate }}%
             </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <h3>No Indirect Downlines Yet</h3>
-            <p>Indirect downlines appear when your direct downlines recruit their own agents.</p>
-        </div>
-        {% endif %}
-
-        <!-- Network Information -->
-        <div class="network-info">
-            <h3>{% if stats.commission_structure == 'fund_based' %}💰 Fund-Based Commission System{% else %}⚡ Multi-Level Commission System{% endif %}</h3>
-            
-            <div class="info-grid">
-                <div class="info-section">
-                    <strong>📈 Your Earnings Structure:</strong>
-                    <ul>
-                        {% if stats.commission_structure == 'fund_based' %}
-                            <li><strong>Direct Downlines:</strong> {{ stats.direct_rate }}% of commission fund</li>
-                            <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate }}% of commission fund</li>
-                            <li><strong>Commission Fund:</strong> {{ stats.total_fund_pct }}% of sale price</li>
-                            <li><strong>Payout Frequency:</strong> Weekly or Monthly commissions</li>
-                        {% else %}
-                            <li><strong>Direct Downlines:</strong> {{ stats.direct_rate }}% of their commission</li>
-                            <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate }}% of their commission</li>
-                            <li><strong>Network Depth:</strong> Current system supports 2 levels</li>
-                            <li><strong>Payout Frequency:</strong> Weekly or Monthly commissions</li>
-                        {% endif %}
-                    </ul>
-                </div>
-                
-                <div class="info-section">
-                    <strong>👥 Building Your Network:</strong>
-                    <ul>
-                        <li>Recruit agents to become your <strong>direct downlines</strong></li>
-                        <li>When they recruit agents, they become your <strong>indirect downlines</strong></li>
-                        <li>Each level adds to your passive income stream</li>
-                        <li>Network grows exponentially as agents recruit others</li>
-                    </ul>
-                </div>
-            </div>
-            
-            <div class="network-status">
-                <strong>💡 Current Network Status:</strong>
-                <div class="status-grid">
-                    <div class="status-item-detail">
-                        <div style="color: #4a6fa5; font-weight: 600; margin-bottom: 5px;">✅ Direct Downlines</div>
-                        <div style="font-size: 1.1rem; font-weight: 700; color: #4a6fa5;">{{ stats.direct_downline_count }} agents</div>
-                        <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                            • {{ stats.direct_rate }}% commission rate<br>
-                            • RM{{ "%.2f"|format(stats.total_direct_earnings|float) }} earned<br>
-                            • RM{{ "%.2f"|format(stats.total_direct_pending|float) }} pending
-                        </div>
-                    </div>
-                    
-                    <div class="status-item-detail">
-                        <div style="color: #6f42c1; font-weight: 600; margin-bottom: 5px;">✅ Indirect Downlines</div>
-                        <div style="font-size: 1.1rem; font-weight: 700; color: #6f42c1;">{{ stats.indirect_downline_count }} agents</div>
-                        <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                            • {{ stats.indirect_rate }}% commission rate<br>
-                            • RM{{ "%.2f"|format(stats.total_indirect_earnings|float) }} earned<br>
-                            • RM{{ "%.2f"|format(stats.total_indirect_pending|float) }} pending
-                        </div>
-                    </div>
-                </div>
+            <div style="font-size: 12px; color: #888; margin-top: 5px;">
+                Direct / Indirect
             </div>
         </div>
     </div>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Add pulse animation to pending badges
-            const pendingBadges = document.querySelectorAll('.pending-badge, .total-pending-badge');
-            pendingBadges.forEach(badge => {
-                badge.style.animation = 'pulse 2s infinite';
-            });
-        });
-    </script>
+    
+    <div class="filters">
+        <h3>Filter Downlines</h3>
+        <form method="GET" class="filter-group">
+            <select name="type">
+                <option value="all">All Types</option>
+                <option value="direct">Direct Downlines</option>
+                <option value="indirect">Indirect Downlines</option>
+            </select>
+            
+            <select name="status">
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="pending">Has Pending</option>
+                <option value="inactive">Inactive</option>
+            </select>
+            
+            <input type="text" name="search" placeholder="Search by name or email...">
+            
+            <button type="submit" class="btn">🔍 Filter</button>
+            <a href="/agent/downline" class="btn" style="background: #6c757d;">Clear</a>
+        </form>
+    </div>
+    
+    {% if direct_downline_agents or indirect_downline_agents %}
+    <table>
+        <thead>
+            <tr>
+                <th>Agent</th>
+                <th>Type</th>
+                <th>Commission</th>
+                <th>System</th>
+                <th>Earned</th>
+                <th>Pending</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Direct Downlines -->
+            {% for agent in direct_downline_agents %}
+            <tr>
+                <td>
+                    <div style="font-weight: bold;">{{ agent.name }}</div>
+                    <div style="font-size: 12px; color: #666;">{{ agent.email }}</div>
+                    <div style="font-size: 11px; color: #999;">ID: #{{ agent.id }}</div>
+                </td>
+                <td>
+                    <span class="type-badge type-direct">Direct</span>
+                </td>
+                <td>
+                    <span style="font-weight: bold; color: #004085;">
+                        {{ agent.commission_percentage }}%
+                    </span>
+                </td>
+                <td>
+                    <span class="commission-structure {% if agent.commission_structure == 'fund_based' %}structure-fund{% else %}structure-legacy{% endif %}">
+                        {% if agent.commission_structure == 'fund_based' %}💰 Fund{% else %}⚡ Legacy{% endif %}
+                    </span>
+                </td>
+                <td>
+                    <span class="earnings earnings-approved">
+                        RM{{ "%.2f"|format(agent.earned_from_agent|float) }}
+                    </span>
+                    {% if agent.earned_count > 0 %}
+                    <div style="font-size: 11px; color: #666;">
+                        {{ agent.earned_count }} sales
+                    </div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if agent.pending_from_agent > 0 %}
+                    <span class="earnings earnings-pending">
+                        RM{{ "%.2f"|format(agent.pending_from_agent|float) }}
+                    </span>
+                    {% if agent.pending_count > 0 %}
+                    <div style="font-size: 11px; color: #666;">
+                        {{ agent.pending_count }} sales
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <span style="color: #6c757d;">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if agent.pending_from_agent > 0 %}
+                    <span class="status-badge status-pending">Has Pending</span>
+                    {% else %}
+                    <span class="status-badge status-active">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ agent.join_date }}
+                </td>
+                <td>
+                    <a href="/agent/downline-performance/{{ agent.id }}" class="action-btn btn-performance">📈 Performance</a>
+                    <a href="/agent/profile/{{ agent.id }}" class="action-btn btn-view">👁️ View</a>
+                </td>
+            </tr>
+            {% endfor %}
+            
+            <!-- Indirect Downlines -->
+            {% for agent in indirect_downline_agents %}
+            <tr>
+                <td>
+                    <div style="font-weight: bold;">{{ agent.name }}</div>
+                    <div style="font-size: 12px; color: #666;">{{ agent.email }}</div>
+                    <div style="font-size: 11px; color: #999;">ID: #{{ agent.id }}</div>
+                    <div style="font-size: 11px; color: #6c757d;">
+                        Via: {{ agent.direct_upline_name }}
+                    </div>
+                </td>
+                <td>
+                    <span class="type-badge type-indirect">Indirect</span>
+                </td>
+                <td>
+                    <span style="font-weight: bold; color: #155724;">
+                        {{ agent.commission_percentage }}%
+                    </span>
+                </td>
+                <td>
+                    <span class="commission-structure {% if agent.commission_structure == 'fund_based' %}structure-fund{% else %}structure-legacy{% endif %}">
+                        {% if agent.commission_structure == 'fund_based' %}💰 Fund{% else %}⚡ Legacy{% endif %}
+                    </span>
+                </td>
+                <td>
+                    <span class="earnings earnings-approved">
+                        RM{{ "%.2f"|format(agent.earned_from_agent|float) }}
+                    </span>
+                    {% if agent.earned_count > 0 %}
+                    <div style="font-size: 11px; color: #666;">
+                        {{ agent.earned_count }} sales
+                    </div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if agent.pending_from_agent > 0 %}
+                    <span class="earnings earnings-pending">
+                        RM{{ "%.2f"|format(agent.pending_from_agent|float) }}
+                    </span>
+                    {% if agent.pending_count > 0 %}
+                    <div style="font-size: 11px; color: #666;">
+                        {{ agent.pending_count }} sales
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <span style="color: #6c757d;">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if agent.pending_from_agent > 0 %}
+                    <span class="status-badge status-pending">Has Pending</span>
+                    {% else %}
+                    <span class="status-badge status-active">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ agent.join_date }}
+                </td>
+                <td>
+                    <a href="/agent/downline-performance/{{ agent.id }}" class="action-btn btn-performance">📈 Performance</a>
+                    <a href="/agent/profile/{{ agent.id }}" class="action-btn btn-view">👁️ View</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <h3>No downlines found</h3>
+        <p>You don't have any downlines in your network yet.</p>
+        <p style="color: #666; font-size: 14px; margin-top: 10px;">
+            Recruit agents to build your network and start earning commissions!
+        </p>
+    </div>
+    {% endif %}
+    
+    <!-- System Information -->
+    <div class="system-info">
+        <h3>{% if stats.commission_structure == 'fund_based' %}💰 Fund-Based Commission System{% else %}⚡ Legacy Commission System{% endif %}</h3>
+        
+        <div class="info-grid">
+            <div class="info-section">
+                <strong>Your Earnings Structure:</strong>
+                <ul>
+                    {% if stats.commission_structure == 'fund_based' %}
+                        <li><strong>Direct Downlines:</strong> {{ stats.direct_rate }}% of commission fund</li>
+                        <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate }}% of commission fund</li>
+                        <li><strong>Commission Fund:</strong> {{ stats.total_fund_pct }}% of sale price</li>
+                        <li><strong>Payout Frequency:</strong> Weekly or Monthly commissions</li>
+                    {% else %}
+                        <li><strong>Direct Downlines:</strong> {{ stats.direct_rate }}% of their commission</li>
+                        <li><strong>Indirect Downlines:</strong> {{ stats.indirect_rate }}% of their commission</li>
+                        <li><strong>Network Depth:</strong> Current system supports 2 levels</li>
+                        <li><strong>Payout Frequency:</strong> Weekly or Monthly commissions</li>
+                    {% endif %}
+                </ul>
+            </div>
+            
+            <div class="info-section">
+                <strong>Network Status Summary:</strong>
+                <ul>
+                    <li><strong>Total Network:</strong> {{ stats.total_downline }} agents</li>
+                    <li><strong>Direct Downlines:</strong> {{ stats.direct_downline_count }} agents</li>
+                    <li><strong>Indirect Downlines:</strong> {{ stats.indirect_downline_count }} agents</li>
+                    <li><strong>Total Earned:</strong> RM{{ "%.2f"|format(stats.total_your_earnings|float) }}</li>
+                    <li><strong>Total Pending:</strong> RM{{ "%.2f"|format(stats.total_your_pending|float) }}</li>
+                </ul>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
