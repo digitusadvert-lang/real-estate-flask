@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>New Submission – WTP</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-btn:hover{background:#15803d}
+.nav-bar a.nav-active{background:#f0fdf4;color:#15803d;font-weight:700}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}.nav-bar a:last-child{border-bottom:none}}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+
+/* flash */
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+.flash-ok{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.flash-err{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+
+/* wf strip */
+.wf-strip{background:#1a3a2a;padding:8px 16px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.wf-step{display:flex;align-items:center;gap:4px;font-size:9px;color:rgba(255,255,255,.38);white-space:nowrap}
+.wf-step.wf-done{color:#d4b04a}
+.wf-step.wf-now{color:#fff;font-weight:700}
+.wf-dot{width:17px;height:17px;border-radius:50%;border:1.5px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;flex-shrink:0}
+.wf-step.wf-done .wf-dot{background:#d4b04a;border-color:#d4b04a;color:#1a3a2a}
+.wf-step.wf-now .wf-dot{background:#b8952a;border-color:#b8952a;color:#fff}
+.wf-arr{color:rgba(255,255,255,.15);font-size:8px;margin:0 2px}
+.wf-tag{margin-left:auto;background:rgba(255,255,255,.1);color:rgba(255,255,255,.85);font-size:8px;padding:2px 9px;border-radius:8px;letter-spacing:.4px}
+
+/* type cards */
+.type-bar{background:white;border-radius:10px;padding:16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.type-bar h3{margin:0 0 10px;font-size:13px;font-weight:700;color:#444}
+.type-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tc{border:2px solid #e5e7eb;border-radius:10px;padding:14px 12px;text-align:center;cursor:pointer;transition:all .18s;background:#fff;user-select:none}
+.tc:hover{border-color:#16a34a;background:#f0fdf4}
+.tc.selected{border-color:#16a34a;background:#f0fdf4}
+.tc-icon{font-size:26px;margin-bottom:5px}
+.tc-name{font-weight:700;font-size:13px;color:#1a2a3a}
+.tc-desc{font-size:10px;color:#888;margin-top:2px}
+.tc-ref{font-size:9px;font-weight:700;color:#16a34a;background:#dcfce7;padding:2px 8px;border-radius:8px;display:inline-block;margin-top:5px}
+@media(max-width:540px){.type-cards{grid-template-columns:1fr}}
+
+/* notice */
+.nb{border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:11.5px;line-height:1.55;display:flex;gap:7px;align-items:flex-start}
+.nb-info{background:#e8f4fd;border:1px solid #b3d4f0;color:#1a4a6a}
+.nb-ok{background:#dcfce7;border:1px solid #86efac;color:#166534}
+.nb-warn{background:#fef9c3;border:1px solid #fde68a;color:#854d0e}
+
+/* ref row */
+.ref-row{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px}
+.ref-label{font-size:12px;font-weight:700;color:#166534}
+.ref-value{font-family:monospace;font-size:16px;font-weight:800;color:#15803d;flex:1}
+.ref-edit-btn{background:none;border:1px solid #86efac;color:#16a34a;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer}
+.ref-edit-btn:hover{background:#dcfce7}
+
+/* step cards */
+.step-card{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:12px}
+.step-title{font-size:13px;font-weight:700;color:#1a2a3a;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.step-num{background:#16a34a;color:white;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+
+/* form */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;margin-bottom:4px;font-weight:600;color:#444;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;font-size:14px;background:#fafafa;transition:border-color .15s;box-sizing:border-box}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#16a34a;background:white}
+.form-group input.ro{background:#f5f5f5;color:#555;cursor:not-allowed;border-color:#e0e0e0}
+.form-group .fnote{font-size:11px;color:#888;margin-top:3px}
+.form-group textarea{resize:vertical;min-height:60px}
+.span2{grid-column:span 2}
+.span3{grid-column:span 3}
+@media(max-width:600px){.form-row,.form-row.three{grid-template-columns:1fr}.span2,.span3{grid-column:span 1}}
+
+/* project selector */
+#projectPicker,#unitPicker{background:#fff;border:1.5px solid #86efac;color:#166534;font-weight:600}
+#projectPicker:focus,#unitPicker:focus{border-color:#16a34a;outline:none}
+/* document upload */
+.doc-drop{border:2px dashed #86efac;border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:border-color .2s;background:#fafff9;margin-bottom:10px}
+.doc-drop:hover,.doc-drop.dragover{border-color:#16a34a;background:#f0fdf4}
+.doc-drop input{display:none}
+.doc-drop-icon{font-size:28px;margin-bottom:6px}
+.doc-drop-lbl{font-size:12px;font-weight:600;color:#16a34a}
+.doc-drop-sub{font-size:10px;color:#888;margin-top:3px}
+.doc-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.doc-item{display:flex;align-items:center;gap:8px;background:#f8f9fa;border-radius:6px;padding:8px 10px;font-size:12px}
+.doc-item-icon{font-size:16px;flex-shrink:0}
+.doc-item-name{flex:1;font-weight:600;color:#1a2a3a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-item-meta{font-size:10px;color:#888;white-space:nowrap}
+.doc-item-del{background:none;border:none;color:#dc3545;cursor:pointer;font-size:14px;padding:0 4px;flex-shrink:0}
+.doc-label-sel{padding:5px 8px;border:1px solid #ccc;border-radius:5px;font-size:11px;background:#fff;flex-shrink:0}
+.doc-progress{height:3px;background:#dcfce7;border-radius:3px;margin-top:4px;display:none}
+.doc-progress-bar{height:100%;background:#16a34a;border-radius:3px;width:0;transition:width .3s}
+/* smart sections hidden by default */
+.smart-sec{display:none}
+
+/* sig grid */
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.sig-block{border:1.5px dashed #d1d5db;border-radius:8px;padding:12px;background:white;position:relative;transition:all .18s}
+.sig-block:hover:not(.sb-locked){border-color:#16a34a}
+.sig-block.sb-active{border:2px solid #b8952a;box-shadow:0 0 0 3px rgba(184,149,42,.12);animation:pgold 2s infinite}
+.sig-block.sb-signed{border:1.5px solid #16a34a;background:#f0fdf4}
+.sig-block.sb-locked{background:#f9fafb;border-color:#e5e7eb}
+@keyframes pgold{0%,100%{box-shadow:0 0 0 3px rgba(184,149,42,.12)}50%{box-shadow:0 0 0 7px rgba(184,149,42,.04)}}
+.sig-role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1a3a2a;margin-bottom:6px;display:flex;justify-content:space-between}
+.sig-hint{font-size:9px;color:#16a34a;text-align:center;margin:4px 0;font-style:italic}
+.sig-canvas{width:100%;height:68px;border:1px solid #e5e7eb;border-radius:4px;background:#fff;cursor:crosshair;display:block;touch-action:none}
+.sb-locked .sig-canvas{cursor:default;background:#f9fafb}
+.sig-stamp{display:none;position:absolute;top:6px;right:8px;background:#dcfce7;color:#166534;font-size:7px;padding:1px 6px;border-radius:8px;border:1px solid #86efac;font-weight:700}
+.sb-signed .sig-stamp{display:block}
+.sig-flds{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.sig-fr{display:flex;align-items:baseline;gap:4px;font-size:10px}
+.sig-fl{color:#888;min-width:36px}
+.sig-fv{flex:1;border-bottom:1px solid #e5e7eb;padding:0 3px 1px;font-size:10px;color:#1a2a3a}
+.sig-clr{background:none;border:1px solid #e5e7eb;color:#9ca3af;font-size:8px;padding:1px 6px;border-radius:8px;cursor:pointer;float:right;margin-top:-3px}
+.sb-locked .sig-clr,.sb-signed .sig-clr{display:none}
+@media(max-width:540px){.sig-grid{grid-template-columns:1fr}}
+
+/* action bar */
+.act-bar{display:flex;gap:8px;justify-content:flex-end;padding-top:12px;flex-wrap:wrap}
+.btn-draft{background:#6c757d;color:white;padding:11px 20px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:600}
+.btn-send{background:#b8952a;color:white;padding:11px 22px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+.btn-done{background:#1a3a2a;color:white;padding:11px 22px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+.btn-complete{background:#16a34a;color:white;padding:11px 22px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+.btn-submit-approval{background:#1d4ed8;color:white;padding:11px 22px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+@media(max-width:540px){.act-bar{flex-direction:column}.btn-draft,.btn-send,.btn-done,.btn-complete,.btn-submit-approval{width:100%;text-align:center}}
+
+/* modals */
+.mo{position:fixed;inset:0;background:rgba(26,58,42,.52);backdrop-filter:blur(3px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;pointer-events:none;transition:opacity .2s}
+.mo.open{opacity:1;pointer-events:all}
+.mb{background:#faf8f3;border-radius:10px;box-shadow:0 16px 50px rgba(0,0,0,.22);width:100%;max-width:400px;padding:20px;transform:translateY(14px);transition:transform .2s;border-top:4px solid #1a3a2a}
+.mo.open .mb{transform:translateY(0)}
+.mb-wide{max-width:460px}
+.mb h3{font-size:14px;font-weight:700;color:#1a3a2a;margin:0 0 4px}
+.mb p{font-size:10.5px;color:#6a6a6a;margin:0 0 14px}
+.ch-card{border:1.5px solid #e5e7eb;border-radius:7px;padding:10px 12px;cursor:pointer;transition:all .13s;display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ch-card:hover{border-color:#16a34a;background:#f0fdf4}
+.ch-ico{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.ch-wa{background:#dcf8e7}.ch-tg{background:#daf0fb}
+.ch-name{font-size:11.5px;font-weight:700;color:#1a2a3a}
+.ch-desc{font-size:9px;color:#888}
+.ph-step{display:none}.ph-step.open{display:block}
+.back-lk{font-size:10px;color:#16a34a;cursor:pointer;margin-bottom:10px;display:inline-block}
+.back-lk:hover{text-decoration:underline}
+.msg-prev{background:#f0fdf4;border:1px solid #86efac;border-radius:5px;padding:8px 10px;font-size:9.5px;color:#444;line-height:1.6;font-style:italic;max-height:72px;overflow:auto;margin-bottom:10px}
+.m-grp{margin-bottom:10px}
+.m-lbl{display:block;font-size:9px;font-weight:700;color:#555;margin-bottom:3px;text-transform:uppercase}
+.m-inp{width:100%;border:1.5px solid #e5e7eb;border-radius:5px;padding:7px 9px;font-size:12px;outline:none;font-family:Arial;box-sizing:border-box}
+.m-inp:focus{border-color:#16a34a}
+.mo-acts{display:flex;gap:7px;justify-content:flex-end;margin-top:12px}
+.btn-sm{font-size:10.5px;padding:6px 14px;border-radius:5px;border:none;cursor:pointer;font-weight:600;font-family:Arial}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:2px}
+@media(max-width:400px){.two-col{grid-template-columns:1fr}}
+.sig-mo-cv{width:100%;height:110px;border:1.5px solid #e5e7eb;border-radius:5px;background:white;display:block;cursor:crosshair;touch-action:none;margin-bottom:4px}
+.sig-mo-hint{font-size:9px;color:#888;text-align:center;margin-bottom:9px}
+.sig-mo-clr{background:none;border:1px solid #e5e7eb;color:#9ca3af;font-size:8.5px;padding:2px 7px;border-radius:8px;cursor:pointer;float:right;margin-bottom:5px}
+.ret-lnk-box{background:white;border:1.5px solid #e5e7eb;border-radius:5px;padding:7px 10px;font-size:9.5px;color:#555;word-break:break-all;line-height:1.5;margin:8px 0}
+.ret-btn{display:block;width:100%;padding:8px;border:none;border-radius:4px;cursor:pointer;font-size:10.5px;text-align:center;margin-bottom:5px;font-family:Arial;font-weight:600;text-decoration:none}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">&#10010; New Sale</div>
+  <div class="topbar-right">
+    <a href="/agent/unified-submissions">&#128203; Submissions</a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/agent/unified-submit" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/unified-submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/forms-library">&#128193; Forms</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/agent/profile">&#128100; Profile</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<!-- WF STRIP -->
+<div class="wf-strip">
+  <div class="wf-step wf-now" id="ws0"><div class="wf-dot">1</div><span>Agent Fills</span></div>
+  <div class="wf-arr">›</div>
+  <div class="wf-step" id="ws1"><div class="wf-dot">2</div><span id="ws1lbl">Party A Signs</span></div>
+  <div class="wf-arr">›</div>
+  <div class="wf-step" id="ws2"><div class="wf-dot">3</div><span id="ws2lbl">Party B Signs</span></div>
+  <div class="wf-arr">›</div>
+  <div class="wf-step" id="ws3"><div class="wf-dot">4</div><span>Complete</span></div>
+  <div class="wf-tag" id="wfTag">Draft</div>
+</div>
+
+<div class="wrap">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for cat,msg in messages %}
+<div class="flash flash-{{ 'ok' if cat=='success' else 'err' }}">{{ msg }}</div>
+{% endfor %}{% endif %}{% endwith %}
+
+<div id="banner"></div>
+
+<!-- TYPE SELECTOR -->
+<div class="type-bar" id="typeBar">
+  <h3>Select Submission Type</h3>
+  <div class="type-cards">
+    <div class="tc" id="tc-np" onclick="setType('np')">
+      <div class="tc-icon">🏢</div>
+      <div class="tc-name">New Project</div>
+      <div class="tc-desc">Developer booking form</div>
+      <div class="tc-ref">NP-XXXX</div>
+    </div>
+    <div class="tc selected" id="tc-ss" onclick="setType('ss')">
+      <div class="tc-icon">🏠</div>
+      <div class="tc-name">Sub Sales</div>
+      <div class="tc-desc">Offer to Purchase (OTP)</div>
+      <div class="tc-ref">SC-XXXX</div>
+    </div>
+    <div class="tc" id="tc-rn" onclick="setType('rn')">
+      <div class="tc-icon">🔑</div>
+      <div class="tc-name">Rental</div>
+      <div class="tc-desc">Tenancy Agreement</div>
+      <div class="tc-ref">RN-XXXX</div>
+    </div>
+  </div>
+</div>
+
+<form method="POST" action="/agent/unified-submit" id="uForm">
+  <input type="hidden" name="sub_type"  id="h_type"  value="ss">
+  <input type="hidden" name="sub_ref"   id="h_ref"   value="">
+  <input type="hidden" name="sub_id"    id="h_id"    value="{{ sub_id or '' }}">
+  <input type="hidden" name="sub_stage" id="h_stage" value="{{ sub_stage or 0 }}">
+  <input type="hidden" name="sig_data"  id="h_sigs"  value="{}">
+  <input type="hidden" name="action"    id="h_action" value="save">
+
+  <!-- REF NUMBER -->
+  <div class="ref-row">
+    <span class="ref-label">Ref No.</span>
+    <span class="ref-value" id="refDisplay">—</span>
+    <button type="button" class="ref-edit-btn" id="refEditBtn" onclick="openRefEdit()">✏ Edit</button>
+    <span style="font-size:8px;color:#888;font-style:italic" id="refAutoTag">auto-generated</span>
+  </div>
+
+  <!-- STEP 1: AGENT -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">1</span> Agent Information</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Agent Name</label>
+        <input type="text" class="ro" value="{{ agent_name }}" readonly>
+        <input type="hidden" name="agent_name" value="{{ agent_name }}">
+        <div class="fnote">Auto-filled from your login — cannot be changed</div>
+      </div>
+      <div class="form-group">
+        <label>Agent Rank</label>
+        <input type="text" class="ro" value="{{ agent_rank }}" readonly>
+        <input type="hidden" name="agent_rank" value="{{ agent_rank }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: PROPERTY -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">2</span> Property Information</div>
+
+    {% if projects %}
+    <!-- Project selector -->
+    <div class="form-group" id="projSelGroup">
+      <label>Select from Project (Optional)</label>
+      <select id="projectPicker" onchange="fillFromProject(this)">
+        <option value="">— Select a project to auto-fill —</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}"
+          data-name="{{ p.project_name }}"
+          data-location="{{ p.location }}"
+          data-type="{{ p.project_type }}"
+          data-saletype="{{ p.sale_type }}"
+          data-units="{{ p.units | tojson | e }}"
+        >{{ p.project_name }} — {{ p.location or p.category|title }}</option>
+        {% endfor %}
+      </select>
+      <div class="fnote">Selecting a project will auto-fill address, type and unit details below</div>
+    </div>
+
+    <!-- Unit selector (shown after project selected) -->
+    <div class="form-group" id="unitSelGroup" style="display:none">
+      <label>Select Unit Type</label>
+      <select id="unitPicker" onchange="fillFromUnit(this)">
+        <option value="">— Select unit type —</option>
+      </select>
+    </div>
+
+    <!-- Project info bar (shown after project selected) -->
+    <div id="projInfoBar" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:7px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:#166534"></div>
+    {% endif %}
+
+    <div class="form-group">
+      <label>Property Address *</label>
+      <input type="text" name="prop_address" id="f_prop_address" placeholder="Full property address" value="{{ form.get('prop_address','') }}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Property Type</label>
+        <select name="prop_type" id="f_prop_type">
+          <option value="">— Select —</option>
+          {% for pt in ['Condominium / Apartment','Terrace House','Semi-Detached','Bungalow','SOHO / Studio','Shop Office','Industrial','Land'] %}
+          <option value="{{ pt }}" {% if form.get('prop_type')==pt %}selected{% endif %}>{{ pt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>State</label>
+        <select name="prop_state" id="f_prop_state">
+          <option value="">— Select —</option>
+          {% for st in ['Selangor','Kuala Lumpur','Putrajaya','Johor','Penang','Perak','Sabah','Sarawak','Negeri Sembilan','Melaka','Pahang','Terengganu','Kelantan','Kedah','Perlis','Labuan'] %}
+          <option value="{{ st }}" {% if form.get('prop_state')==st %}selected{% endif %}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3: PARTY A -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">3</span> <span id="partyATitle">Vendor / Seller</span></div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label><span id="partyALbl">Vendor</span> Full Name *</label>
+        <input type="text" name="partyA_name" placeholder="Full legal name" value="{{ form.get('partyA_name','') }}">
+      </div>
+      <div class="form-group">
+        <label>NRIC / Passport No.</label>
+        <input type="text" name="partyA_ic" placeholder="XXXXXX-XX-XXXX" value="{{ form.get('partyA_ic','') }}">
+      </div>
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input type="tel" name="partyA_phone" placeholder="e.g. 60112345678" value="{{ form.get('partyA_phone','') }}">
+      </div>
+      <div class="form-group span3">
+        <label>Address</label>
+        <input type="text" name="partyA_addr" placeholder="Full correspondence address" value="{{ form.get('partyA_addr','') }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: PARTY B -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">4</span> <span id="partyBTitle">Purchaser / Buyer</span></div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label><span id="partyBLbl">Purchaser</span> Full Name *</label>
+        <input type="text" name="partyB_name" placeholder="Full legal name" value="{{ form.get('partyB_name','') }}">
+      </div>
+      <div class="form-group">
+        <label>NRIC / Passport No.</label>
+        <input type="text" name="partyB_ic" placeholder="XXXXXX-XX-XXXX" value="{{ form.get('partyB_ic','') }}">
+      </div>
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input type="tel" name="partyB_phone" placeholder="e.g. 60129876543" value="{{ form.get('partyB_phone','') }}">
+      </div>
+      <div class="form-group span3">
+        <label>Address</label>
+        <input type="text" name="partyB_addr" placeholder="Full correspondence address" value="{{ form.get('partyB_addr','') }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5: NEW PROJECT -->
+  <div class="step-card smart-sec" id="sec-np">
+    <div class="step-title"><span class="step-num">5</span> 🏢 New Project Details</div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Project Name</label>
+        <input type="text" name="np_project" placeholder="e.g. Nadi Bangsar" value="{{ form.get('np_project','') }}">
+      </div>
+      <div class="form-group">
+        <label>Developer Name</label>
+        <input type="text" name="np_developer" placeholder="Developer company" value="{{ form.get('np_developer','') }}">
+      </div>
+      <div class="form-group">
+        <label>Unit / Lot No.</label>
+        <input type="text" name="np_unit" placeholder="e.g. B-12-3A" value="{{ form.get('np_unit','') }}">
+      </div>
+      <div class="form-group">
+        <label>Selling Price (RM)</label>
+        <input type="text" name="np_price" placeholder="e.g. 680,000.00" value="{{ form.get('np_price','') }}">
+      </div>
+      <div class="form-group">
+        <label>Booking Fee (RM)</label>
+        <input type="text" name="np_booking" placeholder="e.g. 5,000.00" value="{{ form.get('np_booking','') }}">
+      </div>
+      <div class="form-group">
+        <label>Bumiputera Lot</label>
+        <select name="np_bumi">
+          <option value="">— Select —</option>
+          <option {% if form.get('np_bumi')=='Yes – Bumi Lot' %}selected{% endif %}>Yes – Bumi Lot</option>
+          <option {% if form.get('np_bumi')=='No – Open Market' %}selected{% endif %}>No – Open Market</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Expected Handover</label>
+        <input type="month" name="np_handover" value="{{ form.get('np_handover','') }}">
+      </div>
+      <div class="form-group span2">
+        <label>Special Packages / Remarks</label>
+        <input type="text" name="np_remarks" placeholder="Furniture package, rebate, etc." value="{{ form.get('np_remarks','') }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5: SUB SALES -->
+  <div class="step-card smart-sec" id="sec-ss">
+    <div class="step-title"><span class="step-num">5</span> 🏠 Sub Sales – OTP Details</div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Purchase Price (RM)</label>
+        <input type="text" name="ss_price" placeholder="e.g. 550,000.00" value="{{ form.get('ss_price','') }}">
+      </div>
+      <div class="form-group span2">
+        <label>Price in Words</label>
+        <input type="text" name="ss_price_words" placeholder="e.g. Five Hundred Fifty Thousand Only" value="{{ form.get('ss_price_words','') }}">
+      </div>
+      <div class="form-group">
+        <label>Earnest Deposit (%)</label>
+        <input type="text" name="ss_dep_pct" placeholder="e.g. 1" value="{{ form.get('ss_dep_pct','') }}">
+      </div>
+      <div class="form-group">
+        <label>Earnest Deposit (RM)</label>
+        <input type="text" name="ss_dep_amt" placeholder="e.g. 5,500.00" value="{{ form.get('ss_dep_amt','') }}">
+      </div>
+      <div class="form-group">
+        <label>Cheque / Transfer Ref</label>
+        <input type="text" name="ss_cheque" placeholder="e.g. TXN-2024-001" value="{{ form.get('ss_cheque','') }}">
+      </div>
+      <div class="form-group">
+        <label>SPA Target Date</label>
+        <input type="date" name="ss_spa_date" value="{{ form.get('ss_spa_date','') }}">
+      </div>
+      <div class="form-group span3">
+        <label>Special Conditions (if any)</label>
+        <input type="text" name="ss_special" placeholder="Leave blank if none" value="{{ form.get('ss_special','') }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5: RENTAL -->
+  <div class="step-card smart-sec" id="sec-rn">
+    <div class="step-title"><span class="step-num">5</span> 🔑 Tenancy Agreement Details</div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Monthly Rent (RM)</label>
+        <input type="text" name="rn_rent" placeholder="e.g. 2,500.00" value="{{ form.get('rn_rent','') }}">
+      </div>
+      <div class="form-group">
+        <label>Security Deposit (RM)</label>
+        <input type="text" name="rn_sec_dep" placeholder="e.g. 5,000.00 (2 mths)" value="{{ form.get('rn_sec_dep','') }}">
+      </div>
+      <div class="form-group">
+        <label>Utility Deposit (RM)</label>
+        <input type="text" name="rn_util_dep" placeholder="e.g. 500.00" value="{{ form.get('rn_util_dep','') }}">
+      </div>
+      <div class="form-group">
+        <label>Tenancy Period</label>
+        <select name="rn_period">
+          <option value="">— Select —</option>
+          {% for p in ['1 Year','2 Years','3 Years'] %}
+          <option {% if form.get('rn_period')==p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Commencement Date</label>
+        <input type="date" name="rn_start" value="{{ form.get('rn_start','') }}">
+      </div>
+      <div class="form-group">
+        <label>Expiry Date</label>
+        <input type="date" name="rn_end" value="{{ form.get('rn_end','') }}">
+      </div>
+      <div class="form-group">
+        <label>Furnished Status</label>
+        <select name="rn_furnished">
+          <option value="">— Select —</option>
+          {% for f in ['Fully Furnished','Partially Furnished','Unfurnished'] %}
+          <option {% if form.get('rn_furnished')==f %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Stamping Duty By</label>
+        <select name="rn_stamp">
+          <option value="">— Select —</option>
+          {% for s in ['Tenant','Landlord','Split equally'] %}
+          <option {% if form.get('rn_stamp')==s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Key / Access Card Deposit</label>
+        <input type="text" name="rn_key_dep" placeholder="e.g. 200.00" value="{{ form.get('rn_key_dep','') }}">
+      </div>
+      <div class="form-group span3">
+        <label>Special Conditions / Inclusions</label>
+        <input type="text" name="rn_special" placeholder="e.g. Air-con servicing by landlord, no pets" value="{{ form.get('rn_special','') }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6: SIGNATURES -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">6</span> ✍ Signatures</div>
+    <div class="sig-grid" id="sigGrid"></div>
+  </div>
+
+  <!-- STEP 7: DOCUMENTS -->
+  <div class="step-card" id="docSection">
+    <div class="step-title"><span class="step-num">7</span> 📎 Supporting Documents
+      <span style="font-size:10px;color:#888;font-weight:400;margin-left:6px">(SPA, IC copy, title, etc.)</span>
+    </div>
+
+    {% if sub_id %}
+    <!-- Upload area -->
+    <div class="doc-drop" id="docDrop" onclick="document.getElementById('docFileInput').click()">
+      <input type="file" id="docFileInput" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onchange="uploadDocs(this.files)">
+      <div class="doc-drop-icon">📁</div>
+      <div class="doc-drop-lbl">Click or drag files here to upload</div>
+      <div class="doc-drop-sub">PDF, JPG, PNG, DOC — max 10MB each</div>
+    </div>
+    <div class="doc-progress" id="docProgress"><div class="doc-progress-bar" id="docProgressBar"></div></div>
+
+    <!-- Doc label selector -->
+    <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#666">Label as:</span>
+      <select class="doc-label-sel" id="docLabelSel">
+        <option>Supporting Document</option>
+        <option>SPA / OTP Copy</option>
+        <option>Purchaser IC</option>
+        <option>Vendor IC</option>
+        <option>Title Deed</option>
+        <option>Booking Receipt</option>
+        <option>Bank Letter</option>
+        <option>Others</option>
+      </select>
+    </div>
+
+    <!-- Uploaded files list -->
+    <div class="doc-list" id="docList">
+      {% if docs %}
+        {% for d in docs %}
+        {% set icons = {'pdf':'📄','jpg':'🖼️','jpeg':'🖼️','png':'🖼️','doc':'📝','docx':'📝'} %}
+        <div class="doc-item" id="ditem-{{ d.id }}">
+          <span class="doc-item-icon">{{ icons.get(d.file_type or '', '📎') }}</span>
+          <span class="doc-item-name">{{ d.filename }}</span>
+          <span class="doc-item-meta">{{ d.doc_label or '' }} &bull; {{ '%.1f'|format((d.file_size or 0)/1024) }} KB</span>
+          <button class="doc-item-del" onclick="deleteDoc({{ d.id }})" title="Remove">✕</button>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div id="docEmpty" style="text-align:center;padding:12px;color:#888;font-size:12px">No documents uploaded yet</div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:6px;padding:10px 12px;font-size:12px;color:#854d0e">
+      ⚠️ Save the form as a draft first before uploading documents.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ACTION BAR -->
+  <div class="act-bar" id="actBar">
+    <button type="button" class="btn-draft" onclick="doSave('draft')">💾 Save Draft</button>
+    <button type="button" class="btn-send" onclick="openSendModal('pA')">📤 Send for Signing →</button>
+  </div>
+
+<script type="application/json" id="_sigs_data">{{ sig_data | tojson }}</script>
+<script type="application/json" id="_fd_data">{{ form | tojson }}</script>
+</form>
+</div>
+
+<!-- MODAL: SEND -->
+<div class="mo" id="moSend">
+  <div class="mb">
+    <h3 id="sendTitle">Send for Signing</h3>
+    <p id="sendSub">Choose delivery method</p>
+    <div id="sendBody">
+      <div class="ch-card" onclick="showPhone('wa')"><div class="ch-ico ch-wa">💬</div><div><div class="ch-name">WhatsApp</div><div class="ch-desc">Opens WhatsApp with signing link</div></div><span>›</span></div>
+      <div class="ch-card" onclick="showPhone('tg')"><div class="ch-ico ch-tg">✈️</div><div><div class="ch-name">Telegram</div><div class="ch-desc">Opens Telegram with signing link</div></div><span>›</span></div>
+      <div id="phStep" class="ph-step">
+        <span class="back-lk" onclick="backCh()">← Back</span>
+        <div class="m-grp"><label class="m-lbl" id="phLbl">Phone Number</label><input class="m-inp" id="phNum" type="tel" placeholder="e.g. 601112345678"></div>
+        <div class="msg-prev" id="msgPrev"></div>
+        <button id="phGo" class="btn-sm" style="background:#25D366;color:white;width:100%;padding:9px;margin-top:2px" onclick="doSend()">Send Now ›</button>
+      </div>
+    </div>
+    <div class="mo-acts"><button class="btn-sm" style="background:transparent;border:1.5px solid #16a34a;color:#16a34a" onclick="closeMo('moSend')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- MODAL: SIGNATURE -->
+<div class="mo" id="moSig">
+  <div class="mb mb-wide">
+    <h3 id="sigMoTitle">Signature</h3>
+    <p>Sign within the box using your finger or mouse</p>
+    <canvas class="sig-mo-cv" id="sigMoCv"></canvas>
+    <button class="sig-mo-clr" onclick="clearSigMo()">✕ Clear</button>
+    <div class="sig-mo-hint">Draw your signature above</div>
+    <div class="two-col">
+      <div class="m-grp"><label class="m-lbl">Full Name *</label><input class="m-inp" id="sigMoName" type="text" placeholder="Legal name"></div>
+      <div class="m-grp"><label class="m-lbl">NRIC No.</label><input class="m-inp" id="sigMoIc" type="text" placeholder="XXXXXX-XX-XXXX"></div>
+    </div>
+    <div class="m-grp"><label class="m-lbl">Date</label><input class="m-inp" id="sigMoDate" type="date"></div>
+    <div class="mo-acts">
+      <button class="btn-sm" style="background:transparent;border:1.5px solid #16a34a;color:#16a34a" onclick="closeMo('moSig')">Cancel</button>
+      <button class="btn-sm" style="background:#16a34a;color:white" onclick="confirmSig()">✓ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: REF EDIT -->
+<div class="mo" id="moRef">
+  <div class="mb">
+    <h3>Edit Reference Number</h3>
+    <p>Auto-generated — change to match your physical file if needed.</p>
+    <div class="m-grp"><label class="m-lbl">Reference Number</label><input class="m-inp" id="refInput" type="text" placeholder="e.g. SC0249"></div>
+    <div class="mo-acts">
+      <button class="btn-sm" style="background:transparent;border:1.5px solid #16a34a;color:#16a34a" onclick="closeMo('moRef')">Cancel</button>
+      <button class="btn-sm" style="background:#1a3a2a;color:white" onclick="confirmRef()">✓ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: RETURN LINK -->
+<div class="mo" id="moReturn">
+  <div class="mb">
+    <h3>✅ Signature Complete!</h3>
+    <p id="retSub">Send this return link back to your agent.</p>
+    <div class="ret-lnk-box" id="retLnk"></div>
+    <button class="ret-btn" onclick="copyRet()" style="background:#1a3a2a;color:white">📋 Copy Return Link</button>
+    <a class="ret-btn" id="retWa" href="#" target="_blank" style="background:#25D366;color:white">💬 Send Back via WhatsApp</a>
+    <a class="ret-btn" id="retTg" href="#" target="_blank" style="background:#2AABEE;color:white">✈️ Send Back via Telegram</a>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──
+var TYPE_CFG = {
+  np: { label:'New Project', docTitle:'Booking Form', refPfx:'NP',
+        partyA:'Developer', partyB:'Purchaser / Buyer',
+        ws1:'Developer Confirms', ws2:'Buyer Signs' },
+  ss: { label:'Sub Sales', docTitle:'Offer to Purchase', refPfx:'SC',
+        partyA:'Vendor / Seller', partyB:'Purchaser / Buyer',
+        ws1:'Vendor Signs', ws2:'Purchaser Signs' },
+  rn: { label:'Rental', docTitle:'Tenancy Agreement', refPfx:'RN',
+        partyA:'Landlord / Owner', partyB:'Tenant',
+        ws1:'Landlord Signs', ws2:'Tenant Signs' }
+};
+var ALLOWED    = { 0:[], 1:['pA','pAw'], 2:[], 3:['pB','pBw'], 4:[] };
+var STAGE_TAGS = ['Draft','Awaiting Party A','Party A Signed','Awaiting Party B','✓ Complete'];
+
+// ── SERVER DATA (safe Jinja injection via hidden element) ──
+var S_STAGE    = {{ sub_stage | default(0) | int }};
+var S_TYPE     = {{ sub_type  | default('ss') | tojson }};
+var S_REF      = {{ sub_ref   | default('') | tojson }};
+var S_NEXTREFS = {{ next_refs | tojson }};
+var S_SIGS     = {};
+try {
+  var _sigsEl = document.getElementById('_sigs_data');
+  if (_sigsEl) S_SIGS = JSON.parse(_sigsEl.textContent || '{}');
+} catch(e) { S_SIGS = {}; }
+
+// ── STATE ──
+var curType   = 'ss';
+var curStage  = 0;
+var curRef    = '';
+var refLocked = false;
+var sigStore  = {};
+var sendCh    = '';
+var sendTgt   = '';
+var smCtx     = null;
+var smDrw     = false;
+var curSigId  = null;
+var retLink   = '';
+
+// ── INIT ──
+window.addEventListener('load', function() {
+  curStage  = S_STAGE || 0;
+  refLocked = curStage > 0;
+  curType   = TYPE_CFG[S_TYPE] ? S_TYPE : 'ss';
+  sigStore  = (S_SIGS && typeof S_SIGS === 'object') ? S_SIGS : {};
+
+  var nextNum = S_NEXTREFS[curType] || 1;
+  curRef = S_REF || (TYPE_CFG[curType].refPfx + pad(nextNum));
+
+  document.querySelectorAll('.sig-canvas').forEach(function(c) {
+    c.width = c.offsetWidth || 240; c.height = 68;
+  });
+
+  setType(curType, true);
+  setRef(curRef);
+  if (refLocked) lockRef();
+  applyStage();
+  restoreAllSigs();
+});
+
+function pad(n) { return String(n).padStart(4, '0'); }
+
+// ── TYPE ──
+function setType(t, init) {
+  curType = t;
+  ['np','ss','rn'].forEach(function(x) {
+    document.getElementById('tc-' + x).classList.toggle('selected', x === t);
+    var s = document.getElementById('sec-' + x);
+    if (s) s.style.display = (x === t) ? 'block' : 'none';
+  });
+  var cfg = TYPE_CFG[t];
+  document.getElementById('partyATitle').textContent = cfg.partyA;
+  document.getElementById('partyALbl').textContent   = cfg.partyA.split('/')[0].trim();
+  document.getElementById('partyBTitle').textContent = cfg.partyB;
+  document.getElementById('partyBLbl').textContent   = cfg.partyB.split('/')[0].trim();
+  document.getElementById('ws1lbl').textContent      = cfg.ws1;
+  document.getElementById('ws2lbl').textContent      = cfg.ws2;
+  document.getElementById('h_type').value = t;
+  if (!init) {
+    var nextNum = S_NEXTREFS[t] || 1;
+    setRef(cfg.refPfx + pad(nextNum));
+  }
+  renderSigGrid();
+  updateActBar();
+  updateBanner();
+  updateWF();
+}
+
+// ── REF ──
+function setRef(r) {
+  curRef = r;
+  document.getElementById('refDisplay').textContent = r;
+  document.getElementById('h_ref').value = r;
+}
+function lockRef() {
+  refLocked = true;
+  document.getElementById('refEditBtn').style.display = 'none';
+  document.getElementById('refAutoTag').textContent = 'locked';
+}
+function openRefEdit() {
+  if (refLocked) return;
+  document.getElementById('refInput').value = curRef;
+  openMo('moRef');
+}
+function confirmRef() {
+  var v = document.getElementById('refInput').value.trim().toUpperCase();
+  if (!v) { alert('Please enter a reference number.'); return; }
+  setRef(v);
+  document.getElementById('refAutoTag').textContent = 'edited';
+  closeMo('moRef');
+}
+
+// ── STAGE ENGINE ──
+function applyStage() {
+  updateWF(); updateBanner(); updateActBar();
+  lockFields(curStage > 0);
+  renderSigGrid();
+  if (curStage > 0) lockRef();
+}
+
+function updateWF() {
+  [0,1,2,3].forEach(function(i) {
+    var el = document.getElementById('ws' + i);
+    el.classList.remove('wf-done','wf-now');
+    if (curStage > i) el.classList.add('wf-done');
+    else if (curStage === i) el.classList.add('wf-now');
+  });
+  if (curStage === 2) {
+    document.getElementById('ws1').classList.remove('wf-now');
+    document.getElementById('ws1').classList.add('wf-done');
+  }
+  document.getElementById('wfTag').textContent = STAGE_TAGS[curStage] || '';
+}
+
+function updateBanner() {
+  var cfg = TYPE_CFG[curType];
+  var a = cfg.partyA.split('/')[0].trim();
+  var b = cfg.partyB.split('/')[0].trim();
+  var msgs = {
+    0: '<div class="nb nb-info">ℹ️ &nbsp;<strong>Agent Mode.</strong> Fill in all details, then tap <em>"Send for Signing →"</em>.</div>',
+    1: '<div class="nb nb-warn">✏️ &nbsp;<strong>' + a + ' Signing Mode.</strong> Please sign in your boxes below, then tap <em>"Done – Return to Agent"</em>.</div>',
+    2: '<div class="nb nb-ok">✅ &nbsp;<strong>' + a + ' has signed.</strong> Review then send to ' + b + '.</div>',
+    3: '<div class="nb nb-warn">✏️ &nbsp;<strong>' + b + ' Signing Mode.</strong> Please sign in your boxes below, then tap <em>"Done – Return to Agent"</em>.</div>',
+    4: '<div class="nb nb-ok">🎉 &nbsp;<strong>All parties have signed!</strong> Submission fully executed.</div>'
+  };
+  document.getElementById('banner').innerHTML = msgs[curStage] || '';
+}
+
+function updateActBar() {
+  var cfg = TYPE_CFG[curType];
+  var a = cfg.partyA.split('/')[0].trim();
+  var b = cfg.partyB.split('/')[0].trim();
+  var html = {
+    0: '<button type="button" class="btn-draft" onclick="doSave(\'draft\')">💾 Save Draft</button>'
+     + '<button type="button" class="btn-draft" onclick="printOTP()" style="background:#1a3a2a">&#128438; Print OTP</button>'
+     + '<button type="button" class="btn-send"  onclick="openSendModal(\'pA\')">📤 Send to ' + a + ' →</button>',
+    1: '<button type="button" class="btn-done"  onclick="partyDone(\'pA\')">✓ Done – Return to Agent</button>',
+    2: '<button type="button" class="btn-draft" onclick="doSave(\'save\')">💾 Save</button>'
+     + '<button type="button" class="btn-draft" onclick="printOTP()" style="background:#1a3a2a">&#128438; Print OTP</button>'
+     + '<button type="button" class="btn-send"  onclick="openSendModal(\'pB\')">📤 Send to ' + b + ' →</button>',
+    3: '<button type="button" class="btn-done"  onclick="partyDone(\'pB\')">✓ Done – Return to Agent</button>',
+    4: '<button type="button" class="btn-draft" onclick="printOTP()">🖨 Print</button>'
+     + '<button type="button" class="btn-complete" onclick="doSave(\'complete\')">⬇ Save Complete</button>'
+     + '<button type="button" class="btn-submit-approval" onclick="submitForApproval()">&#128203; Submit for Approval</button>'
+  };
+  document.getElementById('actBar').innerHTML = html[curStage] || '';
+}
+
+function lockFields(locked) {
+  document.querySelectorAll('#uForm input:not([type=hidden]):not(.ro), #uForm select, #uForm textarea').forEach(function(el) {
+    // Use readonly instead of disabled — disabled fields are excluded from form POST
+    if (locked) {
+      el.setAttribute('readonly', true);
+      if (el.tagName === 'SELECT') el.style.pointerEvents = 'none';
+    } else {
+      el.removeAttribute('readonly');
+      if (el.tagName === 'SELECT') el.style.pointerEvents = '';
+    }
+    el.style.background = locked ? '#f5f5f5' : '';
+    el.style.cursor     = locked ? 'default'  : '';
+  });
+  document.querySelectorAll('.tc').forEach(function(el) {
+    el.style.pointerEvents = locked ? 'none' : '';
+    el.style.opacity       = locked ? '0.5'  : '';
+  });
+}
+
+// ── SIG GRID ──
+function renderSigGrid() {
+  var cfg = TYPE_CFG[curType];
+  var sigs = [
+    { id:'pA',  role: cfg.partyA },
+    { id:'pAw', role: 'Witnessed by (' + cfg.partyA.split('/')[0].trim() + ')' },
+    { id:'pB',  role: cfg.partyB },
+    { id:'pBw', role: 'Witnessed by (' + cfg.partyB.split('/')[0].trim() + ')' }
+  ];
+  var allowed = ALLOWED[curStage] || [];
+  var html = sigs.map(function(s) {
+    var signed  = !!sigStore[s.id];
+    var active  = !signed && allowed.indexOf(s.id) >= 0;
+    var cls = 'sig-block' + (signed ? ' sb-signed' : active ? ' sb-active' : ' sb-locked');
+    var icon = signed ? '✅' : (active ? '✍' : '🔒');
+    var hint = active ? '<div class="sig-hint">👆 Tap here to sign</div>' : '';
+    var sd = sigStore[s.id] || {};
+    return '<div class="' + cls + '" id="sb-' + s.id + '">'
+         + '<div class="sig-stamp">✓ Signed</div>'
+         + '<div class="sig-role"><span>' + s.role + '</span><span>' + icon + '</span></div>'
+         + hint
+         + '<canvas class="sig-canvas" id="cv-' + s.id + '" onclick="sigClick(\'' + s.id + '\',\'' + s.role.replace(/'/g,"\\'") + '\')"></canvas>'
+         + '<button type="button" class="sig-clr" onclick="clearSig(\'' + s.id + '\')">Clear</button>'
+         + '<div class="sig-flds">'
+         + '<div class="sig-fr"><span class="sig-fl">Name</span><span class="sig-fv">' + (sd.name || '') + '</span></div>'
+         + '<div class="sig-fr"><span class="sig-fl">NRIC</span><span class="sig-fv">' + (sd.ic || '') + '</span></div>'
+         + '<div class="sig-fr"><span class="sig-fl">Date</span><span class="sig-fv">' + (sd.date || '') + '</span></div>'
+         + '</div></div>';
+  }).join('');
+  document.getElementById('sigGrid').innerHTML = html;
+  setTimeout(function() {
+    document.querySelectorAll('.sig-canvas').forEach(function(c) {
+      c.width = c.offsetWidth || 240; c.height = 68;
+    });
+    restoreAllSigs();
+  }, 60);
+}
+
+function restoreAllSigs() {
+  Object.keys(sigStore).forEach(function(id) {
+    var s = sigStore[id];
+    if (!s || !s.img) return;
+    var fc = document.getElementById('cv-' + id);
+    if (!fc) return;
+    fc.width = fc.offsetWidth || 240; fc.height = 68;
+    var img = new Image();
+    img.onload = function() { fc.getContext('2d').drawImage(img, 0, 0, fc.width, fc.height); };
+    img.src = s.img;
+  });
+}
+
+// ── SIGNATURE MODAL ──
+function gpos(cv, e) {
+  var r = cv.getBoundingClientRect();
+  var sx = cv.width / r.width, sy = cv.height / r.height;
+  var src = e.touches ? e.touches[0] : e;
+  return { x: (src.clientX - r.left) * sx, y: (src.clientY - r.top) * sy };
+}
+
+function sigClick(id, title) {
+  var allowed = ALLOWED[curStage] || [];
+  if (allowed.indexOf(id) < 0 || sigStore[id]) return;
+  curSigId = id;
+  document.getElementById('sigMoTitle').textContent = title + ' – Signature';
+  var s = sigStore[id] || {};
+  document.getElementById('sigMoName').value = s.name || '';
+  document.getElementById('sigMoIc').value   = s.ic   || '';
+  document.getElementById('sigMoDate').value = s.date || new Date().toISOString().split('T')[0];
+  var cv = document.getElementById('sigMoCv');
+  cv.width = cv.offsetWidth || 420; cv.height = 110;
+  smCtx = cv.getContext('2d');
+  smCtx.clearRect(0, 0, cv.width, cv.height);
+  smCtx.strokeStyle = '#1a3a2a'; smCtx.lineWidth = 2.2;
+  smCtx.lineCap = 'round'; smCtx.lineJoin = 'round';
+  if (s.img) { var im = new Image(); im.onload = function() { smCtx.drawImage(im, 0, 0); }; im.src = s.img; }
+  cv.onmousedown  = function(e) { smDrw=true; var p=gpos(cv,e); smCtx.beginPath(); smCtx.moveTo(p.x,p.y); };
+  cv.onmousemove  = function(e) { if(!smDrw) return; var p=gpos(cv,e); smCtx.lineTo(p.x,p.y); smCtx.stroke(); };
+  cv.onmouseup    = cv.onmouseleave = function() { smDrw=false; };
+  cv.ontouchstart = function(e) { e.preventDefault(); smDrw=true; var p=gpos(cv,e); smCtx.beginPath(); smCtx.moveTo(p.x,p.y); };
+  cv.ontouchmove  = function(e) { e.preventDefault(); if(!smDrw) return; var p=gpos(cv,e); smCtx.lineTo(p.x,p.y); smCtx.stroke(); };
+  cv.ontouchend   = function() { smDrw=false; };
+  openMo('moSig');
+}
+
+function clearSigMo() {
+  if (smCtx) smCtx.clearRect(0, 0, document.getElementById('sigMoCv').width, 110);
+}
+
+function confirmSig() {
+  var name = document.getElementById('sigMoName').value.trim();
+  if (!name) { alert('Please enter your full name.'); return; }
+  var cv   = document.getElementById('sigMoCv');
+  var img  = cv.toDataURL('image/png');
+  var ic   = document.getElementById('sigMoIc').value.trim();
+  var dt   = document.getElementById('sigMoDate').value;
+  var dFmt = dt ? new Date(dt).toLocaleDateString('en-MY') : '';
+  sigStore[curSigId] = { name:name, ic:ic, date:dFmt, img:img };
+  var fc = document.getElementById('cv-' + curSigId);
+  if (fc) {
+    fc.width = fc.offsetWidth || 240; fc.height = 68;
+    var im2 = new Image();
+    im2.onload = function() { fc.getContext('2d').drawImage(im2, 0, 0, fc.width, fc.height); };
+    im2.src = img;
+  }
+  document.getElementById('h_sigs').value = JSON.stringify(sigStore);
+  closeMo('moSig');
+  renderSigGrid();
+}
+
+function clearSig(id) {
+  var c = document.getElementById('cv-' + id);
+  if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+  delete sigStore[id];
+  document.getElementById('h_sigs').value = JSON.stringify(sigStore);
+  renderSigGrid();
+}
+
+// ── SEND MODAL ──
+function openSendModal(tgt) {
+  if (!TYPE_CFG[curType]) { alert('Please select a submission type first.'); return; }
+  sendTgt = tgt;
+  var cfg = TYPE_CFG[curType];
+  var who = tgt === 'pA' ? cfg.partyA.split('/')[0].trim() : cfg.partyB.split('/')[0].trim();
+  document.getElementById('sendTitle').textContent = '📤 Send to ' + who + ' for Signing';
+  document.getElementById('sendSub').textContent   = who + ' will receive a link to open and sign.';
+  document.getElementById('phStep').classList.remove('open');
+  document.querySelectorAll('#sendBody .ch-card').forEach(function(c) { c.style.display = 'flex'; });
+  openMo('moSend');
+}
+
+function showPhone(ch) {
+  sendCh = ch;
+  var cfg    = TYPE_CFG[curType];
+  var who    = sendTgt === 'pA' ? cfg.partyA.split('/')[0].trim() : cfg.partyB.split('/')[0].trim();
+  var toStage = sendTgt === 'pA' ? 1 : 3;
+  var link   = buildLink(toStage);
+  var msg    = 'Hi ' + who + ', please open the link to review and sign the '
+             + cfg.docTitle + ' (Ref: ' + curRef + '):\n\n' + link;
+  document.getElementById('phStep').classList.add('open');
+  document.querySelectorAll('#sendBody .ch-card').forEach(function(c) { c.style.display = 'none'; });
+  document.getElementById('phLbl').textContent    = ch === 'wa' ? 'WhatsApp Number' : 'Telegram Phone / Username';
+  document.getElementById('msgPrev').textContent  = msg;
+  var go = document.getElementById('phGo');
+  go.style.background = ch === 'wa' ? '#25D366' : '#2AABEE';
+  go.textContent = ch === 'wa' ? '💬 Open WhatsApp' : '✈️ Open Telegram';
+}
+
+function backCh() {
+  document.getElementById('phStep').classList.remove('open');
+  document.querySelectorAll('#sendBody .ch-card').forEach(function(c) { c.style.display = 'flex'; });
+}
+
+function doSend() {
+  var cfg    = TYPE_CFG[curType];
+  var who    = sendTgt === 'pA' ? cfg.partyA.split('/')[0].trim() : cfg.partyB.split('/')[0].trim();
+  var toStage = sendTgt === 'pA' ? 1 : 3;
+  var link   = buildLink(toStage);
+  var msg    = encodeURIComponent('Hi ' + who + ', please open the link to review and sign the '
+             + cfg.docTitle + ' (Ref: ' + curRef + '):\n\n' + link);
+  var ph     = document.getElementById('phNum').value.replace(/[^0-9]/g, '');
+  var url    = sendCh === 'wa'
+    ? (ph ? 'https://wa.me/' + ph + '?text=' + msg : 'https://wa.me/?text=' + msg)
+    : (ph ? 'https://t.me/' + ph + '?text=' + msg  : 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + msg);
+  window.open(url, '_blank');
+  if (sendTgt === 'pA' && curStage === 0) {
+    // Agent sent to Party A — advance to stage 1
+    curStage = 1;
+    document.getElementById('h_stage').value = 1;
+    lockRef();
+    doSave('stage');
+  } else if (sendTgt === 'pB' && curStage === 2) {
+    // Agent sent to Party B — advance to stage 3
+    curStage = 3;
+    document.getElementById('h_stage').value = 3;
+    doSave('stage');
+  }
+  closeMo('moSend');
+}
+
+// ── PARTY DONE ──
+function partyDone(party) {
+  var mainSig = party === 'pA' ? 'pA' : 'pB';
+  var cfg     = TYPE_CFG[curType];
+  var who     = party === 'pA' ? cfg.partyA.split('/')[0].trim() : cfg.partyB.split('/')[0].trim();
+  if (!sigStore[mainSig]) { alert('Please sign the ' + who + ' signature box first.'); return; }
+  curStage = party === 'pA' ? 2 : 4;
+  document.getElementById('h_stage').value = curStage;
+  doSave('stage');
+  retLink = buildLink(curStage);
+  var retMsg = encodeURIComponent('Hi Agent, I have signed (Ref: ' + curRef + '). Updated form:\n\n' + retLink);
+  document.getElementById('retSub').textContent = party === 'pA'
+    ? 'Send back to agent so they can forward to the other party.'
+    : 'Send back to agent to complete the process.';
+  document.getElementById('retLnk').textContent = retLink;
+  document.getElementById('retWa').href = 'https://wa.me/?text=' + retMsg;
+  document.getElementById('retTg').href = 'https://t.me/share/url?url=' + encodeURIComponent(retLink) + '&text=' + retMsg;
+  openMo('moReturn');
+  applyStage();
+}
+
+function copyRet() {
+  navigator.clipboard.writeText(retLink).catch(function() {
+    var t = document.createElement('textarea');
+    t.value = retLink; document.body.appendChild(t); t.select();
+    document.execCommand('copy'); document.body.removeChild(t);
+  });
+  var btn = document.querySelector('#moReturn .ret-btn');
+  if (btn) { btn.textContent = '✓ Copied!'; setTimeout(function() { btn.textContent = '📋 Copy Return Link'; }, 2000); }
+}
+
+// ── LINK BUILDER ──
+function buildLink(toStage) {
+  var fd = {};
+  document.querySelectorAll('#uForm input:not([type=hidden]), #uForm select, #uForm textarea').forEach(function(el) {
+    if (el.name && el.value) fd[el.name] = el.value;
+  });
+  var payload = { stage:toStage, type:curType, ref:curRef, fd:fd, sigs:sigStore };
+  try {
+    var b64    = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    var subId  = document.getElementById('h_id').value;
+    var base   = subId
+      ? (window.location.origin + '/agent/unified-submit/' + subId + '?wtp=' + b64)
+      : (window.location.origin + '/agent/unified-submit?wtp=' + b64);
+    return base;
+  } catch(e) { return window.location.origin + '/agent/unified-submit'; }
+}
+
+// ── SAVE ──
+function doSave(action) {
+  document.getElementById('h_action').value = action;
+  document.getElementById('h_sigs').value   = JSON.stringify(sigStore);
+  document.getElementById('h_type').value   = curType;
+  document.getElementById('h_ref').value    = curRef;
+  document.getElementById('h_stage').value  = curStage;
+
+  // Ensure locked/readonly fields are submitted by adding hidden backup inputs
+  var form = document.getElementById('uForm');
+  // Remove old backups first
+  form.querySelectorAll('.backup-hidden').forEach(function(el){ el.remove(); });
+  // Add backup hidden inputs for any readonly or pointer-events:none fields
+  form.querySelectorAll('input[readonly], select[style*="pointer-events: none"], textarea[readonly]').forEach(function(el){
+    if (el.name && el.value) {
+      var h = document.createElement('input');
+      h.type  = 'hidden';
+      h.name  = el.name;
+      h.value = el.value;
+      h.className = 'backup-hidden';
+      form.appendChild(h);
+    }
+  });
+
+  form.submit();
+}
+
+// ── MODALS ──
+function openMo(id) { var el=document.getElementById(id); if(el) el.classList.add('open'); }
+function closeMo(id){ var el=document.getElementById(id); if(el) el.classList.remove('open'); }
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.mo').forEach(function(mo) {
+    mo.addEventListener('click', function(e) { if (e.target === mo) mo.classList.remove('open'); });
+  });
+});
+
+// ── PRINT OTP ──
+function printOTP() {
+  // Collect ALL form values including hidden inputs
+  var fd = {};
+  // First: read server-rendered form data from data element
+  try {
+    var fdEl = document.getElementById('_fd_data');
+    if (fdEl) {
+      var serverFd = JSON.parse(fdEl.textContent || '{}');
+      Object.keys(serverFd).forEach(function(k){ if(serverFd[k]) fd[k] = serverFd[k]; });
+    }
+  } catch(e){}
+  // Then: overlay with live form values (these take priority)
+  document.querySelectorAll('#uForm input, #uForm select, #uForm textarea').forEach(function(el) {
+    if (el.name && el.value) fd[el.name] = el.value;
+  });
+  var cfg   = TYPE_CFG[curType] || TYPE_CFG['ss'];
+  var docTitle = cfg.docTitle;
+  var partyA   = cfg.partyA.split('/')[0].trim();
+  var partyB   = cfg.partyB.split('/')[0].trim();
+  var today    = new Date().toLocaleDateString('en-MY', {day:'2-digit',month:'long',year:'numeric'});
+
+  // Build sig blocks
+  function sigBlock(id, label) {
+    var s = sigStore[id] || {};
+    var imgHtml = s.img ? '<img src="' + s.img + '" style="max-width:120px;max-height:40px;display:block;margin-bottom:3px">' : '';
+    return '<div style="flex:1;min-width:160px">'
+      + '<div style="border-bottom:1px solid #333;min-height:48px;padding-bottom:4px;margin-bottom:6px">' + imgHtml + '</div>'
+      + '<div style="font-size:9px;font-weight:700">' + label + '</div>'
+      + '<div style="font-size:9px;margin-top:3px">Name: ' + (s.name||'') + '</div>'
+      + '<div style="font-size:9px">NRIC: ' + (s.ic||'') + '</div>'
+      + '<div style="font-size:9px">Date: ' + (s.date||today) + '</div>'
+      + '</div>';
+  }
+
+  // Price display
+  var priceAmt = fd['ss_price'] || fd['np_price'] || fd['rn_rent'] || '';
+  var priceWords = fd['ss_price_words'] || '';
+  var depositPct = fd['ss_dep_pct'] || '';
+  var depositAmt = fd['ss_dep_amt'] || '';
+  var cheque     = fd['ss_cheque'] || '';
+  var special    = fd['ss_special'] || fd['rn_special'] || fd['np_remarks'] || '';
+
+  var win = window.open('', '_blank', 'width=850,height=1100');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<title>OTP – ' + curRef + '</title>'
+    + '<style>'
+    + 'body{font-family:Arial,sans-serif;font-size:10px;color:#000;margin:0;padding:20px;max-width:750px;margin:0 auto}'
+    + '@page{size:A4;margin:15mm}'
+    + '@media print{body{padding:0}}'
+    + '.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1a3a2a;padding-bottom:10px;margin-bottom:10px}'
+    + '.logo-area{display:flex;align-items:center;gap:10px}'
+    + '.logo-text{font-size:18px;font-weight:900;color:#1a3a2a;letter-spacing:1px;line-height:1}'
+    + '.logo-sub{font-size:7px;color:#1a3a2a;letter-spacing:3px;text-transform:uppercase}'
+    + '.company-info{font-size:7.5px;line-height:1.7;color:#333;text-align:right}'
+    + '.doc-title{text-align:center;font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:2px;margin:10px 0 4px}'
+    + '.ref-line{text-align:right;font-size:10px;margin-bottom:10px}'
+    + '.ref-line strong{color:#1a3a2a;font-size:13px}'
+    + '.opener{font-size:9.5px;margin-bottom:8px;line-height:1.7}'
+    + '.field-line{display:flex;align-items:baseline;gap:6px;margin-bottom:5px}'
+    + '.field-label{font-size:9px;color:#444;white-space:nowrap;min-width:100px}'
+    + '.field-val{flex:1;border-bottom:1px solid #666;font-size:9.5px;font-weight:600;padding:0 3px 1px}'
+    + '.section-title{font-weight:700;font-size:9.5px;margin:10px 0 5px;text-decoration:underline}'
+    + '.clause{font-size:8.5px;line-height:1.7;margin-bottom:5px}'
+    + '.clause ol{margin:3px 0 3px 14px;padding:0}'
+    + '.clause li{margin-bottom:3px}'
+    + '.sig-section{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px}'
+    + '.sig-col{flex:1;min-width:140px}'
+    + '.sig-box{border-bottom:1px solid #333;min-height:50px;margin-bottom:5px}'
+    + '.sig-label{font-size:8px;font-weight:700;margin-bottom:3px}'
+    + '.sig-field{font-size:8px;margin-bottom:2px}'
+    + '.notice{font-size:7.5px;color:#444;border-top:1px solid #ccc;padding-top:6px;margin-top:10px;line-height:1.6}'
+    + '.footer-motto{text-align:right;font-size:13px;font-style:italic;color:#1a3a2a;margin-top:8px;font-family:Georgia,serif}'
+    + '.reg-badges{display:flex;flex-direction:column;align-items:flex-end;gap:2px}'
+    + '.reg-badge{font-size:7px;border:1px solid #1a3a2a;color:#1a3a2a;padding:1px 5px;border-radius:2px;text-align:center}'
+    + '</style></head><body>'
+
+    // Header
+    + '<div class="header">'
+    + '<div class="logo-area"><div><div class="logo-text">🌳 WORLDTREE</div><div class="logo-sub">Properties</div></div></div>'
+    + '<div class="company-info">'
+    + 'WORLDTREE PROPERTIES SDN BHD (1418333-W)<br>'
+    + 'REGISTERED ESTATE AGENCY E (1) 0229<br>'
+    + 'No.2-3, Jalan PJU 5/5, Dataran Sunway, Kota Damansara,<br>'
+    + '47810 Petaling Jaya, Selangor<br>'
+    + 'Tel: +603-6150 8662 | Fax: +603-6150 8663<br>'
+    + 'Email: worldtreeproperties@gmail.com'
+    + '</div>'
+    + '<div class="reg-badges"><div class="reg-badge">EJEN HARTA TANAH</div><div class="reg-badge">E2212</div><div class="reg-badge">E2205</div></div>'
+    + '</div>'
+
+    // Title + Ref
+    + '<div class="doc-title">' + docTitle.toUpperCase() + '</div>'
+    + '<div class="ref-line">No. <strong>' + curRef + '</strong></div>'
+
+    // Opener
+    + '<div class="opener">I/We &nbsp;<span style="border-bottom:1px solid #666;display:inline-block;min-width:220px">&nbsp;' + (fd['partyB_name']||'') + '</span>&nbsp; (the Purchaser/nominee) do hereby offer to purchase below property on "as is where is" basis subject to following terms and conditions: -</div>'
+
+    // Property
+    + '<div class="field-line"><span class="field-label">Property Address:</span><span class="field-val">' + (fd['prop_address']||'') + '</span><span style="font-size:9px;margin-left:6px">("the Property")</span></div>'
+
+    // Salient Terms
+    + '<div class="section-title">Salient Terms and Conditions: -</div>'
+    + '<div class="clause"><ol>'
+    + '<li>Purchase Price: RM <span style="border-bottom:1px solid #666;display:inline-block;min-width:120px">' + priceAmt + '</span>'
+    + ' (Ringgit Malaysia <span style="border-bottom:1px solid #666;display:inline-block;min-width:160px">' + priceWords + '</span>) Only</li>'
+    + '<li>Payment Terms: Payment of the Purchase Price shall be made in following manner:'
+    + '<ol type="a">'
+    + '<li>' + (depositPct||'____') + '% (' + (depositPct||'________') + ' percent) being Earnest Deposit ("the Earnest Deposit") upon execution of this Offer to Purchase</li>'
+    + '<li>10% (ten percent) inclusive of the Earnest Deposit upon execution of a formal Sale and Purchase Agreement ("SPA").</li>'
+    + '<li>90% (ninety percent) being Balance Purchase Price ("the Balance Purchase Price") to be paid within ninety (90) days from (i) date of SPA; AND (ii) date of receipt of relevant consent from Statutory Board / Developer&#39;s Consent / FIC / State Authority / Extract of LA / Extract of Grant of Probate / Extract of Court Order for sale whichever is later or applicable.</li>'
+    + '<li>upon expiry of the period stipulated in Item 2(c) above, an automatic extension period of thirty (30) days on the unpaid balance sum at an interest of eight percent (8%) per annum.</li>'
+    + '</ol></li>'
+    + '<li>Delivery of Possession:<ol type="a">'
+    + '<li>Vacant possession to be delivered upon full settlement of the Balance Purchase Price of the Property; or</li>'
+    + '<li>Legal possession to be delivered with existing tenancy upon full settlement of the Balance Purchase Price of the Property</li>'
+    + '</ol></li>'
+    + '<li>Execution of the formal Sale and Purchase Agreement (SPA):<ol type="a">'
+    + '<li>The Purchaser hereby undertakes to execute the SPA within <strong>fourteen (14) working</strong> days from the date of acceptance by the Vendor and complete set of all relevant documents have been compiled by the Vendor inclusive but not limited to principal SPA, copy of Title, Vendor NRIC copy and facility agreement (if any) and no delay on the part of the Vendor or Vendor&#39;s lawyer in agreeing to the terms and conditions of the SPA (hereinafter referred to as "the Period") failing which the Earnest Deposit shall be forfeited by the Vendor as agreed liquidated damages PROVIDED ALWAYS that the non-execution by the Purchaser is not caused or attribute to the Vendor&#39;s misrepresentation, misconduct and or fraudulent acts.</li>'
+    + '<li>In the event the Vendor fails to execute the SPA within the Period, the Purchaser shall be entitled to specific performance and or damages.</li>'
+    + '</ol></li>'
+    + '<li>The Purchaser shall bear stamp duty registration fee and own solicitor&#39;s fee. The Vendor shall bear own solicitor&#39;s fee, discharge of charge and cost of obtaining necessary consent from relevant authorities (if any).</li>'
+    + '<li>This Offer to Purchase shall constitute a binding contract, which shall be superseded only upon execution of the SPA.</li>'
+    + '<li>Other special conditions; (if any): <span style="border-bottom:1px solid #666;display:inline-block;min-width:300px">' + special + '</span></li>'
+    + '</ol></div>'
+
+    // Payment line
+    + '<div style="font-size:9px;line-height:1.8;border:1px solid #ccc;padding:8px 10px;margin:8px 0;border-radius:3px">'
+    + 'The Purchaser enclosed herewith a sum of RM <span style="border-bottom:1px solid #666;display:inline-block;min-width:100px">' + depositAmt + '</span>'
+    + ' (Cheque No/ Transfer <span style="border-bottom:1px solid #666;display:inline-block;min-width:100px">' + cheque + '</span>'
+    + ') payable to <strong>WORLDTREE PROPERTIES SDN BHD</strong> as stakeholder being the Earnest Deposit towards the purchase of the Property. In the event the Vendor rejects this offer, the Earnest Deposit shall be refunded to the Purchaser free of interest.'
+    + '</div>'
+
+    // Signatures
+    + '<div class="sig-section">'
+    // Purchaser
+    + '<div class="sig-col"><div class="sig-label">Purchaser/Authorized Representative</div>'
+    + (sigStore['pB'] && sigStore['pB'].img ? '<img src="' + sigStore['pB'].img + '" style="max-width:120px;max-height:40px;display:block">' : '<div class="sig-box"></div>')
+    + '<div class="sig-field">Name: ' + (fd['partyB_name']||'') + '</div>'
+    + '<div class="sig-field">NRIC No.: ' + (fd['partyB_ic']||'') + '</div>'
+    + '<div class="sig-field">Address: ' + (fd['partyB_addr']||'') + '</div>'
+    + '<div class="sig-field">Date: ' + (sigStore['pB'] ? sigStore['pB'].date : today) + '</div>'
+    + '</div>'
+    // Purchaser witness
+    + '<div class="sig-col"><div class="sig-label">Witnessed by</div>'
+    + (sigStore['pBw'] && sigStore['pBw'].img ? '<img src="' + sigStore['pBw'].img + '" style="max-width:120px;max-height:40px;display:block">' : '<div class="sig-box"></div>')
+    + '<div class="sig-field">Name: ' + (sigStore['pBw'] ? sigStore['pBw'].name : '') + '</div>'
+    + '<div class="sig-field">NRIC No.: ' + (sigStore['pBw'] ? sigStore['pBw'].ic : '') + '</div>'
+    + '<div class="sig-field">Date: ' + (sigStore['pBw'] ? sigStore['pBw'].date : today) + '</div>'
+    + '</div></div>'
+
+    + '<div class="sig-section" style="margin-top:12px">'
+    // Vendor
+    + '<div class="sig-col"><div class="sig-label">Vendor/Authorized Representative</div>'
+    + (sigStore['pA'] && sigStore['pA'].img ? '<img src="' + sigStore['pA'].img + '" style="max-width:120px;max-height:40px;display:block">' : '<div class="sig-box"></div>')
+    + '<div class="sig-field">Name: ' + (fd['partyA_name']||'') + '</div>'
+    + '<div class="sig-field">NRIC No.: ' + (fd['partyA_ic']||'') + '</div>'
+    + '<div class="sig-field">Address: ' + (fd['partyA_addr']||'') + '</div>'
+    + '<div class="sig-field">Date: ' + (sigStore['pA'] ? sigStore['pA'].date : today) + '</div>'
+    + '</div>'
+    // Vendor witness
+    + '<div class="sig-col"><div class="sig-label">Witnessed by</div>'
+    + (sigStore['pAw'] && sigStore['pAw'].img ? '<img src="' + sigStore['pAw'].img + '" style="max-width:120px;max-height:40px;display:block">' : '<div class="sig-box"></div>')
+    + '<div class="sig-field">Name: ' + (sigStore['pAw'] ? sigStore['pAw'].name : '') + '</div>'
+    + '<div class="sig-field">NRIC No.: ' + (sigStore['pAw'] ? sigStore['pAw'].ic : '') + '</div>'
+    + '<div class="sig-field">Date: ' + (sigStore['pAw'] ? sigStore['pAw'].date : today) + '</div>'
+    + '</div></div>'
+
+    // Notice
+    + '<div class="notice">* Important Notice:<br>Please take note that all payments shall be made payable to "Worldtree Properties Sdn Bhd" only Public Bank: 3819-2146-22</div>'
+    + '<div class="footer-motto">Your Property Grows With Us</div>'
+
+    + '</body></html>');
+  win.document.close();
+  win.focus();
+  setTimeout(function(){ win.print(); }, 600);
+}
+
+// ── PROJECT SELECTOR ──
+function fillFromProject(sel) {
+  var opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) {
+    document.getElementById('unitSelGroup').style.display = 'none';
+    document.getElementById('projInfoBar').style.display  = 'none';
+    return;
+  }
+
+  var name     = opt.getAttribute('data-name')     || '';
+  var location = opt.getAttribute('data-location') || '';
+  var ptype    = opt.getAttribute('data-type')     || '';
+  var saletype = opt.getAttribute('data-saletype') || 'sales';
+
+  // Auto-fill address from project location
+  var addrEl = document.getElementById('f_prop_address');
+  if (addrEl && !addrEl.value) addrEl.value = location;
+
+  // Auto-fill property type
+  var typeEl = document.getElementById('f_prop_type');
+  if (typeEl) {
+    var typeMap = {
+      'residential': 'Condominium / Apartment',
+      'commercial':  'Shop Office',
+      'industrial':  'Industrial',
+      'land':        'Land'
+    };
+    var mapped = typeMap[ptype.toLowerCase()] || '';
+    for (var i = 0; i < typeEl.options.length; i++) {
+      if (typeEl.options[i].value === mapped) { typeEl.selectedIndex = i; break; }
+    }
+  }
+
+  // Auto-switch submission type based on sale type
+  if (saletype === 'rental' && curType !== 'rn') setType('rn');
+  else if (saletype !== 'rental' && curType === 'rn') setType('ss');
+
+  // Show project info bar
+  var bar = document.getElementById('projInfoBar');
+  bar.innerHTML = '🏢 <strong>' + name + '</strong>'
+    + (location ? ' &nbsp;📍 ' + location : '')
+    + (ptype    ? ' &nbsp;🏗 ' + ptype    : '');
+  bar.style.display = 'block';
+
+  // Populate unit selector
+  var units = [];
+  try { units = JSON.parse(opt.getAttribute('data-units') || '[]'); } catch(e){}
+  var unitSel = document.getElementById('unitPicker');
+  unitSel.innerHTML = '<option value="">— Select unit type —</option>';
+  units.forEach(function(u) {
+    var price = u.base_price ? 'RM' + parseFloat(u.base_price).toLocaleString()
+              : u.rental_price ? 'RM' + parseFloat(u.rental_price).toLocaleString() + '/mo' : '';
+    var label = u.unit_type + (price ? ' — ' + price : '') + (u.sqft ? ' (' + u.sqft + ' sqft)' : '');
+    var o = document.createElement('option');
+    o.value = JSON.stringify(u);
+    o.textContent = label;
+    unitSel.appendChild(o);
+  });
+
+  document.getElementById('unitSelGroup').style.display = units.length ? 'block' : 'none';
+}
+
+function fillFromUnit(sel) {
+  if (!sel.value) return;
+  var u = {};
+  try { u = JSON.parse(sel.value); } catch(e){ return; }
+
+  // Fill price into the active type's price field
+  var price = u.base_price || u.rental_price || '';
+  if (price) {
+    var priceFields = ['ss_price','np_price','rn_rent'];
+    priceFields.forEach(function(name) {
+      var el = document.querySelector('[name="' + name + '"]');
+      if (el && !el.value) el.value = parseFloat(price).toLocaleString('en-MY', {minimumFractionDigits:2});
+    });
+  }
+
+  // Fill property type more precisely if unit_type matches
+  var typeEl = document.getElementById('f_prop_type');
+  if (typeEl && u.unit_type) {
+    var typeMap = {
+      'studio':'SOHO / Studio','soho':'SOHO / Studio',
+      'condo':'Condominium / Apartment','apartment':'Condominium / Apartment',
+      'terrace':'Terrace House','semi-d':'Semi-Detached',
+      'bungalow':'Bungalow','shop':'Shop Office','industrial':'Industrial'
+    };
+    var key = u.unit_type.toLowerCase();
+    for (var k in typeMap) {
+      if (key.indexOf(k) >= 0) {
+        for (var i = 0; i < typeEl.options.length; i++) {
+          if (typeEl.options[i].value === typeMap[k]) { typeEl.selectedIndex = i; break; }
+        }
+        break;
+      }
+    }
+  }
+}
+
+// ── DOCUMENT UPLOAD ──
+function uploadDocs(files) {
+  var subId = document.getElementById('h_id').value;
+  if (!subId) { alert('Please save as draft first before uploading documents.'); return; }
+  if (!files || files.length === 0) return;
+
+  var label    = document.getElementById('docLabelSel').value;
+  var progress = document.getElementById('docProgress');
+  var bar      = document.getElementById('docProgressBar');
+  progress.style.display = 'block';
+  bar.style.width = '10%';
+
+  var uploaded = 0;
+  var total    = files.length;
+
+  Array.from(files).forEach(function(file) {
+    if (file.size > 10 * 1024 * 1024) {
+      alert(file.name + ' is too large (max 10MB).');
+      return;
+    }
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('label', label);
+
+    fetch('/agent/unified-submit/' + subId + '/upload', { method:'POST', body:fd })
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        uploaded++;
+        bar.style.width = Math.round((uploaded/total)*100) + '%';
+        if (data.ok) {
+          addDocItem(data.doc_id, file.name, file.type, file.size, label);
+          document.getElementById('docEmpty') && (document.getElementById('docEmpty').style.display='none');
+        } else {
+          alert('Upload failed: ' + (data.error || 'Unknown error'));
+        }
+        if (uploaded === total) {
+          setTimeout(function(){ progress.style.display='none'; bar.style.width='0'; }, 800);
+        }
+      })
+      .catch(function(e){ alert('Upload error: ' + e.message); });
+  });
+
+  // Reset file input
+  document.getElementById('docFileInput').value = '';
+}
+
+function addDocItem(id, filename, filetype, filesize, label) {
+  var ext = filename.split('.').pop().toLowerCase();
+  var icons = {pdf:'📄',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',doc:'📝',docx:'📝'};
+  var icon = icons[ext] || '📎';
+  var kb   = (filesize/1024).toFixed(1);
+  var list = document.getElementById('docList');
+  var div  = document.createElement('div');
+  div.className = 'doc-item';
+  div.id = 'ditem-' + id;
+  div.innerHTML = '<span class="doc-item-icon">' + icon + '</span>'
+    + '<span class="doc-item-name">' + filename.replace(/</g,'&lt;') + '</span>'
+    + '<span class="doc-item-meta">' + label.replace(/</g,'&lt;') + ' &bull; ' + kb + ' KB</span>'
+    + '<button class="doc-item-del" onclick="deleteDoc(' + id + ')" title="Remove">✕</button>';
+  list.appendChild(div);
+}
+
+function deleteDoc(id) {
+  if (!confirm('Remove this document?')) return;
+  var subId = document.getElementById('h_id').value;
+  fetch('/agent/unified-submit/' + subId + '/delete-doc/' + id, { method:'POST' })
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        var el = document.getElementById('ditem-' + id);
+        if (el) el.remove();
+        if (!document.querySelector('#docList .doc-item')) {
+          var empty = document.getElementById('docEmpty');
+          if (empty) empty.style.display = '';
+        }
+      } else {
+        alert('Could not delete: ' + (data.error||''));
+      }
+    });
+}
+
+// Drag and drop
+window.addEventListener('load', function(){
+  var drop = document.getElementById('docDrop');
+  if (!drop) return;
+  drop.addEventListener('dragover', function(e){ e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', function(){ drop.classList.remove('dragover'); });
+  drop.addEventListener('drop', function(e){
+    e.preventDefault(); drop.classList.remove('dragover');
+    uploadDocs(e.dataTransfer.files);
+  });
+});
+
+// ── SUBMIT FOR APPROVAL ──
+function submitForApproval() {
+  var subId = document.getElementById('h_id').value;
+  if (!subId) {
+    alert('Please save the submission first before submitting for approval.');
+    return;
+  }
+  if (!confirm('Submit this completed OTP for admin approval?\n\nThis will create a listing in the system for the admin to review and approve commission.')) return;
+
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/agent/unified-submit/' + subId + '/submit-approval';
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// ── NAV ──
+function toggleNav() { document.getElementById('mainNav').classList.toggle('open'); }
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('#mainNav a').forEach(function(a) {
+    a.addEventListener('click', function() { document.getElementById('mainNav').classList.remove('open'); });
+  });
+});
+</script>
+</body>
+</html>

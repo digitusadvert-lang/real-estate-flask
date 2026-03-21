@@ -1,226 +1,175 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Downline Performance</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
-        .stat-card { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .stat-value { font-size: 1.8em; font-weight: bold; margin: 10px 0; }
-        .btn { padding: 8px 16px; border-radius: 5px; text-decoration: none; display: inline-block; }
-        .btn-back { background: #6c757d; color: white; }
-        .agent-header { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; }
-        .agent-avatar { font-size: 50px; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #e9ecef; }
-        .commission-rate { background: #e3f2fd; color: #1565c0; padding: 5px 10px; border-radius: 15px; font-weight: bold; }
-        
-        /* Fund calculation styles */
-        .fund-calculation { 
-            background: white; 
-            padding: 20px; 
-            border-radius: 10px; 
-            margin: 20px 0; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }
-        .fund-item { 
-            display: flex; 
-            justify-content: space-between; 
-            padding: 10px 0; 
-            border-bottom: 1px solid #eee; 
-        }
-        .fund-item:last-child { 
-            border-bottom: none; 
-            font-weight: bold; 
-            padding-top: 15px; 
-        }
-        .fund-label { color: #666; }
-        .fund-value { font-weight: bold; color: #28a745; }
-        .fund-breakdown { 
-            background: #f8f9fa; 
-            padding: 15px; 
-            border-radius: 5px; 
-            margin-top: 10px; 
-        }
-        
-        @media (max-width: 768px) {
-            .stats { grid-template-columns: repeat(2, 1fr); }
-            .agent-header { flex-direction: column; text-align: center; }
-        }
-    </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Downline Performance</title>
+<style>*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-btn:hover{background:#15803d}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}.nav-bar a:last-child{border-bottom:none}}
+.wrap{max-width:1400px;margin:0 auto;padding:16px}
+.card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+.card-title{font-size:13px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+.scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
+.scard h3{margin:0 0 6px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.scard-val{font-size:1.4rem;font-weight:800;margin-bottom:2px}
+.scard small{font-size:11px;color:#888}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+table{width:100%;border-collapse:collapse;background:white;min-width:500px}
+th{background:#1a3a2a;color:white;padding:10px 12px;text-align:left;font-size:12px;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f9fafb}
+.badge{padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.st-draft{background:#fef9c3;color:#854d0e}
+.st-submitted{background:#dbeafe;color:#1e40af}
+.st-approved{background:#dcfce7;color:#166534}
+.st-rejected{background:#fee2e2;color:#991b1b}
+.st-pending{background:#fef9c3;color:#854d0e}
+.st-paid{background:#dcfce7;color:#166534}
+.act-btn{display:inline-block;padding:5px 10px;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;margin:2px 0}
+.act-green{background:#16a34a;color:white}.act-teal{background:#0891b2;color:white}
+.act-purple{background:#7c3aed;color:white}.act-grey{background:#6c757d;color:white}
+.filter-wrap{background:white;border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.filter-wrap h3{margin:0 0 10px;font-size:14px;color:#444}
+.filter-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-row select,.filter-row input{padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;flex:1;min-width:120px}
+.btn-go{padding:7px 14px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+.btn-clr{padding:7px 12px;background:#6c757d;color:white;border:none;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;white-space:nowrap}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.sec-hdr h2{margin:0;font-size:15px}
+.empty{padding:40px;text-align:center;background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.empty h3{color:#666;margin-bottom:8px}.empty p{color:#888;margin:0 0 16px}
+.form-group{margin-bottom:14px}
+label{display:block;margin-bottom:5px;font-weight:600;color:#444;font-size:13px}
+input[type=text],input[type=email],input[type=number],input[type=date],input[type=tel],select,textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;font-size:14px;background:#fafafa;box-sizing:border-box}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;background:white}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.btn-submit{background:#16a34a;color:white;padding:11px 24px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+@media(max-width:900px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.wrap{padding:10px}.stats-grid{grid-template-columns:repeat(2,1fr);gap:8px}.scard{padding:12px}.scard-val{font-size:1.2rem}.filter-row{flex-direction:column;align-items:stretch}.filter-row select,.filter-row input,.btn-go,.btn-clr{width:100%}.form-row{grid-template-columns:1fr}td,th{padding:8px 10px!important;font-size:12px}}
+
+.agent-header{background:linear-gradient(135deg,#1a3a2a,#166534);color:white;border-radius:12px;padding:20px 24px;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.agent-avatar-lg{font-size:36px;width:64px;height:64px;background:rgba(255,255,255,.15);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.fund-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+.fund-row:last-child{border-bottom:none}
+.fund-total{font-weight:800;font-size:14px;padding-top:12px;border-top:2px solid #16a34a;margin-top:4px}
+.dist-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.dist-box{border-radius:8px;padding:14px}
+@media(max-width:640px){.dist-grid{grid-template-columns:1fr}.agent-header{flex-direction:column}}</style>
 </head>
 <body>
-    <div class="header">
-        <h1>📊 Downline Performance</h1>
-        <div style="margin-top: 10px;">
-            <a href="/agent/my-downline" class="btn btn-back">← Back to Downline Network</a>
-        </div>
-    </div>
-    
-    {% if agent %}
-    <div class="agent-header">
-        <div class="agent-avatar">👤</div>
-        <div style="flex: 1;">
-            <h2 style="margin: 0;">{{ agent.name }}</h2>
-            <div style="color: #666; margin: 5px 0;">{{ agent.email }}</div>
-            <div style="margin-top: 10px;">
-                <span class="commission-rate">{{ agent.commission_percentage }} commission to you</span>
-                <div style="font-size: 14px; color: #666; margin-top: 5px;">
-                    Agent ID: #{{ agent.id }} | Joined: {{ agent.created_at }}
-                </div>
-            </div>
-        </div>
-        <div style="text-align: right;">
-            <div style="font-size: 14px; color: #666;">Your Total Earnings</div>
-            <div style="font-size: 28px; font-weight: bold; color: #28a745;">RM{{ "%.2f"|format(your_earnings|float) }}</div>
-        </div>
-    </div>
-    
-    {% if performance %}
-    <div class="stats">
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total Listings</div>
-            <div class="stat-value" style="color: #007bff;">{{ performance.total_listings }}</div>
-            <div style="font-size: 12px; color: #666;">
-                {{ performance.approved_listings }} approved<br>
-                {{ performance.rejected_listings }} rejected
-            </div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total Sales Value</div>
-            <div class="stat-value" style="color: #28a745;">RM{{ "%.0f"|format(performance.total_sales|float) }}</div>
-            <div style="font-size: 12px; color: #666;">
-                Avg: RM{{ "%.0f"|format(performance.avg_sale_price|float) }}
-            </div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total Commission</div>
-            <div class="stat-value" style="color: #6f42c1;">RM{{ "%.2f"|format(performance.total_commission|float) }}</div>
-            <div style="font-size: 12px; color: #666;">
-                Avg: RM{{ "%.2f"|format(performance.avg_commission|float) }}
-            </div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Approval Rate</div>
-            <div class="stat-value" style="color: #fd7e14;">{{ "%.1f"|format(approval_rate|float) }}%</div>
-            <div style="font-size: 12px; color: #666;">
-                Rejection: {{ "%.1f"|format(rejection_rate|float) }}%
-            </div>
-        </div>
-    </div>
-    
-    <!-- Replace the fund calculation section with this: -->
-    <div class="fund-calculation">
-        <h3>💰 Fund-Based Earnings Calculation</h3>
-        <div style="margin-top: 15px;">
-            <!-- Fund Allocation Breakdown -->
-            <div class="fund-breakdown">
-                <strong>Fund Calculation:</strong>
-                <div class="fund-item">
-                    <span class="fund-label">Total Approved Sales:</span>
-                    <span class="fund-value">RM{{ "%.2f"|format(performance.approved_sales|float) }}</span>
-                </div>
-                
-                {% for fund in funds %}
-                <div class="fund-item">
-                    <span class="fund-label">{{ fund.fund_name }} ({{ fund.percentage }}%):</span>
-                    <span class="fund-value">RM{{ "%.2f"|format(fund.amount|float) }}</span>
-                </div>
-                {% endfor %}
-                
-                {% if your_earnings > 0 %}
-                <div class="fund-item" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc;">
-                    <span class="fund-label">Your Share as {% if agent.upline_id == session.get('user_id') %}Direct{% else %}Indirect{% endif %} Upline:</span>
-                    <span class="fund-value">RM{{ "%.2f"|format(your_earnings|float) }}</span>
-                </div>
-                {% endif %}
-            </div>
-            
-            <!-- Commission Flow -->
-            <div style="margin-top: 20px;">
-                <strong>Commission Distribution:</strong>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px;">
-                    <div>
-                        <div style="padding: 10px; background: #f0f7ff; border-radius: 5px;">
-                            <div style="font-weight: bold; color: #1565c0;">Agent Commission:</div>
-                            <div style="font-size: 18px; margin: 5px 0;">RM{{ "%.2f"|format(agent_gets|float) }}</div>
-                            <div style="font-size: 12px; color: #666;">From Agent Fund</div>
-                        </div>
-                    </div>
-                    <div>
-                        <div style="padding: 10px; background: #e8f5e9; border-radius: 5px;">
-                            <div style="font-weight: bold; color: #2e7d32;">Your Upline Commission:</div>
-                            <div style="font-size: 18px; margin: 5px 0;">RM{{ "%.2f"|format(your_earnings|float) }}</div>
-                            <div style="font-size: 12px; color: #666;">
-                                {% if agent.upline_id == session.get('user_id') %}
-                                    As Direct Upline ({{ agent.upline_fund_pct }}%)
-                                {% else %}
-                                    As Indirect Upline ({{ agent.upline2_fund_pct }}%)
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Explanation -->
-            <div style="margin-top: 20px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 14px; color: #666;">
-                <strong>Calculation Formula:</strong><br>
-                1. Commission Fund = {{ "%.1f"|format(agent.total_fund_pct) }}% × Approved Sales (RM{{ "%.0f"|format(performance.approved_sales|float) }})<br>
-                2. Each party gets their percentage from the total fund
-            </div>
-        </div>
-    </div>
+<div class="topbar">
+  <div class="topbar-title">&#128200; Downline Performance</div>
+  <div class="topbar-right"><a href="/agent/my-downline">&#8592; Downline</a>
+        <button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button></div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/new-listing" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+<div class="wrap">
 
-    <!-- Monthly Performance Chart -->
-    {% if monthly_data %}
-    <div style="background: white; padding: 20px; border-radius: 10px; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-        <h3>📈 Monthly Performance</h3>
-        <div style="margin-top: 15px;">
-            <table style="width: 100%; border-collapse: collapse;">
-                <thead>
-                    <tr style="background: #f8f9fa;">
-                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6;">Month</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Listings</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Sales Value</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Commission</th>
-                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Your Share</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for month in monthly_data %}
-                    <tr style="border-bottom: 1px solid #eee;">
-                        <td style="padding: 10px;">{{ month.month }}</td>
-                        <td style="padding: 10px; text-align: right;">{{ month.listings }}</td>
-                        <td style="padding: 10px; text-align: right;">RM{{ "%.0f"|format(month.sales_value|float) }}</td>
-                        <td style="padding: 10px; text-align: right;">RM{{ "%.2f"|format(month.commission|float) }}</td>
-                        <td style="padding: 10px; text-align: right; font-weight: bold; color: #28a745;">
-                            RM{{ "%.2f"|format(month.your_share|float) }}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+{% if agent %}
+<div class="agent-header">
+  <div class="agent-avatar-lg">&#128100;</div>
+  <div style="flex:1">
+    <h2 style="margin:0 0 4px;font-size:1.2rem">{{ agent.name }}</h2>
+    <div style="opacity:.8;font-size:13px">{{ agent.email }}</div>
+    <div style="margin-top:8px">
+      <span style="background:rgba(255,255,255,.15);color:white;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700">
+        {{ agent.commission_percentage }} commission to you
+      </span>
     </div>
-    {% endif %}
-    
-    {% else %}
-    <div style="padding: 40px; text-align: center; background: white; border-radius: 10px;">
-        <h3 style="color: #666;">No Performance Data Yet</h3>
-        <p style="color: #888;">This agent hasn't submitted any listings yet.</p>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:12px;opacity:.7">Your Total Earnings</div>
+    <div style="font-size:2rem;font-weight:900">RM{{ "%.2f"|format(your_earnings|float) }}</div>
+  </div>
+</div>
+
+{% if performance %}
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#2563eb"><h3>Total Listings</h3><div class="scard-val" style="color:#2563eb">{{ performance.total_listings }}</div><small>{{ performance.approved_listings }} approved &bull; {{ performance.rejected_listings }} rejected</small></div>
+  <div class="scard" style="border-top-color:#16a34a"><h3>Sales Value</h3><div class="scard-val" style="color:#16a34a">RM{{ "%.0f"|format(performance.total_sales|float) }}</div><small>Avg RM{{ "%.0f"|format(performance.avg_sale_price|float) }}</small></div>
+  <div class="scard" style="border-top-color:#7c3aed"><h3>Commission</h3><div class="scard-val" style="color:#7c3aed">RM{{ "%.0f"|format(performance.total_commission|float) }}</div><small>Avg RM{{ "%.0f"|format(performance.avg_commission|float) }}</small></div>
+  <div class="scard" style="border-top-color:#ea580c"><h3>Approval Rate</h3><div class="scard-val" style="color:#ea580c">{{ "%.1f"|format(approval_rate|float) }}%</div><small>{{ "%.1f"|format(rejection_rate|float) }}% rejection</small></div>
+</div>
+
+<div class="card">
+  <div class="card-title">&#128176; Fund-Based Earnings</div>
+  <div class="fund-row"><span style="color:#888">Total Approved Sales:</span><strong>RM{{ "%.2f"|format(performance.approved_sales|float) }}</strong></div>
+  {% for fund in funds %}
+  <div class="fund-row"><span style="color:#888">{{ fund.fund_name }} ({{ fund.percentage }}%)</span><span style="color:#16a34a;font-weight:600">RM{{ "%.2f"|format(fund.amount|float) }}</span></div>
+  {% endfor %}
+  {% if your_earnings > 0 %}
+  <div class="fund-row fund-total"><span>Your Share as Upline:</span><strong style="color:#16a34a">RM{{ "%.2f"|format(your_earnings|float) }}</strong></div>
+  {% endif %}
+  <div class="dist-grid">
+    <div class="dist-box" style="background:#eff6ff">
+      <div style="font-weight:700;color:#1e40af;font-size:12px;margin-bottom:6px">Agent Commission</div>
+      <div style="font-size:1.4rem;font-weight:800;color:#1e40af">RM{{ "%.2f"|format(agent_gets|float) }}</div>
+      <div style="font-size:11px;color:#888;margin-top:4px">From Agent Fund</div>
     </div>
-    {% endif %}
-    
-    {% else %}
-    <div style="padding: 40px; text-align: center; background: white; border-radius: 10px;">
-        <h3 style="color: #666;">Agent Not Found</h3>
-        <p style="color: #888;">The agent you're looking for doesn't exist or you don't have access.</p>
-        <a href="{{ url_for('agent_downline_network') }}" class="btn btn-back" style="margin-top: 20px;">Back to Downline Network</a>
+    <div class="dist-box" style="background:#f0fdf4">
+      <div style="font-weight:700;color:#14532d;font-size:12px;margin-bottom:6px">Your Upline Share</div>
+      <div style="font-size:1.4rem;font-weight:800;color:#16a34a">RM{{ "%.2f"|format(your_earnings|float) }}</div>
+      <div style="font-size:11px;color:#888;margin-top:4px">{% if agent.upline_id == session.get('user_id') %}Direct ({{ agent.upline_fund_pct }}%){% else %}Indirect ({{ agent.upline2_fund_pct }}%){% endif %}</div>
     </div>
-    {% endif %}
-    
-    <div style="margin-top: 30px;">
-        <a href="/agent/my-downline" class="btn btn-back">← Back to Downline Network</a>
-    </div>
+  </div>
+</div>
+
+{% if monthly_data %}
+<div class="sec-hdr"><h2>&#128197; Monthly Performance</h2></div>
+<div class="tbl-wrap"><table>
+  <thead><tr><th>Month</th><th>Listings</th><th>Sales Value</th><th>Commission</th><th>Your Share</th></tr></thead>
+  <tbody>
+    {% for month in monthly_data %}
+    <tr>
+      <td>{{ month.month }}</td>
+      <td>{{ month.listings }}</td>
+      <td>RM{{ "%.0f"|format(month.sales_value|float) }}</td>
+      <td>RM{{ "%.2f"|format(month.commission|float) }}</td>
+      <td><strong style="color:#16a34a">RM{{ "%.2f"|format(month.your_share|float) }}</strong></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+{% else %}
+<div class="empty"><h3>No Performance Data Yet</h3><p>This agent hasn't submitted any listings yet.</p></div>
+{% endif %}
+
+{% else %}
+<div class="empty"><h3>Agent Not Found</h3><p>The agent doesn't exist or you don't have access.</p><a href="/agent/my-downline" class="act-btn act-grey">&#8592; Back to Downline</a></div>
+{% endif %}
+
+<div style="margin-top:8px"><a href="/agent/my-downline" class="act-btn act-grey">&#8592; Back to Downline Network</a></div>
+</div>
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});
+});
+</script>
 </body>
 </html>

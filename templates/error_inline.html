@@ -1,0 +1,25 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Export Error</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+                .error-box { border: 2px solid #dc3545; padding: 30px; border-radius: 10px; text-align: center; }
+                h2 { color: #dc3545; }
+            </style>
+        </head>
+        <body>
+            <div class="error-box">
+                <h2>❌ Database Export Failed</h2>
+                <p><strong>Error:</strong> {{ error }}</p>
+                <div style="margin-top: 30px;">
+                    <a href="/admin/export-data" style="background: #007bff; color: white; padding: 10px 20px; 
+                       text-decoration: none; border-radius: 5px; margin-right: 10px;">← Back to Export</a>
+                    <a href="/admin/dashboard" style="background: #6c757d; color: white; padding: 10px 20px; 
+                       text-decoration: none; border-radius: 5px;">Dashboard</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        

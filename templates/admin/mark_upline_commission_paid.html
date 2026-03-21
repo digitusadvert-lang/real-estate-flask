@@ -1,98 +1,102 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pay Upline Commission {{ record_id }}</title>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Pay Upline Commission</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
-        .form-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h2 { margin-top: 0; color: #6f42c1; text-align: center; }
-        .commission-details { 
-            background: #f8f9fa; 
-            padding: 15px; 
-            border-radius: 5px; 
-            margin: 15px 0; 
-            border-left: 4px solid #6f42c1;
-        }
-        .amount { 
-            text-align: center; 
-            font-size: 28px; 
-            font-weight: bold; 
-            color: #6f42c1;
-            margin: 15px 0;
-        }
-        .detail-row { display: flex; justify-content: space-between; margin: 8px 0; }
-        .detail-label { font-weight: bold; color: #666; }
-        label { display: block; margin-top: 15px; font-weight: bold; color: #333; }
-        input, select, textarea { 
-            width: 100%; padding: 10px; margin: 5px 0 15px 0; 
-            border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box;
-        }
-        button { 
-            width: 100%; padding: 12px; background: #6f42c1; color: white; 
-            border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;
-            font-size: 16px; font-weight: bold;
-        }
-        button:hover { background: #59359a; }
-        .cancel-link { 
-            display: block; text-align: center; margin-top: 15px; 
-            color: #6c757d; text-decoration: none; padding: 10px;
-        }
+    *,*::before,*::after{box-sizing:border-box}
+    body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;min-height:100vh}
+    .topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+    .topbar-title{font-size:1rem;font-weight:700}
+    .topbar-links{display:flex;gap:14px}
+    .topbar-links a{color:#a8c8ff;text-decoration:none;font-size:13px;font-weight:600}
+    .topbar-links a.logout{color:#ff8a8a}
+    .wrap{max-width:520px;margin:24px auto;padding:0 16px}
+    .card{background:white;border-radius:12px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+    .card-header{text-align:center;margin-bottom:16px}
+    .card-header h2{margin:0 0 4px;color:#6f42c1;font-size:1.3rem}
+    .card-header h3{margin:0;color:#6f42c1;font-size:1rem;font-weight:600}
+    .amount-box{text-align:center;font-size:2rem;font-weight:900;color:#6f42c1;margin:14px 0;font-family:monospace}
+    .details-box{background:#f8f9fa;padding:14px 16px;border-radius:8px;margin:14px 0;border-left:4px solid #6f42c1}
+    .detail-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #eee;font-size:13px}
+    .detail-row:last-child{border-bottom:none}
+    .detail-label{font-weight:700;color:#666}
+    label{display:block;margin-top:14px;margin-bottom:5px;font-weight:600;color:#333;font-size:13px}
+    input,select,textarea{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;font-size:14px;background:#fafafa}
+    input:focus,select:focus,textarea:focus{border-color:#6f42c1;outline:none;box-shadow:0 0 0 2px rgba(111,66,193,.15);background:white}
+    .btn-submit{width:100%;padding:13px;background:#6f42c1;color:white;border:none;border-radius:8px;cursor:pointer;margin-top:18px;font-size:15px;font-weight:700}
+    .btn-submit:hover{background:#59359a}
+    .back-link{display:block;text-align:center;margin-top:14px;color:#6c757d;text-decoration:none;padding:8px;font-size:13px}
+    .back-link:hover{text-decoration:underline}
+    @media(max-width:480px){.wrap{padding:0 10px;margin:14px auto}.card{padding:20px 16px}.amount-box{font-size:1.6rem}}
     </style>
 </head>
 <body>
-    <div class="form-box">
-        <h2>💰 Pay Commission</h2>
-        <h3 style="text-align: center; color: #6f42c1; margin-bottom: 5px;">{{ record_id }}</h3>
-        
-        <div class="commission-details">
-            <div class="amount">RM{{ "{:,.2f}".format(amount or 0) }}</div>
-            
+
+<div class="topbar">
+    <div class="topbar-title">&#128176; Pay Commission</div>
+    <div class="topbar-links">
+        <a href="/admin/payments">&#8592; Payments</a>
+        <a href="/admin/dashboard">&#128202; Dashboard</a>
+        <a href="/logout" class="logout">&#128274; Logout</a>
+    </div>
+</div>
+
+<div class="wrap">
+    <div class="card">
+        <div class="card-header">
+            <h2>&#128176; Pay Commission</h2>
+            <h3>{{ record_id }}</h3>
+        </div>
+
+        <div class="amount-box">RM{{ "{:,.2f}".format(amount or 0) }}</div>
+
+        <div class="details-box">
             <div class="detail-row">
-                <span class="detail-label">Recipient:</span>
+                <span class="detail-label">Recipient</span>
                 <span>{{ upline_name }} ({{ upline_email }})</span>
             </div>
-            
             {% if property_address %}
             <div class="detail-row">
-                <span class="detail-label">Property:</span>
-                <span>{{ property_address }}</span>
+                <span class="detail-label">Property</span>
+                <span style="text-align:right;max-width:60%">{{ property_address }}</span>
             </div>
             {% endif %}
-            
             {% if customer_name %}
             <div class="detail-row">
-                <span class="detail-label">Customer:</span>
+                <span class="detail-label">Customer</span>
                 <span>{{ customer_name }}</span>
             </div>
             {% endif %}
-            
             <div class="detail-row">
-                <span class="detail-label">Type:</span>
+                <span class="detail-label">Type</span>
                 <span><strong>{{ payment_type }}</strong></span>
             </div>
         </div>
-        
-        <form method="POST" onsubmit="return confirm('Confirm payment of RM{{ "{:,.2f}".format(amount or 0) }} to {{ upline_name }}?')">
+
+        <form method="POST" onsubmit="return confirm('Confirm payment of RM{{ \"{:,.2f}\".format(amount or 0) }} to {{ upline_name }}?')">
             <label for="payment_method">Payment Method *</label>
             <select name="payment_method" id="payment_method" required>
                 <option value="">-- Select Payment Method --</option>
-                <option value="bank_transfer">🏦 Bank Transfer</option>
-                <option value="cash">💵 Cash</option>
-                <option value="check">📄 Check</option>
-                <option value="online_payment">🌐 Online Payment</option>
-                <option value="other">📝 Other</option>
+                <option value="bank_transfer">&#127974; Bank Transfer</option>
+                <option value="cash">&#128181; Cash</option>
+                <option value="check">&#128196; Check</option>
+                <option value="online_payment">&#127760; Online Payment</option>
+                <option value="other">&#128221; Other</option>
             </select>
-            
-            <label for="transaction_id">Transaction/Reference ID</label>
-            <input type="text" name="transaction_id" id="transaction_id" placeholder="e.g., Bank Reference, Check Number">
-            
-            <label for="notes">Payment Notes (Optional)</label>
+
+            <label for="transaction_id">Transaction / Reference ID</label>
+            <input type="text" name="transaction_id" id="transaction_id"
+                   placeholder="e.g., Bank Reference, Check Number">
+
+            <label for="notes">Payment Notes <span style="font-weight:400;color:#aaa">(Optional)</span></label>
             <textarea name="notes" id="notes" rows="2" placeholder="Any additional notes..."></textarea>
-            
-            <button type="submit">✅ CONFIRM & MARK AS PAID</button>
-            
-            <a href="/admin/payments" class="cancel-link">← Back to Payments</a>
+
+            <button type="submit" class="btn-submit">&#10003; CONFIRM &amp; MARK AS PAID</button>
+            <a href="/admin/payments" class="back-link">&#8592; Back to Payments</a>
         </form>
     </div>
+</div>
 </body>
 </html>

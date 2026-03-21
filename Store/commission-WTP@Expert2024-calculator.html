@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Commission Calculator - WTP Formula</title>
+<style>
+:root {
+  --bg: #0a0f1a;
+  --surface: #111827;
+  --surface2: #1a2235;
+  --border: #1e2d45;
+  --blue: #3b82f6;
+  --blue-dim: #1d3a6a;
+  --green: #10b981;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --pill: 999px;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: 60px;
+  font-size: 16px;
+}
+.header {
+  background: linear-gradient(135deg, #060c18 0%, #0c1e38 60%, #0f2850 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 40px 24px 36px;
+  text-align: center;
+}
+.header-badge {
+  display: inline-block;
+  background: rgba(59,130,246,.15);
+  border: 1px solid rgba(59,130,246,.3);
+  color: #93c5fd;
+  font-size: 13px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 5px 16px; border-radius: var(--pill); margin-bottom: 14px;
+}
+.header h1 { font-size: 32px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+.header p  { color: rgba(255,255,255,.55); font-size: 15px; }
+
+.ranks-bar {
+  background: #080e1a; border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 6px; align-items: center;
+}
+.rchip {
+  display: flex; align-items: center; gap: 6px;
+  border-radius: var(--pill); padding: 8px 18px;
+  font-size: 14px; font-weight: 700; border: 1.5px solid;
+}
+.rchip .pct { font-family: 'Courier New', monospace; font-size: 15px; font-weight: 700; }
+.rc-atl { background:#0e1e3a; border-color:#3b6fd4; color:#93c5fd; }
+.rc-tl  { background:#0a1e14; border-color:#2a7a44; color:#6ee7a8; }
+.rc-er  { background:#1e1000; border-color:#c07820; color:#fcd34d; }
+.rc-as  { background:#0a1828; border-color:#2a7890; color:#67e8f9; }
+.rc-ren { background:#180e28; border-color:#7c3aed; color:#c4b5fd; }
+.arr    { color: rgba(255,255,255,.25); font-size: 16px; }
+
+.wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 0; }
+.sec-label {
+  font-size: 12px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+.sec-label::after { content:''; flex:1; height:1px; background: var(--border); }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 26px; margin-bottom: 22px;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+
+label {
+  display: block; font-size: 12px; font-weight: 700; color: var(--muted);
+  letter-spacing: .07em; text-transform: uppercase; margin-bottom: 8px;
+}
+.inp-wrap { position: relative; }
+.inp-pre {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-weight: 700; font-size: 15px; pointer-events: none;
+}
+input[type=number], input[type=text], select {
+  width: 100%; background: var(--surface2); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 13px 16px; color: var(--text);
+  font-family: 'Segoe UI', Arial, sans-serif; font-size: 16px; font-weight: 600;
+  outline: none; transition: border-color .2s, box-shadow .2s;
+  -moz-appearance: textfield;
+}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+.inp-wrap input { padding-left: 34px; }
+input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+input[readonly] { cursor: default; opacity:.85; }
+select {
+  cursor: pointer; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 4 5-4' stroke='%2364748b' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+}
+
+.agents-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.agent-row {
+  display: grid; grid-template-columns: 190px 1fr 170px 90px;
+  gap: 12px; align-items: end;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 20px;
+}
+.rank-pill {
+  display: inline-block; font-size: 12px; font-weight: 700;
+  padding: 3px 10px; border-radius: var(--pill); margin-bottom: 6px;
+}
+.rp-atl { background:#0e1e3a; color:#93c5fd; border:1px solid #3b6fd4; }
+.rp-tl  { background:#0a1e14; color:#6ee7a8; border:1px solid #2a7a44; }
+.rp-er  { background:#1e1000; color:#fcd34d; border:1px solid #c07820; }
+.rp-as  { background:#0a1828; color:#67e8f9; border:1px solid #2a7890; }
+.rp-ren { background:#180e28; color:#c4b5fd; border:1px solid #7c3aed; }
+
+.toggle-wrap { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.tog { position: relative; width: 40px; height: 22px; flex-shrink: 0; cursor: pointer; }
+.tog input { opacity: 0; width: 0; height: 0; position: absolute; }
+.tog-sl {
+  position: absolute; inset: 0;
+  background: #1e2d45; border-radius: var(--pill); border: 1.5px solid var(--border); transition: .2s;
+}
+.tog-sl::before {
+  content: ''; position: absolute;
+  height: 14px; width: 14px; left: 2px; top: 2px;
+  background: var(--muted); border-radius: 50%; transition: .2s;
+}
+.tog input:checked + .tog-sl { background: var(--blue-dim); border-color: var(--blue); }
+.tog input:checked + .tog-sl::before { transform: translateX(18px); background: var(--blue); }
+.tog-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+
+.btn-add {
+  width: 100%; background: transparent; border: 1.5px dashed var(--border);
+  border-radius: 10px; padding: 14px; color: var(--muted);
+  font-family: 'Segoe UI', Arial, sans-serif; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.btn-add:hover { border-color: var(--blue); color: var(--blue); background: rgba(59,130,246,.05); }
+.btn-calc {
+  width: 100%;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border: none; border-radius: 12px; padding: 18px; color: #fff;
+  font-family: 'Segoe UI', Arial, sans-serif; font-size: 17px; font-weight: 700;
+  cursor: pointer; letter-spacing: .02em;
+  transition: transform .15s, box-shadow .15s; margin-top: 10px;
+}
+.btn-calc:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(37,99,235,.4); }
+.btn-calc:active { transform: translateY(0); }
+.btn-remove {
+  background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25);
+  border-radius: 8px; padding: 7px 10px; color: #f87171;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: 'Segoe UI', Arial, sans-serif; transition: all .15s;
+}
+.btn-remove:hover { background: rgba(239,68,68,.2); }
+
+.alert { padding: 11px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 15px; font-weight: 600; display: none; }
+.alert-err { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.2); color: #fca5a5; display: block; }
+
+#results { display: none; }
+
+.hier-box {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px;
+}
+.hier-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; width: 100%; margin-bottom: 4px; }
+.hier-node {
+  border-radius: var(--pill); padding: 10px 20px;
+  font-weight: 700; font-size: 14px; border: 2px solid;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 110px; text-align: center;
+}
+.hier-node .hn-name { font-size: 13px; font-weight: 600; opacity: .85; }
+.hier-node .hn-pct  { font-family: 'Courier New', monospace; font-size: 15px; font-weight: 700; }
+.hier-node .hn-deal { font-size: 11px; color: var(--green); margin-top: 1px; }
+.hn-atl { border-color:#3b6fd4; background:#0e1e3a; color:#93c5fd; }
+.hn-tl  { border-color:#2a7a44; background:#0a1e14; color:#6ee7a8; }
+.hn-er  { border-color:#c07820; background:#1e1000; color:#fcd34d; }
+.hn-as  { border-color:#2a7890; background:#0a1828; color:#67e8f9; }
+.hn-ren { border-color:#7c3aed; background:#180e28; color:#c4b5fd; }
+.hier-arr { color: rgba(255,255,255,.25); font-size: 18px; font-weight: 300; }
+
+.result-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin-bottom: 22px;
+}
+.result-card {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px; position: relative; overflow: hidden;
+}
+.result-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+.bar-atl::before { background: linear-gradient(90deg,#3b6fd4,#60a5fa); }
+.bar-tl::before  { background: linear-gradient(90deg,#2a7a44,#34d399); }
+.bar-er::before  { background: linear-gradient(90deg,#c07820,#fcd34d); }
+.bar-as::before  { background: linear-gradient(90deg,#2a7890,#67e8f9); }
+.bar-ren::before { background: linear-gradient(90deg,#7c3aed,#c4b5fd); }
+.bar-pic::before { background: linear-gradient(90deg,#e11d48,#fb7185); }
+
+.rc-name  { font-weight: 800; font-size: 18px; color: #fff; margin-bottom: 2px; }
+.rc-rank  { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; }
+.rc-lines { margin-bottom: 10px; }
+.rc-line  { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.rc-line:last-child { border-bottom: none; }
+.rc-lbl   { color: var(--muted); }
+.rc-val   { font-family: 'Courier New', monospace; font-weight: 700; font-size: 15px; color: var(--text); }
+.rc-val.wtp { color: var(--amber); }
+.rc-total {
+  display: flex; justify-content: space-between; align-items: center;
+  background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.2);
+  border-radius: 8px; padding: 12px 14px;
+}
+.rc-total-lbl { font-size: 12px; font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: .06em; }
+.rc-total-val { font-family: 'Courier New', monospace; font-weight: 700; color: var(--green); font-size: 20px; }
+
+.bk-wrap { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.bk-head {
+  display: grid; grid-template-columns: 2fr 2.5fr 2.5fr 1.5fr;
+  background: #080e1a; padding: 12px 16px;
+  font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .07em;
+}
+.bk-row {
+  display: grid; grid-template-columns: 2fr 2.5fr 2.5fr 1.5fr;
+  padding: 13px 16px; border-top: 1px solid var(--border);
+  font-size: 14px; align-items: start;
+}
+.bk-row:hover { background: rgba(255,255,255,.02); }
+.bk-row.is-wtp { background: rgba(245,158,11,.04); }
+.bk-row.is-pic { background: rgba(225,29,72,.04); }
+.bk-agent   { font-weight: 700; color: #fff; line-height: 1.4; }
+.bk-formula { font-family: 'Courier New', monospace; font-size: 13px; color: #7dd3fc; line-height: 1.6; }
+.bk-exp     { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.bk-amt     { font-family: 'Courier New', monospace; font-weight: 700; color: var(--green); text-align: right; font-size: 15px; }
+.bk-amt.wtp { color: var(--amber); }
+.bk-amt.pic { color: #fb7185; }
+
+.summary-box {
+  background: linear-gradient(135deg, #060c18, #0c1e38);
+  border: 1px solid var(--border); border-radius: 16px;
+  padding: 26px 28px; margin-top: 22px;
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;
+}
+.sum-items { display: flex; flex-wrap: wrap; gap: 18px; }
+.sum-item  { display: flex; flex-direction: column; gap: 3px; }
+.sum-lbl   { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.sum-val   { font-family: 'Courier New', monospace; font-weight: 700; font-size: 18px; color: #fff; }
+.sum-grand { text-align: right; }
+.sg-lbl    { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+.sg-val    { font-family: 'Courier New', monospace; font-weight: 800; font-size: 36px; color: var(--green); }
+.sg-check  { font-size: 14px; margin-top: 3px; }
+.sg-ok     { color: #6ee7a8; }
+
+.info-box {
+  background: rgba(245,158,11,.07); border: 1px solid rgba(245,158,11,.2);
+  border-radius: 12px; padding: 12px 16px; margin-top: 14px;
+  font-size: 14px; color: #fde68a; line-height: 1.7;
+}
+
+
+
+/* ── PASSWORD MODAL ── */
+.pw-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.82); backdrop-filter: blur(6px);
+  z-index: 99998; align-items: center; justify-content: center;
+}
+.pw-overlay.open { display: flex; }
+.pw-box {
+  background: #111827;
+  border: 1.5px solid #c07820;
+  border-radius: 20px; padding: 32px 34px;
+  width: 90%; max-width: 400px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.7);
+  animation: modalIn .2s ease;
+  text-align: center;
+}
+.pw-icon  { font-size: 36px; margin-bottom: 12px; }
+.pw-title { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+.pw-sub   { font-size: 13px; color: var(--muted); margin-bottom: 22px; line-height: 1.5; }
+.pw-field { position: relative; margin-bottom: 8px; }
+.pw-field input {
+  width: 100%; background: #1a2235;
+  border: 1.5px solid #c07820;
+  border-radius: 10px; padding: 13px 46px 13px 16px;
+  color: #fff; font-size: 16px; font-weight: 700;
+  letter-spacing: .2em; outline: none; text-align: center;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  transition: border-color .2s, box-shadow .2s;
+}
+.pw-field input:focus { box-shadow: 0 0 0 3px rgba(192,120,32,.25); }
+.pw-field input.shake {
+  animation: shake .35s ease;
+  border-color: #ef4444 !important;
+}
+.pw-toggle {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 16px; padding: 2px;
+  transition: color .2s;
+}
+.pw-toggle:hover { color: #fde68a; }
+.pw-error {
+  font-size: 12px; color: #f87171; font-weight: 600;
+  min-height: 18px; margin-bottom: 16px; display: block;
+}
+.pw-attempts { font-size: 11px; color: var(--muted); margin-bottom: 16px; }
+.btn-pw-submit {
+  width: 100%;
+  background: linear-gradient(135deg, #c07820, #a05e00);
+  border: none; border-radius: 10px; padding: 13px;
+  color: #fff; font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  transition: transform .15s, box-shadow .15s; margin-bottom: 10px;
+}
+.btn-pw-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(192,120,32,.4); }
+.btn-pw-cancel {
+  width: 100%; background: transparent;
+  border: 1.5px solid var(--border); border-radius: 10px;
+  padding: 11px; color: var(--muted);
+  font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.btn-pw-cancel:hover { border-color: var(--muted); color: var(--text); }
+.pw-locked {
+  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2);
+  border-radius: 10px; padding: 12px; margin-bottom: 16px;
+  font-size: 13px; color: #fca5a5; font-weight: 600;
+}
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20%      { transform: translateX(-8px); }
+  40%      { transform: translateX(8px); }
+  60%      { transform: translateX(-6px); }
+  80%      { transform: translateX(6px); }
+}
+
+/* ═══════════════════════════════════════════════════
+   REVIEW MODE SYSTEM
+═══════════════════════════════════════════════════ */
+.review-toolbar {
+  display: none;
+  background: linear-gradient(135deg, #1a0a00, #3a1500);
+  border: 1.5px solid #c07820;
+  border-radius: 14px;
+  padding: 16px 22px;
+  margin-top: 22px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.review-toolbar.active { display: flex; }
+.rtb-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rtb-badge {
+  background: #c07820; color: #fff;
+  font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  padding: 5px 14px; border-radius: 999px;
+}
+.rtb-info { font-size: 13px; color: #fde68a; font-weight: 600; }
+.rtb-right { display: flex; gap: 10px; align-items: center; }
+
+/* Review name input */
+.review-name-wrap {
+  display: flex; align-items: center; gap: 8px;
+}
+.review-name-wrap label { font-size: 12px; color: #fde68a; margin: 0; text-transform: none; letter-spacing: 0; }
+#reviewerName {
+  background: rgba(255,255,255,.1);
+  border: 1.5px solid #c07820;
+  border-radius: 8px; padding: 7px 12px;
+  color: #fff; font-size: 13px; font-weight: 600; width: 160px;
+}
+
+/* Flag button on each row */
+.btn-flag {
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  transition: all .2s;
+  white-space: nowrap;
+}
+.btn-flag:hover { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,.08); }
+.btn-flag.flagged { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,.12); }
+.btn-flag.resolved { border-color: var(--green); color: var(--green); background: rgba(16,185,129,.08); }
+
+/* Row highlight when flagged */
+.bk-row.flagged-row { background: rgba(239,68,68,.07) !important; border-left: 3px solid #ef4444; }
+.bk-row.resolved-row { background: rgba(16,185,129,.05) !important; border-left: 3px solid var(--green); }
+
+/* Review grid: 5 cols when review mode on */
+.bk-row.review-mode, .bk-head.review-mode {
+  grid-template-columns: 2fr 2.5fr 2.5fr 1.5fr 80px !important;
+}
+
+/* Remark badge under agent cell */
+.remark-tag {
+  display: inline-block;
+  background: rgba(239,68,68,.15);
+  border: 1px solid rgba(239,68,68,.3);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #fca5a5;
+  margin-top: 5px;
+  line-height: 1.4;
+  max-width: 100%;
+  word-break: break-word;
+}
+.remark-tag.resolved { background: rgba(16,185,129,.1); border-color: rgba(16,185,129,.25); color: #6ee7a8; }
+
+/* ── MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.75);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: #111827;
+  border: 1.5px solid #ef4444;
+  border-radius: 20px;
+  padding: 28px 30px;
+  width: 90%;
+  max-width: 520px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  animation: modalIn .2s ease;
+}
+@keyframes modalIn {
+  from { opacity:0; transform: scale(.95) translateY(10px); }
+  to   { opacity:1; transform: scale(1) translateY(0); }
+}
+.modal-title {
+  font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 6px;
+}
+.modal-subtitle {
+  font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5;
+}
+.modal-subtitle strong { color: #fca5a5; }
+.modal-field { margin-bottom: 16px; }
+.modal-field label {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 7px;
+}
+.modal-field textarea, .modal-field input[type=text] {
+  width: 100%;
+  background: #1a2235; border: 1.5px solid #2a3a55;
+  border-radius: 10px; padding: 12px 14px;
+  color: var(--text); font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px; resize: vertical; min-height: 90px;
+  outline: none; transition: border-color .2s;
+}
+.modal-field textarea:focus, .modal-field input[type=text]:focus {
+  border-color: #ef4444;
+}
+.modal-field input[type=text] { min-height: unset; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.btn-modal-cancel {
+  background: transparent; border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 10px 20px; color: var(--muted);
+  font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.btn-modal-cancel:hover { border-color: var(--muted); color: var(--text); }
+.btn-modal-submit {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  border: none; border-radius: 10px; padding: 10px 22px;
+  color: #fff; font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+.btn-modal-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(220,38,38,.4); }
+
+/* Submit all button */
+.btn-submit-all {
+  background: linear-gradient(135deg, #c07820, #a05e00);
+  border: none; border-radius: 10px; padding: 10px 20px;
+  color: #fff; font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: all .2s;
+}
+.btn-submit-all:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(192,120,32,.4); }
+.btn-submit-all:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* Review toggle button */
+.btn-review-toggle {
+  background: linear-gradient(135deg, #92400e, #78350f);
+  border: 1.5px solid #c07820;
+  border-radius: 10px; padding: 10px 20px;
+  color: #fde68a; font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: all .2s; margin-top: 14px; display: none;
+}
+.btn-review-toggle:hover { background: linear-gradient(135deg, #b45309, #92400e); }
+.btn-review-toggle.on { background: linear-gradient(135deg, #064e35, #065f46); border-color: var(--green); color: #6ee7a8; }
+
+/* Telegram status toast */
+.tg-toast {
+  display: none;
+  position: fixed; bottom: 28px; right: 28px;
+  background: #1a2235; border: 1.5px solid var(--border);
+  border-radius: 14px; padding: 14px 20px;
+  font-size: 14px; color: var(--text); font-weight: 600;
+  box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  z-index: 99999; min-width: 240px;
+  animation: toastIn .3s ease;
+}
+.tg-toast.show { display: block; }
+@keyframes toastIn {
+  from { opacity:0; transform: translateY(12px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+
+/* Review summary panel */
+.review-summary {
+  display: none;
+  background: rgba(239,68,68,.07);
+  border: 1.5px solid rgba(239,68,68,.2);
+  border-radius: 14px; padding: 18px 22px; margin-top: 16px;
+}
+.review-summary.has-flags { display: block; }
+.rs-title { font-size: 14px; font-weight: 800; color: #fca5a5; margin-bottom: 12px; }
+.rs-item {
+  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.15);
+  border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
+}
+.rs-item:last-child { margin-bottom: 0; }
+.rs-item-row { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.rs-item-remark { font-size: 12px; color: #fca5a5; line-height: 1.5; }
+.rs-item-by { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+@media (max-width: 680px) {
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+  .agent-row { grid-template-columns: 1fr 1fr; }
+  .bk-head, .bk-row { grid-template-columns: 1.5fr 2fr 1.5fr; }
+  .bk-head .bk-exp, .bk-row .bk-exp { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-badge">WTP Formula &middot; Commission Calculator</div>
+  <h1>Property Commission Calculator</h1>
+  <p>Build your team hierarchy, enter the deal, and see how commission splits across every level.</p>
+</div>
+
+<div class="ranks-bar">
+  <div class="rchip rc-atl">ATL <span class="pct">90%</span></div>
+  <span class="arr">&rarr;</span>
+  <div class="rchip rc-tl">TL <span class="pct">85%</span></div>
+  <span class="arr">&rarr;</span>
+  <div class="rchip rc-er">Elite REN <span class="pct">80%</span></div>
+  <span class="arr">&rarr;</span>
+  <div class="rchip rc-as">Assoc REN <span class="pct">75%</span></div>
+  <span class="arr">&rarr;</span>
+  <div class="rchip rc-ren">REN <span class="pct">70%</span></div>
+</div>
+
+<div class="wrap">
+
+  <div class="sec-label">Step 1 &mdash; Deal Details</div>
+  <div class="card">
+    <div class="grid3" style="margin-bottom:18px;">
+      <div>
+        <label>Project Name</label>
+        <input type="text" id="projName" value="Project-A" oninput="updatePicProject()"/>
+      </div>
+      <div>
+        <label>Property Sales Price (RM)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="salesPrice" value="1000000" min="0" oninput="updateGross()"/>
+        </div>
+      </div>
+      <div>
+        <label>Developer Commission Rate (%)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">%</span>
+          <input type="number" id="devCommRate" value="2" min="0" max="100" step="0.1" oninput="updateGross()"/>
+        </div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div>
+        <label>Gross Commission (Auto-Calculated)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="grossComm" readonly value="20000" style="color:var(--green);border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.05);"/>
+        </div>
+      </div>
+      <div>
+        <label>PIC Rate &mdash; Paid by Company (%)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">%</span>
+          <input type="number" id="picRate" value="0.2" min="0" max="100" step="0.1" oninput="updatePicComm()"/>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-label">Step 2 &mdash; Project Person In Charge (PIC)</div>
+  <div class="card">
+    <div class="grid3">
+      <div>
+        <label>PIC Name</label>
+        <input type="text" id="picName" value="Erwin" placeholder="e.g. Erwin"/>
+      </div>
+      <div>
+        <label>Project</label>
+        <input type="text" id="picProject" value="Project-A" readonly style="color:var(--muted);"/>
+      </div>
+      <div>
+        <label>PIC Commission (calculated on all deals)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="picComm" readonly style="color:var(--amber);border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.05);"/>
+          <div id="picCommNote" style="font-size:12px;color:var(--muted);margin-top:6px;">Preview: per deal. Final amount calculated on all deals.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-label">Step 3 &mdash; Team Hierarchy (Top &rarr; Bottom)</div>
+  <div class="card">
+    <div id="alertBox" class="alert"></div>
+    <p style="font-size:15px;color:var(--muted);margin-bottom:14px;">
+      Add agents from highest rank (ATL/TL) down to REN.
+      Toggle <strong style="color:var(--text);">Personal Deal</strong> ON if that agent closes their own deal.
+    </p>
+    <div class="agents-list" id="agentsList"></div>
+    <button class="btn-add" onclick="addAgent()">+ Add Agent to Team</button>
+    <button class="btn-calc" onclick="calculate()">Calculate Commission Split</button>
+  </div>
+
+  <div id="results">
+    <div class="sec-label">Results</div>
+    <div id="hierViz" class="hier-box"></div>
+    <div class="result-grid" id="resultCards"></div>
+
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:0;">
+      <div style="padding:20px 22px 16px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:800;color:#fff;font-size:20px;">Full Calculation Breakdown</div>
+      </div>
+      <div class="bk-wrap" style="border:none;border-radius:0;">
+        <div class="bk-head" id="bkHead">
+          <div>Agent</div><div>Formula</div><div>Explanation</div><div style="text-align:right;">Amount</div><div id="reviewColHead" style="display:none;text-align:center;">Flag</div>
+        </div>
+        <div id="bkRows"></div>
+      </div>
+    </div>
+
+    <button class="btn-review-toggle" id="reviewToggleBtn" onclick="toggleReviewMode()">
+      &#x2691; Enable Expert Review Mode
+    </button>
+
+    <div class="review-toolbar" id="reviewToolbar">
+      <div class="rtb-left">
+        <span class="rtb-badge">Review Mode ON</span>
+        <span class="rtb-info">Click the <strong style="color:#ef4444;">Flag</strong> button on any row you want to query.</span>
+      </div>
+      <div class="rtb-right">
+        <div class="review-name-wrap">
+          <label for="reviewerName">Reviewer:</label>
+          <input type="text" id="reviewerName" placeholder="Your name" value=""/>
+        </div>
+        <button class="btn-submit-all" id="submitAllBtn" onclick="submitAllRemarks()" disabled>
+          Send All Remarks via Telegram
+        </button>
+      </div>
+    </div>
+
+    <div class="review-summary" id="reviewSummary">
+      <div class="rs-title">&#9888; Flagged Items</div>
+      <div id="reviewSummaryItems"></div>
+    </div>
+
+    <div class="summary-box">
+      <div class="sum-items" id="sumItems"></div>
+      <div class="sum-grand">
+        <div class="sg-lbl">Total Agent Payout</div>
+        <div class="sg-val" id="sgVal">RM 0</div>
+        <div class="sg-check sg-ok" id="sgCheck"></div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>WTP Rule:</strong> When a direct downline reaches the <em>same</em> commission % as you,
+      standard override = 0. Instead you earn <strong>2% WTP (Gen1)</strong> on their team gross.
+      The upline above you gets <strong>1% WTP (Gen2)</strong>. WTP amounts shown in amber.
+    </div>
+  </div>
+
+</div>
+
+<script>
+var RANKS = {
+  ATL:   { label:'ATL',       pct:90, pillCls:'rp-atl', hierCls:'hn-atl', barCls:'bar-atl' },
+  TL:    { label:'TL',        pct:85, pillCls:'rp-tl',  hierCls:'hn-tl',  barCls:'bar-tl'  },
+  ELITE: { label:'Elite REN', pct:80, pillCls:'rp-er',  hierCls:'hn-er',  barCls:'bar-er'  },
+  ASSOC: { label:'Assoc REN', pct:75, pillCls:'rp-as',  hierCls:'hn-as',  barCls:'bar-as'  },
+  REN:   { label:'REN',       pct:70, pillCls:'rp-ren', hierCls:'hn-ren', barCls:'bar-ren' }
+};
+var RANK_KEYS = ['ATL','TL','ELITE','ASSOC','REN'];
+var agentCount = 0;
+var agents = [];
+
+window.onload = function() {
+  updateGross();
+  updatePicProject();
+  updatePicComm();
+  addAgentData('TL', 'Sarah', true);
+  addAgentData('REN', 'Ahmad', true);
+};
+
+function updateGross() {
+  var sp = parseFloat(document.getElementById('salesPrice').value) || 0;
+  var dr = parseFloat(document.getElementById('devCommRate').value) || 0;
+  document.getElementById('grossComm').value = (sp * dr / 100).toFixed(2);
+  updatePicComm();
+}
+function updatePicProject() {
+  document.getElementById('picProject').value = document.getElementById('projName').value || '';
+}
+function updatePicComm() {
+  // PIC commission is calculated after Calculate is clicked (based on all deals)
+  // Preview here shows per-deal estimate only
+  var gross = parseFloat(document.getElementById('grossComm').value) || 0;
+  var pct   = parseFloat(document.getElementById('picRate').value) || 0;
+  document.getElementById('picComm').value = (gross * pct / 100).toFixed(2);
+  document.getElementById('picCommNote').textContent = 'Preview: per deal. Final amount calculated on all deals.';
+}
+
+function addAgentData(rank, name, hasDeal) {
+  agentCount++;
+  agents.push({ id: agentCount, rank: rank, name: name || '', hasDeal: hasDeal === true });
+  renderAgents();
+}
+function addAgent() {
+  addAgentData('REN', '', false);
+}
+function removeAgent(id) {
+  agents = agents.filter(function(a) { return a.id !== id; });
+  renderAgents();
+}
+function onRankChange(id, val) {
+  for (var i = 0; i < agents.length; i++) {
+    if (agents[i].id === id) { agents[i].rank = val; break; }
+  }
+  renderAgents();
+}
+function onDealChange(id, checked) {
+  for (var i = 0; i < agents.length; i++) {
+    if (agents[i].id === id) { agents[i].hasDeal = checked; break; }
+  }
+  renderAgents();
+}
+function onNameChange(id, val) {
+  for (var i = 0; i < agents.length; i++) {
+    if (agents[i].id === id) { agents[i].name = val; break; }
+  }
+}
+
+function renderAgents() {
+  var list = document.getElementById('agentsList');
+  list.innerHTML = '';
+  for (var i = 0; i < agents.length; i++) {
+    var a = agents[i];
+    var r = RANKS[a.rank];
+    var opts = '';
+    for (var k = 0; k < RANK_KEYS.length; k++) {
+      var rk = RANK_KEYS[k];
+      opts += '<option value="' + rk + '"' + (a.rank === rk ? ' selected' : '') + '>' + RANKS[rk].label + ' (' + RANKS[rk].pct + '%)</option>';
+    }
+    var removeBtn = agents.length > 1
+      ? '<button class="btn-remove" onclick="removeAgent(' + a.id + ')">Remove</button>'
+      : '';
+    var row = document.createElement('div');
+    row.className = 'agent-row';
+    row.innerHTML =
+      '<div>' +
+        '<div class="rank-pill ' + r.pillCls + '">' + r.label + ' &bull; ' + r.pct + '%</div>' +
+        '<label>Rank</label>' +
+        '<select onchange="onRankChange(' + a.id + ', this.value)">' + opts + '</select>' +
+      '</div>' +
+      '<div>' +
+        '<label>Agent Name</label>' +
+        '<input type="text" value="' + a.name + '" placeholder="Name" oninput="onNameChange(' + a.id + ', this.value)"/>' +
+      '</div>' +
+      '<div>' +
+        '<label>Personal Deal?</label>' +
+        '<div class="toggle-wrap">' +
+          '<label class="tog">' +
+            '<input type="checkbox"' + (a.hasDeal ? ' checked' : '') + ' onchange="onDealChange(' + a.id + ', this.checked)"/>' +
+            '<span class="tog-sl"></span>' +
+          '</label>' +
+          '<span class="tog-label">' + (a.hasDeal ? 'Yes - closes own deal' : 'No personal deal') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:flex-end;">' + removeBtn + '</div>';
+    list.appendChild(row);
+  }
+}
+
+function fmtRM(n) {
+  return 'RM ' + n.toLocaleString('en-MY', { minimumFractionDigits:2, maximumFractionDigits:2 });
+}
+
+function calculate() {
+  clearAlert();
+  var grossComm = parseFloat(document.getElementById('grossComm').value) || 0;
+  var picPct    = parseFloat(document.getElementById('picRate').value) || 0;
+  var picName   = document.getElementById('picName').value || 'PIC';
+
+  if (agents.length === 0) { showAlert('Please add at least one agent.'); return; }
+  if (grossComm <= 0)      { showAlert('Gross commission must be greater than 0. Check the sales price and developer rate.'); return; }
+
+  // Count deals FIRST so PIC gets paid on ALL deals in the project
+  var totalDealsCount = 0;
+  for (var i = 0; i < agents.length; i++) { if (agents[i].hasDeal) totalDealsCount++; }
+  var totalGrossAllDeals = totalDealsCount * grossComm;
+  var picComm = totalGrossAllDeals * picPct / 100;
+
+  for (var i = 1; i < agents.length; i++) {
+    if (RANKS[agents[i].rank].pct > RANKS[agents[i-1].rank].pct) {
+      showAlert('Rank conflict: "' + (agents[i].name || RANKS[agents[i].rank].label) + '" has a higher rank than "' + (agents[i-1].name || RANKS[agents[i-1].rank].label) + '" listed above. Please order from highest to lowest rank.');
+      return;
+    }
+  }
+
+  var n = agents.length;
+  var payouts = {};
+  for (var i = 0; i < n; i++) {
+    payouts[agents[i].id] = { personal:0, overrides:0, wtp1:0, wtp2:0, total:0 };
+  }
+  var lines = [];
+
+  // Personal deal income
+  for (var i = 0; i < n; i++) {
+    var a = agents[i];
+    if (!a.hasDeal) continue;
+    var earn = grossComm * RANKS[a.rank].pct / 100;
+    payouts[a.id].personal = earn;
+    lines.push({
+      label: (a.name || RANKS[a.rank].label) + ' (personal deal)',
+      formula: RANKS[a.rank].pct + '% x ' + fmtRM(grossComm),
+      exp: 'Own deal at ' + RANKS[a.rank].label + ' rate (' + RANKS[a.rank].pct + '%)',
+      amount: earn, isWTP: false, isPIC: false
+    });
+  }
+
+  // Team gross (cumulative downward)
+  var teamGross = new Array(n).fill(0);
+  for (var i = n - 1; i >= 0; i--) {
+    teamGross[i] = (agents[i].hasDeal ? grossComm : 0) + (i < n - 1 ? teamGross[i+1] : 0);
+  }
+
+  // Override / WTP between consecutive pairs
+  for (var i = 0; i < n - 1; i++) {
+    var up   = agents[i];
+    var down = agents[i+1];
+    var upPct   = RANKS[up.rank].pct;
+    var downPct = RANKS[down.rank].pct;
+    var gap  = upPct - downPct;
+    var tg   = teamGross[i+1];
+    if (tg === 0) continue;
+
+    if (gap > 0) {
+      var earn = tg * gap / 100;
+      payouts[up.id].overrides += earn;
+      lines.push({
+        label: (up.name || RANKS[up.rank].label) + ' override on ' + (down.name || RANKS[down.rank].label),
+        formula: '(' + upPct + '% - ' + downPct + '%) x ' + fmtRM(tg),
+        exp: gap + '% gap on team gross of ' + fmtRM(tg),
+        amount: earn, isWTP: false, isPIC: false
+      });
+    } else {
+      var wtp1 = tg * 0.02;
+      payouts[up.id].wtp1 += wtp1;
+      lines.push({
+        label: (up.name || RANKS[up.rank].label) + ' WTP Gen1 on ' + (down.name || RANKS[down.rank].label),
+        formula: '2% x ' + fmtRM(tg),
+        exp: 'Same rank - WTP Gen1 (2%) replaces 0% override',
+        amount: wtp1, isWTP: true, isPIC: false
+      });
+      if (i > 0) {
+        var gen2 = agents[i-1];
+        var wtp2 = tg * 0.01;
+        payouts[gen2.id].wtp2 += wtp2;
+        lines.push({
+          label: (gen2.name || RANKS[gen2.rank].label) + ' WTP Gen2',
+          formula: '1% x ' + fmtRM(tg),
+          exp: 'Indirect upline (2 levels up) earns 1% WTP',
+          amount: wtp2, isWTP: true, isPIC: false
+        });
+      }
+    }
+  }
+
+  // PIC - based on ALL deals in the project
+  lines.push({
+    label: picName + ' (PIC - ' + picPct + '%)',
+    formula: picPct + '% x ' + fmtRM(totalGrossAllDeals) + ' (' + totalDealsCount + ' deal(s))',
+    exp: 'PIC earns ' + picPct + '% on total project gross from all ' + totalDealsCount + ' deal(s)',
+    amount: picComm, isWTP: false, isPIC: true
+  });
+
+  // Totals
+  var totalAgentPayout = 0;
+  for (var i = 0; i < n; i++) {
+    var p = payouts[agents[i].id];
+    p.total = p.personal + p.overrides + p.wtp1 + p.wtp2;
+    totalAgentPayout += p.total;
+  }
+
+  // Render everything
+  renderHierarchy();
+  renderCards(payouts, picName, picComm);
+  renderBreakdownWithReview(lines);
+  document.getElementById("reviewToggleBtn").style.display = "inline-block";
+  renderSummary(grossComm, totalAgentPayout, picComm, totalDealsCount, totalGrossAllDeals);
+  // Update Step 2 PIC display to show actual total
+  document.getElementById('picComm').value = picComm.toFixed(2);
+  document.getElementById('picCommNote').textContent = 'Total for ' + totalDealsCount + ' deal(s): ' + totalDealsCount + ' x ' + fmtRM(grossComm) + ' x ' + picPct + '% = ' + fmtRM(picComm);
+
+  var el = document.getElementById('results');
+  el.style.display = 'block';
+  setTimeout(function() { el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 80);
+}
+
+function renderHierarchy() {
+  var box = document.getElementById('hierViz');
+  box.innerHTML = '<div class="hier-label">Team Hierarchy</div>';
+  for (var i = 0; i < agents.length; i++) {
+    if (i > 0) {
+      var sp = document.createElement('span');
+      sp.className = 'hier-arr'; sp.innerHTML = '&rarr;';
+      box.appendChild(sp);
+    }
+    var a = agents[i]; var r = RANKS[a.rank];
+    var node = document.createElement('div');
+    node.className = 'hier-node ' + r.hierCls;
+    node.innerHTML = '<span class="hn-name">' + (a.name || r.label) + '</span>' +
+      '<span class="hn-pct">' + r.pct + '%</span>' +
+      (a.hasDeal ? '<span class="hn-deal">personal deal</span>' : '');
+    box.appendChild(node);
+  }
+}
+
+function renderCards(payouts, picName, picComm) {
+  var grid = document.getElementById('resultCards');
+  grid.innerHTML = '';
+  for (var i = 0; i < agents.length; i++) {
+    var a = agents[i]; var r = RANKS[a.rank]; var p = payouts[a.id];
+    var linesHtml = '';
+    if (p.personal > 0)  linesHtml += rcLine('Personal deal', p.personal, false);
+    if (p.overrides > 0) linesHtml += rcLine('Override income', p.overrides, false);
+    if (p.wtp1 > 0)      linesHtml += rcLine('WTP Gen1', p.wtp1, true);
+    if (p.wtp2 > 0)      linesHtml += rcLine('WTP Gen2', p.wtp2, true);
+    if (p.total === 0)   linesHtml += '<div class="rc-line"><span class="rc-lbl" style="font-style:italic;">No income this transaction</span></div>';
+    var card = document.createElement('div');
+    card.className = 'result-card ' + r.barCls;
+    card.innerHTML = '<div class="rc-name">' + (a.name || r.label) + '</div>' +
+      '<div class="rc-rank">' + r.label + ' &bull; ' + r.pct + '%</div>' +
+      '<div class="rc-lines">' + linesHtml + '</div>' +
+      '<div class="rc-total"><div class="rc-total-lbl">Total</div><div class="rc-total-val">' + fmtRM(p.total) + '</div></div>';
+    grid.appendChild(card);
+  }
+  var picCard = document.createElement('div');
+  picCard.className = 'result-card bar-pic';
+  picCard.innerHTML = '<div class="rc-name">' + picName + '</div>' +
+    '<div class="rc-rank">Project PIC</div>' +
+    '<div class="rc-lines">' + rcLine('PIC commission', picComm, false) + '</div>' +
+    '<div class="rc-total" style="background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.2);">' +
+      '<div class="rc-total-lbl" style="color:var(--amber);">Total</div>' +
+      '<div class="rc-total-val" style="color:var(--amber);">' + fmtRM(picComm) + '</div>' +
+    '</div>' +
+    '<div style="font-size:13px;color:var(--muted);margin-top:8px;">Paid separately by company</div>';
+  grid.appendChild(picCard);
+}
+function rcLine(lbl, val, isWTP) {
+  return '<div class="rc-line"><span class="rc-lbl">' + lbl + '</span><span class="rc-val' + (isWTP ? ' wtp' : '') + '">' + fmtRM(val) + '</span></div>';
+}
+
+function renderBreakdown(lines) { renderBreakdownWithReview(lines); }
+
+function renderSummary(grossComm, totalPayout, picComm, totalDeals, totalGross) {
+  document.getElementById('sgVal').textContent = fmtRM(totalPayout);
+  var topPct = RANKS[agents[0].rank].pct;
+  var expected = totalGross * topPct / 100;
+  var sc = document.getElementById('sgCheck');
+  if (totalGross > 0) {
+    var diff = Math.abs(totalPayout - expected);
+    sc.textContent = diff < 0.02
+      ? 'Sanity check passed: ' + topPct + '% x ' + fmtRM(totalGross) + ' = ' + fmtRM(expected)
+      : 'Base check: ' + topPct + '% x ' + fmtRM(totalGross) + ' = ' + fmtRM(expected) + ' + WTP extras';
+    sc.className = 'sg-check sg-ok';
+  }
+  var si = document.getElementById('sumItems');
+  si.innerHTML = '';
+  var items = [
+    { lbl:'Total Deals', val: totalDeals.toString() },
+    { lbl:'Total Gross', val: fmtRM(totalGross) },
+    { lbl:'PIC Commission', val: fmtRM(picComm), style:'color:var(--amber);' }
+  ];
+  for (var i = 0; i < items.length; i++) {
+    var d = document.createElement('div');
+    d.className = 'sum-item';
+    d.innerHTML = '<span class="sum-lbl">' + items[i].lbl + '</span><span class="sum-val"' + (items[i].style ? ' style="' + items[i].style + '"' : '') + '>' + items[i].val + '</span>';
+    si.appendChild(d);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════
+// REVIEW MODE SYSTEM
+// ═══════════════════════════════════════════════════
+
+// !! CONFIGURE YOUR TELEGRAM BOT HERE !!
+var TG_BOT_TOKEN = '8090570354:AAFbSnDpuVNdoqv5v85M7JcuyDlfu8hlnPw';   // e.g. '7123456789:AAFxxxxxx'
+var TG_CHAT_ID   = '1572211466';     // e.g. '-1001234567890' or '123456789'
+
+var reviewModeOn = false;
+var remarks = {};       // { rowIndex: { label, formula, remark, suggestion, by, ts } }
+var currentFlagRow = -1;
+var breakdownLines = []; // store last rendered lines globally
+
+// Store lines globally when rendering
+var _lastLines = [];
+
+function renderBreakdownWithReview(lines) {
+  _lastLines = lines;
+  var cont = document.getElementById('bkRows');
+  cont.innerHTML = '';
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    var row = document.createElement('div');
+    var flagged   = remarks[i] !== undefined;
+    var rowCls = 'bk-row' + (l.isWTP ? ' is-wtp' : '') + (l.isPIC ? ' is-pic' : '');
+    if (flagged)      rowCls += ' flagged-row';
+    row.className = rowCls;
+    row.id = 'bkRow_' + i;
+
+    var remarkHtml = '';
+    if (flagged) {
+      remarkHtml = '<div class="remark-tag">&#9873; ' + escHtml(remarks[i].remark) +
+        (remarks[i].suggestion ? '<br><em>Suggestion: ' + escHtml(remarks[i].suggestion) + '</em>' : '') + '</div>';
+    }
+
+    var flagBtn = '<button class="btn-flag' + (flagged ? ' flagged' : '') + '" onclick="openFlagModal(' + i + ')" title="Flag this row for review">' +
+      (flagged ? '&#9873; Flagged' : '&#9873; Flag') + '</button>';
+
+    row.innerHTML =
+      '<div class="bk-agent">' + l.label + remarkHtml + '</div>' +
+      '<div class="bk-formula">' + l.formula + '</div>' +
+      '<div class="bk-exp">' + l.exp + '</div>' +
+      '<div class="bk-amt' + (l.isWTP ? ' wtp' : '') + (l.isPIC ? ' pic' : '') + '">' + fmtRM(l.amount) + '</div>' +
+      '<div style="text-align:center;display:' + (reviewModeOn ? 'flex' : 'none') + ';align-items:center;justify-content:center;" class="review-col-cell" id="flagCell_' + i + '">' + flagBtn + '</div>';
+    cont.appendChild(row);
+  }
+  // Apply grid template if review mode
+  applyReviewGrid();
+}
+
+function applyReviewGrid() {
+  var rows  = document.querySelectorAll('.bk-row');
+  var head  = document.getElementById('bkHead');
+  var colHead = document.getElementById('reviewColHead');
+  var cells = document.querySelectorAll('.review-col-cell');
+  if (reviewModeOn) {
+    head.style.gridTemplateColumns  = '2fr 2.5fr 2.5fr 1.5fr 90px';
+    colHead.style.display = 'block';
+    for (var i = 0; i < rows.length; i++)  rows[i].style.gridTemplateColumns  = '2fr 2.5fr 2.5fr 1.5fr 90px';
+    for (var i = 0; i < cells.length; i++) cells[i].style.display = 'flex';
+  } else {
+    head.style.gridTemplateColumns  = '';
+    colHead.style.display = 'none';
+    for (var i = 0; i < rows.length; i++)  rows[i].style.gridTemplateColumns  = '';
+    for (var i = 0; i < cells.length; i++) cells[i].style.display = 'none';
+  }
+}
+
+// ── PASSWORD CONFIG ──────────────────────────────────────────────
+// Change this to your desired password. Keep it secret!
+var REVIEW_PASSWORD = 'WTP@Expert2024';   // << CHANGE THIS PASSWORD
+// ─────────────────────────────────────────────────────────────────
+
+var pwUnlocked     = false;
+var pwAttempts     = 0;
+var maxAttempts    = 5;
+var lockUntil      = 0;
+var lockTimerInt   = null;
+
+function toggleReviewMode() {
+  // If turning OFF — no password needed
+  if (reviewModeOn) {
+    reviewModeOn = false;
+    pwUnlocked   = false;
+    var btn     = document.getElementById('reviewToggleBtn');
+    var toolbar = document.getElementById('reviewToolbar');
+    btn.innerHTML = '&#x2691; Enable Expert Review Mode';
+    btn.classList.remove('on');
+    toolbar.classList.remove('active');
+    applyReviewGrid();
+    return;
+  }
+  // If turning ON — require password
+  openPwModal();
+}
+
+function openPwModal() {
+  document.getElementById('pwInput').value = '';
+  document.getElementById('pwError').textContent = '';
+  document.getElementById('pwAttempts').textContent = '';
+  document.getElementById('pwLockedMsg').style.display = 'none';
+  document.getElementById('pwOverlay').classList.add('open');
+  // Check if still locked
+  if (Date.now() < lockUntil) {
+    showLockScreen();
+  } else {
+    setTimeout(function(){ document.getElementById('pwInput').focus(); }, 120);
+  }
+}
+
+function closePwModal() {
+  document.getElementById('pwOverlay').classList.remove('open');
+  document.getElementById('pwInput').value = '';
+}
+
+function togglePwVisibility() {
+  var inp = document.getElementById('pwInput');
+  var btn = document.getElementById('pwToggleBtn');
+  if (inp.type === 'password') {
+    inp.type = 'text'; inp.style.letterSpacing = '.05em';
+    btn.innerHTML = '&#128064;';
+  } else {
+    inp.type = 'password'; inp.style.letterSpacing = '.2em';
+    btn.innerHTML = '&#128065;';
+  }
+}
+
+function clearPwError() {
+  document.getElementById('pwError').textContent = '';
+  document.getElementById('pwInput').classList.remove('shake');
+}
+
+function checkPassword() {
+  // Check lockout
+  if (Date.now() < lockUntil) { showLockScreen(); return; }
+
+  var entered = document.getElementById('pwInput').value;
+  if (entered === REVIEW_PASSWORD) {
+    // Correct!
+    pwAttempts = 0;
+    pwUnlocked = true;
+    closePwModal();
+    // Actually enable review mode now
+    reviewModeOn = true;
+    var btn     = document.getElementById('reviewToggleBtn');
+    var toolbar = document.getElementById('reviewToolbar');
+    btn.textContent = '\u2713 Exit Review Mode';
+    btn.classList.add('on');
+    toolbar.classList.add('active');
+    applyReviewGrid();
+  } else {
+    // Wrong password
+    pwAttempts++;
+    var remaining = maxAttempts - pwAttempts;
+    var inp = document.getElementById('pwInput');
+    inp.classList.remove('shake');
+    void inp.offsetWidth; // reflow to restart animation
+    inp.classList.add('shake');
+    inp.value = '';
+
+    if (remaining <= 0) {
+      // Lock for 60 seconds
+      lockUntil = Date.now() + 60000;
+      showLockScreen();
+    } else {
+      document.getElementById('pwError').textContent = 'Incorrect password.';
+      document.getElementById('pwAttempts').textContent = remaining + ' attempt(s) remaining before lockout.';
+    }
+  }
+}
+
+function showLockScreen() {
+  document.getElementById('pwLockedMsg').style.display = 'block';
+  document.getElementById('pwInput').disabled = true;
+  document.getElementById('pwError').textContent = '';
+  document.getElementById('pwAttempts').textContent = '';
+  // Countdown timer
+  if (lockTimerInt) clearInterval(lockTimerInt);
+  lockTimerInt = setInterval(function() {
+    var left = Math.ceil((lockUntil - Date.now()) / 1000);
+    if (left <= 0) {
+      clearInterval(lockTimerInt);
+      document.getElementById('lockCountdown').textContent = '0';
+      document.getElementById('pwLockedMsg').style.display = 'none';
+      document.getElementById('pwInput').disabled = false;
+      pwAttempts = 0;
+      document.getElementById('pwAttempts').textContent = '';
+      setTimeout(function(){ document.getElementById('pwInput').focus(); }, 100);
+    } else {
+      document.getElementById('lockCountdown').textContent = left;
+    }
+  }, 500);
+}
+
+function openFlagModal(rowIdx) {
+  currentFlagRow = rowIdx;
+  var l = _lastLines[rowIdx];
+  document.getElementById('modalSubtitle').innerHTML =
+    'Row: <strong style="color:#fca5a5;">' + escHtml(l.label) + '</strong><br>' +
+    '<span style="font-size:12px;color:var(--muted);">Formula: ' + escHtml(l.formula) + ' = ' + fmtRM(l.amount) + '</span>';
+  // Pre-fill if already flagged
+  if (remarks[rowIdx]) {
+    document.getElementById('remarkText').value       = remarks[rowIdx].remark;
+    document.getElementById('remarkSuggestion').value = remarks[rowIdx].suggestion || '';
+  } else {
+    document.getElementById('remarkText').value       = '';
+    document.getElementById('remarkSuggestion').value = '';
+  }
+  document.getElementById('remarkModal').classList.add('open');
+  setTimeout(function(){ document.getElementById('remarkText').focus(); }, 100);
+}
+
+function closeModal() {
+  document.getElementById('remarkModal').classList.remove('open');
+  currentFlagRow = -1;
+}
+
+function submitRemark() {
+  var remark = document.getElementById('remarkText').value.trim();
+  if (!remark) {
+    document.getElementById('remarkText').style.borderColor = '#ef4444';
+    return;
+  }
+  document.getElementById('remarkText').style.borderColor = '';
+  var suggestion = document.getElementById('remarkSuggestion').value.trim();
+  var reviewer   = document.getElementById('reviewerName').value.trim() || 'Anonymous';
+  remarks[currentFlagRow] = {
+    label:      _lastLines[currentFlagRow].label,
+    formula:    _lastLines[currentFlagRow].formula,
+    amount:     _lastLines[currentFlagRow].amount,
+    remark:     remark,
+    suggestion: suggestion,
+    by:         reviewer,
+    ts:         new Date().toLocaleString('en-MY')
+  };
+  closeModal();
+  renderBreakdownWithReview(_lastLines);
+  updateReviewSummary();
+  updateSubmitBtn();
+}
+
+function updateReviewSummary() {
+  var keys = Object.keys(remarks);
+  var panel = document.getElementById('reviewSummary');
+  var cont  = document.getElementById('reviewSummaryItems');
+  if (keys.length === 0) {
+    panel.classList.remove('has-flags');
+    return;
+  }
+  panel.classList.add('has-flags');
+  cont.innerHTML = '';
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var r = remarks[k];
+    var div = document.createElement('div');
+    div.className = 'rs-item';
+    div.innerHTML =
+      '<div class="rs-item-row">Row ' + (parseInt(k)+1) + ': ' + escHtml(r.label) + ' &mdash; ' + escHtml(r.formula) + ' = ' + fmtRM(r.amount) + '</div>' +
+      '<div class="rs-item-remark">Issue: ' + escHtml(r.remark) + (r.suggestion ? '<br>Suggestion: ' + escHtml(r.suggestion) : '') + '</div>' +
+      '<div class="rs-item-by">Flagged by ' + escHtml(r.by) + ' at ' + escHtml(r.ts) + '</div>';
+    cont.appendChild(div);
+  }
+}
+
+function updateSubmitBtn() {
+  var btn = document.getElementById('submitAllBtn');
+  var count = Object.keys(remarks).length;
+  btn.disabled = count === 0;
+  btn.textContent = count > 0
+    ? 'Send ' + count + ' Remark(s) via Telegram'
+    : 'Send All Remarks via Telegram';
+}
+
+function submitAllRemarks() {
+  var keys = Object.keys(remarks);
+  if (keys.length === 0) return;
+  var reviewer = document.getElementById('reviewerName').value.trim() || 'Anonymous';
+
+  // Build Telegram message
+  var projName = document.getElementById('projName').value || 'Unknown Project';
+  var msg = '\ud83d\udcca *Commission Review: ' + projName + '*\n';
+  msg += 'Reviewer: *' + reviewer + '*\n';
+  msg += 'Date: ' + new Date().toLocaleString('en-MY') + '\n';
+  msg += '\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n';
+  msg += keys.length + ' row(s) flagged:\n\n';
+
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var r = remarks[k];
+    msg += '\u26a0\ufe0f *Row ' + (parseInt(k)+1) + ': ' + r.label + '*\n';
+    msg += 'Formula: `' + r.formula + ' = RM ' + r.amount.toFixed(2) + '`\n';
+    msg += 'Issue: ' + r.remark + '\n';
+    if (r.suggestion) msg += 'Suggestion: ' + r.suggestion + '\n';
+    msg += '\n';
+  }
+  msg += '\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n';
+  msg += 'Please review and update the calculator accordingly.';
+
+  // Send to Telegram
+  var url = 'https://api.telegram.org/bot' + TG_BOT_TOKEN + '/sendMessage';
+  var body = JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode: 'Markdown' });
+
+  showToast('\u23f3 Sending to Telegram...');
+
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      showToast('\u2705 Sent! ' + keys.length + ' remark(s) delivered to Telegram.');
+    } else {
+      showToast('\u274c Telegram error: ' + (data.description || 'Unknown error') + '. Check Bot Token & Chat ID.');
+    }
+  })
+  .catch(function(err) {
+    showToast('\u274c Network error. Make sure you are connected to the internet.');
+  });
+}
+
+function showToast(msg) {
+  var toast = document.getElementById('tgToast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(function() { toast.classList.remove('show'); }, 5000);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showAlert(msg) {
+  var el = document.getElementById('alertBox');
+  el.textContent = msg; el.className = 'alert alert-err';
+}
+function clearAlert() {
+  var el = document.getElementById('alertBox');
+  el.textContent = ''; el.className = 'alert';
+}
+</script>
+
+
+<!-- PASSWORD MODAL -->
+<div class="pw-overlay" id="pwOverlay">
+  <div class="pw-box">
+    <div class="pw-icon">&#128274;</div>
+    <div class="pw-title">Review Mode Access</div>
+    <div class="pw-sub">This feature is restricted.<br>Enter the access password to enable expert review.</div>
+    <div id="pwLockedMsg" class="pw-locked" style="display:none;">
+      &#128683; Too many wrong attempts. Locked for <span id="lockCountdown">60</span>s.
+    </div>
+    <div class="pw-field">
+      <input type="password" id="pwInput" placeholder="&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;" maxlength="32"
+             oninput="clearPwError()" onkeydown="if(event.key==='Enter')checkPassword()"/>
+      <button class="pw-toggle" onclick="togglePwVisibility()" id="pwToggleBtn" title="Show/hide password">&#128065;</button>
+    </div>
+    <span class="pw-error" id="pwError"></span>
+    <div class="pw-attempts" id="pwAttempts"></div>
+    <button class="btn-pw-submit" onclick="checkPassword()">Unlock Review Mode</button>
+    <button class="btn-pw-cancel" onclick="closePwModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- REVIEW REMARK MODAL -->
+<div class="modal-overlay" id="remarkModal">
+  <div class="modal-box">
+    <div class="modal-title">&#9888; Flag Calculation Row</div>
+    <div class="modal-subtitle" id="modalSubtitle">Row: <strong></strong></div>
+    <div class="modal-field">
+      <label>What do you think is wrong?</label>
+      <textarea id="remarkText" placeholder="Describe the issue, e.g. 'The WTP Gen1 base should be 20,000 not 120,000 because...'"></textarea>
+    </div>
+    <div class="modal-field">
+      <label>Your suggested correct value (optional)</label>
+      <input type="text" id="remarkSuggestion" placeholder="e.g. 2% x RM 20,000 = RM 400"/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-modal-submit" onclick="submitRemark()">Flag This Row</button>
+    </div>
+  </div>
+</div>
+
+<!-- TELEGRAM TOAST -->
+<div class="tg-toast" id="tgToast"></div>
+
+</body>
+</html>

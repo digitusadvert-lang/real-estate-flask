@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Agent Performance</title>
+<style>
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+        .topbar { background:#2c3e50; color:white; padding:12px 16px; display:flex;
+                  align-items:center; justify-content:space-between; gap:8px;
+                  position:sticky; top:0; z-index:100; }
+        .topbar-title { font-size:1rem; font-weight:700; }
+        .topbar-right { display:flex; align-items:center; gap:10px; }
+        .topbar-right a { color:#a8c8ff; text-decoration:none; font-size:13px; }
+        .hamburger { display:none; background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:2px 6px; }
+        .nav-bar { background:white; padding:10px 16px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+        .nav-bar a { color:#007bff; text-decoration:none; font-weight:600; font-size:13px; padding:5px 10px; border-radius:6px; white-space:nowrap; }
+        .nav-bar a:hover { background:#f0f7ff; }
+        .nav-bar a.nav-btn { background:#2563eb; color:white; }
+        .nav-bar a.nav-logout { color:#dc3545; }
+        .wrap { max-width:1400px; margin:0 auto; padding:16px; }
+        .card { background:white; border-radius:10px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        .card-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#7a8fa0; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #eee; }
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin-bottom:16px; }
+        .scard { background:white; border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08); border-top:3px solid #ddd; }
+        .scard h3 { margin:0 0 6px; font-size:12px; color:#888; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+        .scard-val { font-size:1.4rem; font-weight:800; margin-bottom:2px; }
+        .scard small { font-size:11px; color:#888; }
+        .tbl-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        table { width:100%; border-collapse:collapse; background:white; min-width:500px; }
+        th { background:#2c3e50; color:white; padding:10px 12px; text-align:left; font-size:12px; white-space:nowrap; }
+        td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:13px; vertical-align:top; }
+        tr:last-child td { border-bottom:none; }
+        tr:hover td { background:#fafbfc; }
+        .badge { padding:3px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+        .act-btn { display:inline-block; padding:5px 10px; border:none; border-radius:5px; font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; margin:2px 0; }
+        .act-green { background:#28a745; color:white; }
+        .act-blue  { background:#007bff; color:white; }
+        .act-red   { background:#dc3545; color:white; }
+        .act-grey  { background:#6c757d; color:white; }
+        .act-purple{ background:#6f42c1; color:white; }
+        .filter-wrap { background:white; border-radius:10px; padding:14px 16px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+        .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .filter-row select,.filter-row input { padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:13px; flex:1; min-width:120px; }
+        .btn-go  { padding:7px 14px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; white-space:nowrap; }
+        .btn-clr { padding:7px 12px; background:#6c757d; color:white; border:none; border-radius:6px; font-size:13px; text-decoration:none; white-space:nowrap; display:inline-block; }
+        .sec-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px; }
+        .sec-hdr h2 { margin:0; font-size:15px; }
+        .empty { padding:30px; text-align:center; background:white; border-radius:10px; }
+        .form-group { margin-bottom:16px; }
+        label { display:block; margin-bottom:5px; font-weight:600; color:#444; font-size:13px; }
+        input[type=text],input[type=email],input[type=password],input[type=number],select,textarea {
+            width:100%; padding:9px 11px; border:1px solid #ccc; border-radius:6px; font-size:14px; background:#fafafa; }
+        input:focus,select:focus,textarea:focus { outline:none; border-color:#007bff; background:white; }
+        .btn-primary   { background:#007bff; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; }
+        .btn-secondary { background:#6c757d; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; text-decoration:none; display:inline-block; }
+        .flash-s { background:#d4edda; color:#155724; padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:13px; border-left:4px solid #28a745; }
+        .flash-e { background:#f8d7da; color:#721c24; padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:13px; border-left:4px solid #dc3545; }
+        @media(max-width:640px) {
+            .hamburger { display:block; }
+            .nav-bar { display:none; flex-direction:column; align-items:stretch; padding:8px 12px; gap:2px; }
+            .nav-bar.open { display:flex; }
+            .nav-bar a { padding:10px 12px; font-size:14px; border-bottom:1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom:none; }
+            .wrap { padding:10px; }
+            .stats-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
+            .scard { padding:12px; }
+            .scard-val { font-size:1.2rem; }
+            .filter-row { flex-direction:column; align-items:stretch; }
+            .filter-row select,.filter-row input,.btn-go,.btn-clr { width:100%; }
+            td,th { padding:8px 10px!important; font-size:12px; }
+        }
+        .rank-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700}
+        .rc-REN{background:#ede8ff;color:#4a1ea8}.rc-AssocREN{background:#dbeeff;color:#0055b3}
+        .rc-EliteREN{background:#fff4cc;color:#7a4f00}.rc-TL{background:#d6f5e3;color:#0a5c30}
+        .rc-ATL{background:#fff0e0;color:#7a3300}
+        .prog-bg{background:#e9ecef;border-radius:999px;height:5px;margin:3px 0}
+        .prog-fg{height:5px;border-radius:999px;background:linear-gradient(90deg,#007bff,#6f42c1)}
+        .earn-chip{padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
+        .ep{background:#d4edda;color:#155724}.eo{background:#cce5ff;color:#004085}.ew{background:#fff3cd;color:#856404}
+        .promo-row{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:13px}
+        .promo-row:last-child{border-bottom:none}
+        .promo-date{font-size:11px;color:#888;margin-left:auto;white-space:nowrap}
+        .perf-bottom{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+        @media(max-width:640px){
+            .perf-bottom{grid-template-columns:1fr}
+            #agentTable th:nth-child(6),#agentTable td:nth-child(6),
+            #agentTable th:nth-child(8),#agentTable td:nth-child(8){display:none}
+        }
+</style>
+</head>
+<body>
+<div class="topbar">
+    <div class="topbar-title">&#128200; Agent Performance</div>
+    <div class="topbar-right"><a href="/admin/export-data?type=agents">&#128228; Export</a><button class="hamburger" onclick="toggleNav()">&#9776;</button></div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">&#128202; Dashboard</a>
+  <a href="/admin/projects">&#127962; Projects</a>
+  <a href="/admin/create-project" class="nav-btn">&#10010; New Project</a>
+  <a href="/admin/agents">&#128101; Agents</a>
+  <a href="/admin/agent-hierarchy">&#128279; Hierarchy</a>
+  <a href="/admin/payments">&#9993; Payments</a>
+  <a href="/admin/commissions">&#128176; Commissions</a>
+  <a href="/admin/unified-submissions">&#128203; Unified Submissions</a>
+  <a href="/admin/agent-performance" class="nav-active">&#128200; Performance</a>
+  <a href="/admin/commission-calculator">&#9889; Calc</a>
+  <a href="/admin/settings">&#9881; Settings</a>
+  <a href="/admin/export-data">&#128228; Export</a>
+</div>
+<div class="wrap">
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#007bff"><h3>Total Agents</h3><div class="scard-val" style="color:#007bff">{{ total_agents }}</div></div>
+  <div class="scard" style="border-top-color:#28a745"><h3>Commissions</h3><div class="scard-val" style="color:#28a745">RM{{ "{:,.0f}".format(total_commissions) }}</div></div>
+  <div class="scard" style="border-top-color:#6f42c1"><h3>Total Sales</h3><div class="scard-val" style="color:#6f42c1">RM{{ "{:,.0f}".format(total_sales) }}</div></div>
+  <div class="scard" style="border-top-color:#17a2b8"><h3>Avg Success</h3><div class="scard-val" style="color:#17a2b8">{{ avg_success }}%</div></div>
+</div>
+<div class="card" style="padding:12px 16px;margin-bottom:14px">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <strong style="font-size:13px">&#127942; Ranks:</strong>
+    {% set rs={"REN":"rc-REN","Assoc REN":"rc-AssocREN","Elite REN":"rc-EliteREN","TL":"rc-TL","ATL":"rc-ATL"} %}
+    {% for rn in ["REN","Assoc REN","Elite REN","TL","ATL"] %}{% if rank_counts.get(rn,0)>0 %}
+    <span class="rank-chip {{ rs.get(rn,'rc-REN') }}">{{ rn }} &bull; {{ rank_counts.get(rn,0) }}</span>
+    {% endif %}{% endfor %}
+    <span style="font-size:11px;color:#888;margin-left:auto">RM30k&#8594;Assoc|RM90k&#8594;Elite|RM210k&#8594;TL|RM450k&#8594;ATL</span>
+  </div>
+</div>
+<div class="filter-wrap">
+  <div class="filter-row">
+    <input type="text" id="searchInput" placeholder="Search agent..." oninput="filterTable()"/>
+    <select id="rankFilter" onchange="filterTable()"><option value="">All Ranks</option><option>REN</option><option>Assoc REN</option><option>Elite REN</option><option>TL</option><option>ATL</option></select>
+    <select id="sortBy" onchange="sortTable()"><option value="comm">Commission</option><option value="sales">Sales</option><option value="approved">Deals</option><option value="name">Name</option></select>
+    <span id="agentCount" style="font-size:12px;color:#666"></span>
+  </div>
+</div>
+<div class="tbl-wrap"><table id="agentTable">
+  <thead><tr><th>#</th><th>Agent</th><th>Rank &amp; Progress</th><th>Deals</th><th>Success</th><th>Earnings</th><th>Commission</th><th>Cum. Gross</th></tr></thead>
+  <tbody id="agentTbody">
+  {% for a in agents %}
+  <tr data-name="{{ a.name|lower }}" data-email="{{ a.email|lower }}" data-rank="{{ a.rank }}"
+      data-comm="{{ a.total_comm }}" data-sales="{{ a.total_sales }}" data-approved="{{ a.approved }}" data-cumgross="{{ a.cumgross }}">
+    <td style="color:#888;font-weight:700">{{ loop.index }}</td>
+    <td><strong>{{ a.name }}</strong><br><small style="color:#888">{{ a.email }}</small><br><small style="color:#555">&#8679; {{ a.upline }}</small></td>
+    <td style="min-width:140px">
+      {% set rs2={"REN":"rc-REN","Assoc REN":"rc-AssocREN","Elite REN":"rc-EliteREN","TL":"rc-TL","ATL":"rc-ATL"} %}
+      <span class="rank-chip {{ rs2.get(a.rank,'rc-REN') }}">{{ a.rank }} &bull; {{ a.comm_rate|int }}%</span>
+      <div class="prog-bg"><div class="prog-fg" style="width:{{ a.prog_pct }}%"></div></div>
+      {% if a.next_rank %}<small style="color:#888">{{ a.prog_pct }}% &#8594; {{ a.next_rank }}</small>{% else %}<small style="color:#28a745;font-weight:700">&#127942; ATL</small>{% endif %}
+    </td>
+    <td><div>{{ a.total_l }}</div><div style="color:#28a745;font-size:11px">&#10003;{{ a.approved }}</div><div style="color:#dc3545;font-size:11px">&#10007;{{ a.rejected }}</div></td>
+    <td>{% if a.total_l>0 %}<strong style="color:{% if a.success_rate>=80 %}#28a745{% elif a.success_rate>=50 %}#ffc107{% else %}#dc3545{% endif %}">{{ a.success_rate }}%</strong>{% else %}<span style="color:#aaa">—</span>{% endif %}</td>
+    <td>{% if a.personal_e>0 %}<span class="earn-chip ep">P RM{{ "{:,.0f}".format(a.personal_e) }}</span> {% endif %}{% if a.override_e>0 %}<span class="earn-chip eo">O RM{{ "{:,.0f}".format(a.override_e) }}</span> {% endif %}{% if a.wtp1_e+a.wtp2_e>0 %}<span class="earn-chip ew">W RM{{ "{:,.0f}".format(a.wtp1_e+a.wtp2_e) }}</span>{% endif %}{% if a.personal_e==0 and a.override_e==0 and a.wtp1_e==0 %}<span style="color:#aaa;font-size:11px">—</span>{% endif %}</td>
+    <td><strong style="color:#28a745">RM{{ "{:,.2f}".format(a.total_comm) }}</strong></td>
+    <td><strong>RM{{ "{:,.0f}".format(a.cumgross) }}</strong></td>
+  </tr>
+  {% else %}<tr><td colspan="8" style="text-align:center;padding:30px;color:#888">No agents found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<div class="perf-bottom">
+  <div>
+    <div class="sec-hdr"><h2>&#127942; Recent Promotions</h2></div>
+    {% if recent_promotions %}<div class="card" style="padding:0">{% for p in recent_promotions %}
+    <div class="promo-row">&#11014; <strong>{{ p[1] }}</strong> <span style="color:#28a745;font-weight:700">{{ p[2] }} &#8594; {{ p[3] }}</span>{% if p[4] %} <span style="font-size:11px;color:#666">RM{{ "{:,.0f}".format(p[4]) }}</span>{% endif %}<span class="promo-date">{{ p[0][:10] if p[0] else '' }}</span></div>
+    {% endfor %}</div>{% else %}<div class="empty"><p style="color:#888">No promotions yet.</p></div>{% endif %}
+  </div>
+  <div>
+    <div class="sec-hdr"><h2>&#128197; Monthly Activity</h2></div>
+    {% if monthly_data %}<div class="tbl-wrap" style="margin-bottom:0"><table><thead><tr><th>Month</th><th>Agent</th><th>Rank</th><th>Deals</th><th>Commission</th></tr></thead><tbody>
+    {% set rs3={"REN":"rc-REN","Assoc REN":"rc-AssocREN","Elite REN":"rc-EliteREN","TL":"rc-TL","ATL":"rc-ATL"} %}
+    {% for m in monthly_data %}<tr><td>{{ m[0] }}</td><td>{{ m[1] }}</td><td><span class="rank-chip {{ rs3.get(m[2],'rc-REN') }}">{{ m[2] }}</span></td><td>{{ m[3] }}</td><td><strong style="color:#28a745">RM{{ "{:,.2f}".format(m[4] or 0) }}</strong></td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<div class="empty"><p style="color:#888">No data yet.</p></div>{% endif %}
+  </div>
+</div>
+</div>
+<script>
+function filterTable(){const q=document.getElementById('searchInput').value.toLowerCase();const rank=document.getElementById('rankFilter').value;let v=0;document.querySelectorAll('#agentTbody tr').forEach(function(row){if(!row.dataset.name)return;const show=(!q||row.dataset.name.includes(q)||row.dataset.email.includes(q))&&(!rank||row.dataset.rank===rank);row.style.display=show?'':'none';if(show)v++;});let i=1;document.querySelectorAll('#agentTbody tr').forEach(function(row){if(row.style.display!=='none'&&row.cells[0])row.cells[0].textContent=i++;});document.getElementById('agentCount').textContent='Showing '+v+' agent'+(v!==1?'s':'');}
+function sortTable(){const key=document.getElementById('sortBy').value;const tbody=document.getElementById('agentTbody');const rows=Array.from(tbody.querySelectorAll('tr')).filter(r=>r.dataset.name);rows.sort(function(a,b){if(key==='name')return a.dataset.name.localeCompare(b.dataset.name);return(parseFloat(b.dataset[key])||0)-(parseFloat(a.dataset[key])||0);});rows.forEach(r=>tbody.appendChild(r));filterTable();}
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){filterTable();document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});});
+</script>
+</body>
+</html>"""
+
+
+
+@app.route("/admin/export-full-db")
+def export_full_database():
+    """Export complete database as SQL and CSV files"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    try:
+        # Create export directory
+        export_dir = "database_exports"
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_filename = f"real_estate_db_export_{timestamp}"
+
+        conn = sqlite3.connect("real_estate.db")
+        cursor = conn.cursor()
+
+        # Get all table names
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+
+        # Create SQL dump
+        sql_dump = f'-- Real Estate Database Export\n-- Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n-- Tables: {len(tables)}\n\n'
+
+        # Create ZIP file in memory
+        from io import BytesIO
+        import zipfile
+
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+
+            # 1. Export as SQL
+            for table in tables:
+                # Get table schema
+                cursor.execute(
+                    f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'"
+                )
+                schema = cursor.fetchone()[0]
+
+                sql_dump += f"--\n-- Table: {table}\n--\n\n"
+                sql_dump += f"{schema};\n\n"
+
+                # Get table data
+                cursor.execute(f"SELECT * FROM {table}")
+                rows = cursor.fetchall()
+
+                if rows:
+                    # Get column names
+                    cursor.execute(f"PRAGMA table_info({table})")
+                    columns = [col[1] for col in cursor.fetchall()]
+
+                    sql_dump += f"-- Data for table {table} ({len(rows)} rows)\n"
+
+                    for row in rows:
+                        values = []
+                        for value in row:
+                            if value is None:
+                                values.append("NULL")
+                            elif isinstance(value, (int, float)):
+                                values.append(str(value))
+                            else:
+                                # Escape single quotes in strings
+                                escaped = str(value).replace("'", "''")
+                                values.append(f"'{escaped}'")
+
+                        sql_dump += f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(values)});\n"
+
+                sql_dump += "\n"
+
+            # Add SQL file to zip
+            zip_file.writestr(f"{export_filename}.sql", sql_dump)
+
+            # 2. Export each table as CSV
+            for table in tables:
+                cursor.execute(f"SELECT * FROM {table}")
+                rows = cursor.fetchall()
+
+                if rows:
+                    # Get column names
+                    cursor.execute(f"PRAGMA table_info({table})")
+                    columns = [col[1] for col in cursor.fetchall()]
+
+                    # Create CSV content
+                    csv_content = ",".join(columns) + "\n"
+
+                    for row in rows:
+                        row_data = []
+                        for value in row:
+                            if value is None:
+                                row_data.append("")
+                            elif isinstance(value, (int, float)):
+                                row_data.append(str(value))
+                            else:
+                                # Escape commas and quotes in CSV
+                                escaped = str(value).replace('"', '""')
+                                if "," in escaped or '"' in escaped or "\n" in escaped:
+                                    escaped = f'"{escaped}"'
+                                row_data.append(escaped)
+
+                        csv_content += ",".join(row_data) + "\n"
+
+                    # Add CSV file to zip
+                    zip_file.writestr(f"{export_filename}/{table}.csv", csv_content)
+
+            # 3. Create README file
+            readme_content = f"""Real Estate Database Export
+===============================
+
+Export Details:
+- Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+- Database: real_estate.db
+- Tables exported: {len(tables)}
+- Export ID: {export_filename}
+
+Table Information:
+{'-' * 40}

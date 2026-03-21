@@ -163,7 +163,798 @@ def get_file_icon(file_type):
         return "📎"
 
 
-# ===================== MULTI-LEVEL COMMISSION HELPERS =====================
+# ===================== TAIKO EA RANK & COMMISSION SYSTEM =====================
+
+# ------------------------------------------------------------
+# RANK THRESHOLDS — based on agent's personal cumulative gross
+# ------------------------------------------------------------
+TAIKO_RANKS = [
+    {"rank": "REN",        "payout_pct": 70.0, "cumulative_target": 0},
+    {"rank": "Assoc REN",  "payout_pct": 75.0, "cumulative_target": 30_000},
+    {"rank": "Elite REN",  "payout_pct": 80.0, "cumulative_target": 90_000},
+    {"rank": "TL",         "payout_pct": 85.0, "cumulative_target": 210_000},
+    {"rank": "ATL",        "payout_pct": 90.0, "cumulative_target": 450_000},
+]
+
+def get_rank_for_cumulative(cumulative_gross):
+    """Return the correct rank dict for a given cumulative gross amount."""
+    current_rank = TAIKO_RANKS[0]
+    for rank in TAIKO_RANKS:
+        if cumulative_gross >= rank["cumulative_target"]:
+            current_rank = rank
+    return current_rank
+
+def get_next_rank(current_rank_name):
+    """Return the next rank dict above the current rank, or None if already ATL."""
+    for i, rank in enumerate(TAIKO_RANKS):
+        if rank["rank"] == current_rank_name and i + 1 < len(TAIKO_RANKS):
+            return TAIKO_RANKS[i + 1]
+    return None
+
+# ------------------------------------------------------------
+# RANK PROMOTION CHECK — called after each approved personal deal
+# Q1: Only personal deals count toward cumulative gross
+# Q2: Old rate applies to current deal; new rate from next deal
+# ------------------------------------------------------------
+def check_and_promote_agent(agent_id, conn=None):
+    """
+    Check if agent qualifies for a rank promotion after a personal deal is approved.
+    Returns dict with promotion info if promoted, else None.
+    Rule Q1: Only personal (own) deals count.
+    Rule Q2: Promotion takes effect AFTER current deal — new rate from next deal.
+    """
+    close_conn = False
+    if conn is None:
+        conn = get_db_connection()
+        close_conn = True
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT agent_rank, commission_rate, cumulative_gross, name, email
+            FROM users WHERE id = ? AND role = 'agent'
+            """,
+            (agent_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        current_rank, current_rate, cumulative_gross, agent_name, agent_email = row
+        cumulative_gross = float(cumulative_gross or 0)
+
+        # Determine what rank they SHOULD be at
+        new_rank_info = get_rank_for_cumulative(cumulative_gross)
+        new_rank = new_rank_info["rank"]
+        new_pct  = new_rank_info["payout_pct"]
+
+        # Only act if rank has changed
+        if new_rank == current_rank:
+            return None
+
+        # Update user's rank and commission rate
+        cursor.execute(
+            """
+            UPDATE users
+            SET agent_rank = ?, commission_rate = ?
+            WHERE id = ?
+            """,
+            (new_rank, new_pct, agent_id)
+        )
+
+        # Log the promotion
+        cursor.execute(
+            """
+            INSERT INTO rank_promotion_log
+            (agent_id, old_rank, new_rank, old_pct, new_pct, cumulative_gross_at_promotion)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (agent_id, current_rank, new_rank, current_rate, new_pct, cumulative_gross)
+        )
+
+        conn.commit()
+
+        promotion_info = {
+            "promoted": True,
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "old_rank": current_rank,
+            "new_rank": new_rank,
+            "old_pct": float(current_rate or 70),
+            "new_pct": new_pct,
+            "cumulative_gross": cumulative_gross,
+        }
+
+        # Notify agent
+        create_agent_notification(
+            agent_id=agent_id,
+            notification_type="rank_promotion",
+            title=f"🎉 Congratulations! You've been promoted to {new_rank}!",
+            message=(
+                f"You have been promoted from {current_rank} to {new_rank}! "
+                f"Your new commission payout rate is {new_pct}%. "
+                f"This new rate applies to your next deal onwards. "
+                f"Total cumulative gross: RM {cumulative_gross:,.2f}"
+            ),
+            related_id=agent_id,
+            related_type="agent",
+            priority="high",
+        )
+
+        return promotion_info
+
+    except Exception as e:
+        print(f"Error in check_and_promote_agent: {e}")
+        return None
+    finally:
+        if close_conn:
+            conn.close()
+
+
+# ------------------------------------------------------------
+# ADMIN RANK OVERRIDE — manually set any agent to any rank
+# Admin can promote OR demote, supply custom cumulative_gross
+# and a reason. Logs as 'admin' in rank_promotion_log.
+# ------------------------------------------------------------
+def admin_set_agent_rank(agent_id, new_rank, new_cumulative_gross, reason, admin_id):
+    """
+    Admin manually assigns a rank (and custom cumulative_gross) to any agent.
+    - Can promote OR demote freely
+    - cumulative_gross set to admin-supplied value
+    - Logs promoted_by = 'admin' with admin_id and reason
+    - Notifies agent with an admin-assigned message
+    Returns dict with result info, or raises on error.
+    """
+    valid_ranks = [r["rank"] for r in TAIKO_RANKS]
+    if new_rank not in valid_ranks:
+        raise ValueError(f"Invalid rank '{new_rank}'. Must be one of: {valid_ranks}")
+
+    new_pct = next(r["payout_pct"] for r in TAIKO_RANKS if r["rank"] == new_rank)
+    new_cumulative_gross = float(new_cumulative_gross or 0)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT name, email, agent_rank, commission_rate, cumulative_gross
+            FROM users WHERE id = ? AND role = 'agent'
+            """,
+            (agent_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Agent {agent_id} not found or is not an active agent.")
+
+        agent_name, agent_email, old_rank, old_pct, old_cumulative = row
+        old_pct = float(old_pct or 70)
+
+        old_rank_idx = next((i for i, r in enumerate(TAIKO_RANKS) if r["rank"] == old_rank), 0)
+        new_rank_idx = next((i for i, r in enumerate(TAIKO_RANKS) if r["rank"] == new_rank), 0)
+        is_promotion = new_rank_idx > old_rank_idx
+        is_demotion  = new_rank_idx < old_rank_idx
+
+        cursor.execute(
+            """
+            UPDATE users
+            SET agent_rank       = ?,
+                commission_rate  = ?,
+                cumulative_gross = ?
+            WHERE id = ?
+            """,
+            (new_rank, new_pct, new_cumulative_gross, agent_id)
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO rank_promotion_log
+            (agent_id, old_rank, new_rank, old_pct, new_pct,
+             cumulative_gross_at_promotion, promoted_by, admin_id, reason)
+            VALUES (?, ?, ?, ?, ?, ?, 'admin', ?, ?)
+            """,
+            (agent_id, old_rank, new_rank, old_pct, new_pct,
+             new_cumulative_gross, admin_id, reason)
+        )
+
+        conn.commit()
+
+        if is_promotion:
+            title   = f"\U0001f389 You have been promoted to {new_rank}!"
+            message = (
+                f"Your rank has been updated by the admin from {old_rank} to {new_rank}. "
+                f"Your new commission payout rate is {new_pct:.0f}%. "
+                f"This rate applies to your next deal onwards."
+            )
+        elif is_demotion:
+            title   = f"\U0001f4cb Your rank has been updated to {new_rank}"
+            message = (
+                f"Your rank has been adjusted by the admin from {old_rank} to {new_rank}. "
+                f"Your commission payout rate is now {new_pct:.0f}%. "
+                f"Please contact your admin if you have any questions."
+            )
+        else:
+            title   = f"\U0001f4cb Your rank record has been updated"
+            message = (
+                f"Your rank remains {new_rank} ({new_pct:.0f}%). "
+                f"Your cumulative gross has been updated to RM {new_cumulative_gross:,.2f}."
+            )
+
+        if reason:
+            message += f" Reason: {reason}"
+
+        create_agent_notification(
+            agent_id=agent_id,
+            notification_type="rank_admin_update",
+            title=title,
+            message=message,
+            related_id=agent_id,
+            related_type="agent",
+            priority="high",
+        )
+
+        return {
+            "success":              True,
+            "agent_id":             agent_id,
+            "agent_name":           agent_name,
+            "old_rank":             old_rank,
+            "new_rank":             new_rank,
+            "old_pct":              old_pct,
+            "new_pct":              new_pct,
+            "new_cumulative_gross": new_cumulative_gross,
+            "action":               "promoted" if is_promotion else ("demoted" if is_demotion else "updated"),
+            "reason":               reason,
+        }
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Error in admin_set_agent_rank: {e}")
+        raise e
+    finally:
+        conn.close()
+
+
+@app.route("/admin/set-agent-rank", methods=["POST"])
+def admin_set_agent_rank_route():
+    """Admin POST route to change any agent rank + cumulative gross."""
+    if "user_id" not in session or session.get("user_role") != "admin":
+        return redirect("/login")
+
+    agent_id       = request.form.get("agent_id", type=int)
+    new_rank       = request.form.get("new_rank", "").strip()
+    new_cumulative = request.form.get("cumulative_gross", type=float, default=0)
+    reason         = request.form.get("reason", "").strip()
+    admin_id       = session["user_id"]
+    redirect_to    = request.form.get("redirect_to", "/admin/agents")
+
+    if not agent_id or not new_rank:
+        flash("Agent ID and new rank are required.", "error")
+        return redirect(redirect_to)
+
+    try:
+        result = admin_set_agent_rank(
+            agent_id=agent_id,
+            new_rank=new_rank,
+            new_cumulative_gross=new_cumulative,
+            reason=reason or "Admin manual assignment",
+            admin_id=admin_id,
+        )
+        flash(
+            f"\u2705 {result['agent_name']} has been {result['action']} "
+            f"from {result['old_rank']} ({result['old_pct']:.0f}%) "
+            f"to {result['new_rank']} ({result['new_pct']:.0f}%). "
+            f"Cumulative gross set to RM {result['new_cumulative_gross']:,.2f}.",
+            "success"
+        )
+    except ValueError as ve:
+        flash(f"\u274c {str(ve)}", "error")
+    except Exception as e:
+        flash(f"\u274c Unexpected error: {str(e)}", "error")
+
+    return redirect(redirect_to)
+
+
+@app.route("/admin/agent-rank-history/<int:agent_id>")
+def admin_agent_rank_history(agent_id):
+    """Returns rank promotion/change history for an agent as JSON."""
+    if "user_id" not in session or session.get("user_role") != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT
+                rpl.id, rpl.old_rank, rpl.new_rank, rpl.old_pct, rpl.new_pct,
+                rpl.cumulative_gross_at_promotion, rpl.promoted_by,
+                rpl.reason, rpl.promoted_at,
+                u.name as admin_name
+            FROM rank_promotion_log rpl
+            LEFT JOIN users u ON rpl.admin_id = u.id
+            WHERE rpl.agent_id = ?
+            ORDER BY rpl.promoted_at DESC
+            """,
+            (agent_id,)
+        )
+        rows = cursor.fetchall()
+        cols = ["id","old_rank","new_rank","old_pct","new_pct",
+                "cumulative_gross_at_promotion","promoted_by","reason",
+                "promoted_at","admin_name"]
+        history = [dict(zip(cols, r)) for r in rows]
+        return jsonify({"history": history})
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------
+# TEAM GROSS CALCULATOR — recursive, handles any depth & branching
+# Returns total gross commission generated by agent + all downlines
+# ------------------------------------------------------------
+def get_team_gross(agent_id, listing_id, cursor):
+    """
+    Recursively calculate the total gross commission generated by an agent's team
+    for a specific listing (deal). Used to compute override amounts.
+    
+    'Team gross' = sum of gross_commission for all deals closed by agent
+                   and everyone below them in the hierarchy.
+    """
+    total = 0.0
+
+    # Get this agent's own commission on this listing (if any)
+    cursor.execute(
+        """
+        SELECT gross_commission_base FROM taiko_commission_entries
+        WHERE listing_id = ? AND agent_id = ? AND entry_type = 'personal'
+        """,
+        (listing_id, agent_id)
+    )
+    row = cursor.fetchone()
+    if row:
+        total += float(row[0])
+
+    # Get all direct downlines of this agent
+    cursor.execute(
+        "SELECT id FROM users WHERE upline_id = ? AND role = 'agent'",
+        (agent_id,)
+    )
+    downlines = cursor.fetchall()
+    for (dl_id,) in downlines:
+        total += get_team_gross(dl_id, listing_id, cursor)
+
+    return total
+
+
+# ------------------------------------------------------------
+# MAIN TAIKO EA COMMISSION ENGINE
+# Override model: upline earns (own% - downline%) × downline team gross
+# WTP kicks in when gap = 0: Gen1 +2%, Gen2 +1%
+# ------------------------------------------------------------
+def calculate_taiko_commission(listing_id, selling_agent_id, gross_commission):
+    """
+    Calculate and persist the full commission distribution for a deal
+    using the TAIKO EA override model.
+
+    Parameters:
+    - listing_id       : ID of the property_listing
+    - selling_agent_id : ID of the agent who personally closed the deal
+    - gross_commission : Total gross commission amount (RM) paid by developer
+
+    Returns list of commission entry dicts for all parties.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    entries = []
+
+    try:
+        # ── Step 1: Get selling agent's current rank/rate ──
+        cursor.execute(
+            "SELECT agent_rank, commission_rate FROM users WHERE id = ?",
+            (selling_agent_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Agent {selling_agent_id} not found")
+
+        agent_rank, agent_pct = row[0], float(row[1] or 70)
+
+        # ── Step 2: Record selling agent's personal entry ──
+        agent_amount = gross_commission * (agent_pct / 100)
+        cursor.execute(
+            """
+            INSERT INTO taiko_commission_entries
+            (listing_id, agent_id, entry_type, rank_at_time, pct_at_time,
+             gross_commission_base, amount, level, description)
+            VALUES (?, ?, 'personal', ?, ?, ?, ?, 0, ?)
+            """,
+            (listing_id, selling_agent_id, agent_rank, agent_pct,
+             gross_commission, agent_amount,
+             f"{agent_rank} personal deal: {agent_pct}% × RM {gross_commission:,.2f}")
+        )
+        entries.append({
+            "agent_id":   selling_agent_id,
+            "type":       "personal",
+            "rank":       agent_rank,
+            "pct":        agent_pct,
+            "base":       gross_commission,
+            "amount":     agent_amount,
+            "level":      0,
+        })
+
+        # ── Step 3: Update agent's cumulative gross (personal only — Q1) ──
+        cursor.execute(
+            """
+            UPDATE users
+            SET cumulative_gross = COALESCE(cumulative_gross, 0) + ?,
+                total_commission  = COALESCE(total_commission, 0) + ?
+            WHERE id = ?
+            """,
+            (gross_commission, agent_amount, selling_agent_id)
+        )
+        conn.commit()
+
+        # ── Step 4: Check for rank promotion (Q2 — takes effect next deal) ──
+        promotion = check_and_promote_agent(selling_agent_id, conn)
+
+        # ── Step 5: Walk up the upline chain and distribute overrides ──
+        current_downline_id   = selling_agent_id
+        current_downline_pct  = agent_pct
+        level = 1
+
+        while True:
+            # Get direct upline of current node
+            cursor.execute(
+                "SELECT id, agent_rank, commission_rate, upline_id FROM users WHERE id = (SELECT upline_id FROM users WHERE id = ?)",
+                (current_downline_id,)
+            )
+            upline_row = cursor.fetchone()
+            if not upline_row:
+                break  # Reached top of chain
+
+            upline_id, upline_rank, upline_pct_raw, upline_upline_id = upline_row
+            upline_pct = float(upline_pct_raw or 70)
+
+            # Get downline's full team gross for this listing
+            downline_team_gross = get_team_gross(current_downline_id, listing_id, cursor)
+
+            gap = round(upline_pct - current_downline_pct, 4)
+
+            if gap > 0:
+                # ── Standard override ──
+                override_amount = downline_team_gross * (gap / 100)
+                cursor.execute(
+                    """
+                    INSERT INTO taiko_commission_entries
+                    (listing_id, agent_id, entry_type, rank_at_time, pct_at_time,
+                     gross_commission_base, amount, level, description, ref_downline_id)
+                    VALUES (?, ?, 'override', ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (listing_id, upline_id, upline_rank, upline_pct,
+                     downline_team_gross, override_amount, level,
+                     f"{upline_rank} override on {current_downline_pct}% downline: "
+                     f"({upline_pct}%−{current_downline_pct}%) × RM {downline_team_gross:,.2f}",
+                     current_downline_id)
+                )
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET total_commission = COALESCE(total_commission, 0) + ?
+                    WHERE id = ?
+                    """,
+                    (override_amount, upline_id)
+                )
+                entries.append({
+                    "agent_id":     upline_id,
+                    "type":         "override",
+                    "rank":         upline_rank,
+                    "pct":          upline_pct,
+                    "downline_pct": current_downline_pct,
+                    "gap_pct":      gap,
+                    "base":         downline_team_gross,
+                    "amount":       override_amount,
+                    "level":        level,
+                })
+
+            elif gap == 0:
+                # ── WTP Gen1: upline is same % as direct downline ──
+                wtp_gen1_pct = 2.0
+                wtp_gen1_amount = downline_team_gross * (wtp_gen1_pct / 100)
+                cursor.execute(
+                    """
+                    INSERT INTO taiko_commission_entries
+                    (listing_id, agent_id, entry_type, rank_at_time, pct_at_time,
+                     gross_commission_base, amount, level, description, ref_downline_id)
+                    VALUES (?, ?, 'wtp_gen1', ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (listing_id, upline_id, upline_rank, upline_pct,
+                     downline_team_gross, wtp_gen1_amount, level,
+                     f"WTP Gen1: {upline_rank} same level as downline — "
+                     f"2% × RM {downline_team_gross:,.2f}",
+                     current_downline_id)
+                )
+                cursor.execute(
+                    "UPDATE users SET total_commission = COALESCE(total_commission, 0) + ? WHERE id = ?",
+                    (wtp_gen1_amount, upline_id)
+                )
+                entries.append({
+                    "agent_id": upline_id,
+                    "type":     "wtp_gen1",
+                    "rank":     upline_rank,
+                    "pct":      upline_pct,
+                    "wtp_pct":  wtp_gen1_pct,
+                    "base":     downline_team_gross,
+                    "amount":   wtp_gen1_amount,
+                    "level":    level,
+                })
+
+                # ── WTP Gen2: indirect upline (upline's upline) also gets 1% ──
+                if upline_upline_id:
+                    cursor.execute(
+                        "SELECT agent_rank, commission_rate FROM users WHERE id = ?",
+                        (upline_upline_id,)
+                    )
+                    gen2_row = cursor.fetchone()
+                    if gen2_row:
+                        gen2_rank, gen2_pct_raw = gen2_row
+                        gen2_pct = float(gen2_pct_raw or 70)
+                        wtp_gen2_pct = 1.0
+                        wtp_gen2_amount = downline_team_gross * (wtp_gen2_pct / 100)
+                        cursor.execute(
+                            """
+                            INSERT INTO taiko_commission_entries
+                            (listing_id, agent_id, entry_type, rank_at_time, pct_at_time,
+                             gross_commission_base, amount, level, description, ref_downline_id)
+                            VALUES (?, ?, 'wtp_gen2', ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (listing_id, upline_upline_id, gen2_rank, gen2_pct,
+                             downline_team_gross, wtp_gen2_amount, level + 1,
+                             f"WTP Gen2: {gen2_rank} indirect upline of same-level event — "
+                             f"1% × RM {downline_team_gross:,.2f}",
+                             current_downline_id)
+                        )
+                        cursor.execute(
+                            "UPDATE users SET total_commission = COALESCE(total_commission, 0) + ? WHERE id = ?",
+                            (wtp_gen2_amount, upline_upline_id)
+                        )
+                        entries.append({
+                            "agent_id": upline_upline_id,
+                            "type":     "wtp_gen2",
+                            "rank":     gen2_rank,
+                            "pct":      gen2_pct,
+                            "wtp_pct":  wtp_gen2_pct,
+                            "base":     downline_team_gross,
+                            "amount":   wtp_gen2_amount,
+                            "level":    level + 1,
+                        })
+
+            # Move up the chain
+            current_downline_id  = upline_id
+            current_downline_pct = upline_pct
+            level += 1
+
+            # Safety guard — max 20 levels to prevent infinite loop
+            if level > 20:
+                print(f"Warning: chain depth exceeded 20 levels at agent {upline_id}")
+                break
+
+        conn.commit()
+
+        # ── Step 6: Store a summary record in commission_calculations ──
+        total_distributed = sum(e["amount"] for e in entries)
+        cursor.execute(
+            """
+            INSERT INTO commission_calculations
+            (listing_id, agent_id, sale_price, base_rate, commission, calculation_details)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                listing_id,
+                selling_agent_id,
+                gross_commission,
+                agent_pct,
+                agent_amount,
+                json.dumps({
+                    "method":            "taiko_override",
+                    "gross_commission":  gross_commission,
+                    "selling_agent_pct": agent_pct,
+                    "total_distributed": total_distributed,
+                    "entries":           entries,
+                    "promotion":         promotion,
+                    "calculated_at":     datetime.now().isoformat(),
+                })
+            )
+        )
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Error in calculate_taiko_commission: {e}")
+        import traceback; traceback.print_exc()
+        raise e
+    finally:
+        conn.close()
+
+    return entries
+
+
+# ------------------------------------------------------------
+# COMMISSION PREVIEW — no DB writes, just returns breakdown
+# Useful for showing agents what they'd earn before submitting
+# ------------------------------------------------------------
+def preview_taiko_commission(gross_commission, selling_agent_id):
+    """
+    Preview commission distribution without writing to DB.
+    Returns a breakdown list showing what each party would earn.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    preview = []
+
+    try:
+        cursor.execute(
+            "SELECT id, name, agent_rank, commission_rate, upline_id FROM users WHERE id = ?",
+            (selling_agent_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return []
+
+        agent_id, agent_name, agent_rank, agent_pct_raw, _ = row
+        agent_pct    = float(agent_pct_raw or 70)
+        agent_amount = gross_commission * (agent_pct / 100)
+
+        preview.append({
+            "name":   agent_name,
+            "rank":   agent_rank,
+            "type":   "personal",
+            "pct":    agent_pct,
+            "base":   gross_commission,
+            "amount": agent_amount,
+            "formula": f"{agent_pct}% × RM {gross_commission:,.2f}",
+        })
+
+        # Walk up chain
+        current_downline_id  = selling_agent_id
+        current_downline_pct = agent_pct
+        # For preview, treat entire gross as "team gross" of selling agent
+        running_team_gross   = gross_commission
+
+        level = 1
+        while level <= 20:
+            cursor.execute(
+                """
+                SELECT u.id, u.name, u.agent_rank, u.commission_rate, u.upline_id
+                FROM users u
+                WHERE u.id = (SELECT upline_id FROM users WHERE id = ?)
+                """,
+                (current_downline_id,)
+            )
+            upline_row = cursor.fetchone()
+            if not upline_row:
+                break
+
+            upline_id, upline_name, upline_rank, upline_pct_raw, upline_upline_id = upline_row
+            upline_pct = float(upline_pct_raw or 70)
+            gap = round(upline_pct - current_downline_pct, 4)
+
+            if gap > 0:
+                amount = running_team_gross * (gap / 100)
+                preview.append({
+                    "name":    upline_name,
+                    "rank":    upline_rank,
+                    "type":    "override",
+                    "pct":     upline_pct,
+                    "gap_pct": gap,
+                    "base":    running_team_gross,
+                    "amount":  amount,
+                    "formula": f"({upline_pct}%−{current_downline_pct}%) × RM {running_team_gross:,.2f}",
+                })
+            elif gap == 0:
+                wtp1 = running_team_gross * 0.02
+                preview.append({
+                    "name":    upline_name,
+                    "rank":    upline_rank,
+                    "type":    "wtp_gen1",
+                    "pct":     upline_pct,
+                    "wtp_pct": 2.0,
+                    "base":    running_team_gross,
+                    "amount":  wtp1,
+                    "formula": f"WTP Gen1: 2% × RM {running_team_gross:,.2f}",
+                })
+                if upline_upline_id:
+                    cursor.execute(
+                        "SELECT name, agent_rank, commission_rate FROM users WHERE id = ?",
+                        (upline_upline_id,)
+                    )
+                    g2 = cursor.fetchone()
+                    if g2:
+                        wtp2 = running_team_gross * 0.01
+                        preview.append({
+                            "name":    g2[0],
+                            "rank":    g2[1],
+                            "type":    "wtp_gen2",
+                            "pct":     float(g2[2] or 70),
+                            "wtp_pct": 1.0,
+                            "base":    running_team_gross,
+                            "amount":  wtp2,
+                            "formula": f"WTP Gen2: 1% × RM {running_team_gross:,.2f}",
+                        })
+
+            current_downline_id  = upline_id
+            current_downline_pct = upline_pct
+            level += 1
+
+    finally:
+        conn.close()
+
+    return preview
+
+
+# ------------------------------------------------------------
+# RANK PROGRESS HELPER — for agent dashboard display
+# ------------------------------------------------------------
+def get_agent_rank_progress(agent_id):
+    """
+    Returns rank info and progress toward next promotion for dashboard display.
+    WTP Rule: cumulative_gross includes submitted+approved commission_amount.
+    Rejected/draft excluded. Only deducted when admin rejects.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT agent_rank, commission_rate, cumulative_gross FROM users WHERE id = ?",
+            (agent_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        rank_name, comm_rate, _ = row
+
+        # WTP rule: gross = sum of commission_amount for submitted+approved
+        cursor.execute(
+            """SELECT COALESCE(SUM(commission_amount), 0)
+               FROM property_listings
+               WHERE agent_id = ? AND status IN ('submitted', 'approved')""",
+            (agent_id,)
+        )
+        gross_row = cursor.fetchone()
+        cumulative_gross = float(gross_row[0] or 0) if gross_row else 0.0
+
+        next_rank = get_next_rank(rank_name)
+        current_rank_info = get_rank_for_cumulative(cumulative_gross)
+
+        progress_pct = 0
+        remaining    = 0
+        if next_rank:
+            current_target = current_rank_info["cumulative_target"]
+            next_target    = next_rank["cumulative_target"]
+            span  = next_target - current_target
+            done  = cumulative_gross - current_target
+            progress_pct = min(100, round((done / span) * 100, 1)) if span > 0 else 100
+            remaining    = max(0, next_target - cumulative_gross)
+
+        return {
+            "agent_id":        agent_id,
+            "current_rank":    rank_name,
+            "commission_pct":  float(comm_rate or 70),
+            "cumulative_gross": cumulative_gross,
+            "next_rank":       next_rank["rank"] if next_rank else None,
+            "next_rank_pct":   next_rank["payout_pct"] if next_rank else None,
+            "next_target":     next_rank["cumulative_target"] if next_rank else None,
+            "remaining_to_next": remaining,
+            "progress_pct":    progress_pct,
+            "is_top_rank":     next_rank is None,
+            "all_ranks":       TAIKO_RANKS,
+        }
+    finally:
+        conn.close()
+
+
+# ===================== MULTI-LEVEL COMMISSION HELPERS (legacy — kept for reference) =====================
 def get_agent_with_upline_info(agent_id):
     """Get agent information with upline details"""
     conn = sqlite3.connect("real_estate.db")
@@ -1010,6 +1801,47 @@ def init_database():
                 FOREIGN KEY (deleted_by) REFERENCES users(id)
             )
         """)
+
+        # ============ TAIKO EA RANK & COMMISSION TABLES ============
+
+        # Individual commission entries per listing (one row per party who earns)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS taiko_commission_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                listing_id INTEGER NOT NULL,
+                agent_id INTEGER NOT NULL,
+                entry_type TEXT NOT NULL,
+                rank_at_time TEXT NOT NULL,
+                pct_at_time DECIMAL(5,2) NOT NULL,
+                gross_commission_base DECIMAL(12,2) NOT NULL,
+                amount DECIMAL(12,2) NOT NULL,
+                level INTEGER DEFAULT 0,
+                description TEXT,
+                ref_downline_id INTEGER NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (listing_id) REFERENCES property_listings(id),
+                FOREIGN KEY (agent_id) REFERENCES users(id)
+            )
+        """)
+
+        # Rank promotion audit log
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rank_promotion_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id INTEGER NOT NULL,
+                old_rank TEXT NOT NULL,
+                new_rank TEXT NOT NULL,
+                old_pct DECIMAL(5,2),
+                new_pct DECIMAL(5,2),
+                cumulative_gross_at_promotion DECIMAL(12,2),
+                promoted_by TEXT DEFAULT 'system',
+                admin_id INTEGER NULL,
+                reason TEXT NULL,
+                promoted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (agent_id) REFERENCES users(id),
+                FOREIGN KEY (admin_id) REFERENCES users(id)
+            )
+        """)
         
         # ============ INITIALIZE DEFAULT SETTINGS ============
         default_settings = [
@@ -1119,7 +1951,16 @@ def init_database():
         if not os.path.exists("uploads"):
             os.makedirs("uploads")
             print("✅ Uploads folder created")
-        
+
+        # ── WTP Unified Submissions table ──
+        conn.commit()
+        conn.close()
+        conn = None
+        init_submissions_table()
+        print("✅ Unified submissions table ready!")
+
+        conn = get_db_connection()
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.commit()
         print("✅ Database initialized successfully!")
         
@@ -1570,6 +2411,125 @@ def update_database():
 
             print("✅ property_type column removed from commission_calculations table!")
 
+        # ============ TAIKO EA — Add new columns to users if missing ============
+        cursor.execute("PRAGMA table_info(users)")
+        user_columns = [col[1] for col in cursor.fetchall()]
+
+        if "agent_rank" not in user_columns:
+            print("🔄 Adding agent_rank column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN agent_rank TEXT DEFAULT 'REN'")
+            conn.commit()
+            print("✅ agent_rank column added!")
+
+        if "commission_rate" not in user_columns:
+            print("🔄 Adding commission_rate column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN commission_rate DECIMAL(5,2) DEFAULT 70.00")
+            conn.commit()
+            print("✅ commission_rate column added!")
+
+        if "cumulative_gross" not in user_columns:
+            print("🔄 Adding cumulative_gross column to users table...")
+            cursor.execute("ALTER TABLE users ADD COLUMN cumulative_gross DECIMAL(12,2) DEFAULT 0.00")
+            conn.commit()
+            print("✅ cumulative_gross column added!")
+
+        # ============ TAIKO EA — Migrate rank_promotion_log columns if missing ============
+        cursor.execute("PRAGMA table_info(rank_promotion_log)")
+        rpl_cols = [col[1] for col in cursor.fetchall()]
+
+        if rpl_cols:  # table exists — check for new columns
+            if "promoted_by" not in rpl_cols:
+                print("🔄 Adding promoted_by column to rank_promotion_log...")
+                cursor.execute(
+                    "ALTER TABLE rank_promotion_log ADD COLUMN promoted_by TEXT DEFAULT 'system'"
+                )
+                conn.commit()
+                print("✅ promoted_by added!")
+            if "admin_id" not in rpl_cols:
+                print("🔄 Adding admin_id column to rank_promotion_log...")
+                cursor.execute(
+                    "ALTER TABLE rank_promotion_log ADD COLUMN admin_id INTEGER NULL"
+                )
+                conn.commit()
+                print("✅ admin_id added!")
+            if "reason" not in rpl_cols:
+                print("🔄 Adding reason column to rank_promotion_log...")
+                cursor.execute(
+                    "ALTER TABLE rank_promotion_log ADD COLUMN reason TEXT NULL"
+                )
+                conn.commit()
+                print("✅ reason added!")
+
+        # Backfill commission_rate from existing total_commission data if possible
+        cursor.execute("""
+            UPDATE users SET commission_rate = 70.00
+            WHERE commission_rate IS NULL AND role = 'agent'
+        """)
+        cursor.execute("""
+            UPDATE users SET agent_rank = 'REN'
+            WHERE agent_rank IS NULL AND role = 'agent'
+        """)
+        conn.commit()
+
+        # Create TAIKO tables if they don't exist yet
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS taiko_commission_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                listing_id INTEGER NOT NULL,
+                agent_id INTEGER NOT NULL,
+                entry_type TEXT NOT NULL,
+                rank_at_time TEXT NOT NULL,
+                pct_at_time DECIMAL(5,2) NOT NULL,
+                gross_commission_base DECIMAL(12,2) NOT NULL,
+                amount DECIMAL(12,2) NOT NULL,
+                level INTEGER DEFAULT 0,
+                description TEXT,
+                ref_downline_id INTEGER NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (listing_id) REFERENCES property_listings(id),
+                FOREIGN KEY (agent_id) REFERENCES users(id)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rank_promotion_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id INTEGER NOT NULL,
+                old_rank TEXT NOT NULL,
+                new_rank TEXT NOT NULL,
+                old_pct DECIMAL(5,2),
+                new_pct DECIMAL(5,2),
+                cumulative_gross_at_promotion DECIMAL(12,2),
+                promoted_by TEXT DEFAULT 'system',
+                admin_id INTEGER NULL,
+                reason TEXT NULL,
+                promoted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (agent_id) REFERENCES users(id),
+                FOREIGN KEY (admin_id) REFERENCES users(id)
+            )
+        """)
+        conn.commit()
+        print("✅ TAIKO EA rank & commission tables ready!")
+
+        # ── WTP COMMISSION CONFIG — add comm config columns to projects ──
+        cursor.execute("PRAGMA table_info(projects)")
+        proj_cols = [col[1] for col in cursor.fetchall()]
+        new_proj_cols = {
+            "comm_dev_rate":     "DECIMAL(5,2) DEFAULT 2.0",
+            "comm_sst_rate":     "DECIMAL(5,2) DEFAULT 8.0",
+            "comm_company_pct":  "DECIMAL(5,2) DEFAULT 15.0",
+            "comm_pic_pct":      "DECIMAL(5,2) DEFAULT 10.0",
+            "comm_agents_pct":   "DECIMAL(5,2) DEFAULT 75.0",
+            "comm_pic_rank":     "TEXT DEFAULT 'REN'",
+            "comm_pic_agent_id": "INTEGER NULL",
+            "comm_pic_name":     "TEXT NULL",
+        }
+        for col, coldef in new_proj_cols.items():
+            if col not in proj_cols:
+                print(f"🔄 Adding {col} to projects table...")
+                cursor.execute(f"ALTER TABLE projects ADD COLUMN {col} {coldef}")
+                conn.commit()
+                print(f"✅ {col} added!")
+
         conn.commit()
         print("✅ Database schema is up to date.")
 
@@ -1777,89 +2737,160 @@ LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Login - Real Estate System</title>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Login - WTP Real Estate</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }
-        .login-box { border: 1px solid #ddd; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h2 { text-align: center; color: #333; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
-        button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        button:hover { background: #0056b3; }
-        .error { color: red; text-align: center; margin: 10px 0; }
-        .test-accounts { margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px; }
-    
-        /* ============ SALES/RENTAL SELECTION STYLES ============ */
-        .transaction-type-selector {
-            display: flex;
-            gap: 15px;
-            margin-top: 10px;
+        *,*::before,*::after{box-sizing:border-box}
+        html{-webkit-text-size-adjust:100%}
+        body{
+            font-family:Arial,sans-serif;
+            margin:0;
+            min-height:100vh;
+            background:#f0f2f5;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:16px;
         }
-        .transaction-type-option input {
-            display: none;
+        .login-wrap{
+            width:100%;
+            max-width:420px;
         }
-        .type-card {
-            padding: 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            min-width: 100px;
+        .login-logo{
+            text-align:center;
+            margin-bottom:24px;
         }
-        .type-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        .login-logo .icon{
+            font-size:48px;
+            display:block;
+            margin-bottom:8px;
         }
-        .transaction-type-option input:checked + .type-card {
-            border-color: #007bff;
-            background: #e8f4ff;
+        .login-logo h1{
+            color:#1a2a3a;
+            font-size:1.4rem;
+            margin:0 0 4px;
+            font-weight:800;
+            letter-spacing:.5px;
         }
-        .sales-card {
-            border-color: #f8d7da;
-            background: #f8d7da20;
+        .login-logo p{
+            color:#888;
+            font-size:13px;
+            margin:0;
         }
-        .rental-card {
-            border-color: #d1ecf1;
-            background: #d1ecf120;
+        .login-box{
+            background:white;
+            border:1px solid #e0e0e0;
+            border-radius:16px;
+            padding:32px 28px;
+            box-shadow:0 4px 24px rgba(0,0,0,.10);
         }
-        .sales-card .type-icon { 
-            color: #721c24; 
-            font-size: 24px;
-            margin-bottom: 5px;
+        .form-group{
+            margin-bottom:16px;
         }
-        .rental-card .type-icon { 
-            color: #0c5460; 
-            font-size: 24px;
-            margin-bottom: 5px;
+        label{
+            display:block;
+            color:#444;
+            font-size:12px;
+            font-weight:700;
+            text-transform:uppercase;
+            letter-spacing:.08em;
+            margin-bottom:6px;
         }
-        .type-label {
-            font-weight: bold;
-            margin-bottom: 5px;
-            color: #333;
+        input[type=email],
+        input[type=password]{
+            width:100%;
+            padding:12px 14px;
+            background:#f8f9fa;
+            border:1.5px solid #dee2e6;
+            border-radius:8px;
+            color:#1a2a3a;
+            font-size:15px;
+            outline:none;
+            transition:border-color .2s,background .2s;
         }
-        .type-desc {
-            font-size: 12px;
-            color: #666;
+        input[type=email]::placeholder,
+        input[type=password]::placeholder{
+            color:#aaa;
         }
-        </style>
+        input[type=email]:focus,
+        input[type=password]:focus{
+            border-color:#2563eb;
+            background:white;
+            outline:none;
+        }
+        .btn-login{
+            width:100%;
+            padding:13px;
+            background:linear-gradient(135deg,#2563eb,#1d4ed8);
+            color:white;
+            border:none;
+            border-radius:8px;
+            font-size:15px;
+            font-weight:700;
+            cursor:pointer;
+            margin-top:8px;
+            letter-spacing:.3px;
+            transition:opacity .2s,transform .1s;
+        }
+        .btn-login:hover{opacity:.9}
+        .btn-login:active{transform:scale(.99)}
+        .error-msg{
+            background:rgba(220,53,69,.2);
+            border:1px solid rgba(220,53,69,.4);
+            color:#ff8a94;
+            border-radius:8px;
+            padding:10px 14px;
+            font-size:13px;
+            text-align:center;
+            margin-bottom:16px;
+        }
+        .info-box{
+            margin-top:20px;
+            background:#f8f9fa;
+            border:1px solid #e0e0e0;
+            border-radius:8px;
+            padding:14px 16px;
+            font-size:12px;
+            color:#666;
+            line-height:1.8;
+        }
+        .info-box strong{
+            color:#333;
+        }
+        @media(max-width:480px){
+            .login-box{padding:24px 18px}
+            .login-logo .icon{font-size:40px}
+            .login-logo h1{font-size:1.2rem}
+        }
+    </style>
 </head>
 <body>
-    <div class="login-box">
-        <h2>🏠 WTP - Real Estate System</h2>
-        <form method="POST">
-            <input type="email" name="email" placeholder="Email" required>
-            <input type="password" name="password" placeholder="Password" required>
-            <button type="submit">Login</button>
-        </form>
-        
-        {% if error %}
-        <div class="error">{{ error }}</div>
-        {% endif %}
-        
-        <div class="test-accounts">
-            <strong>Test Accounts:</strong><br>
-            Admin: admin@xxxxx.com<br>
-            Admin will create agent login
+    <div class="login-wrap">
+        <div class="login-logo">
+            <span class="icon">&#127968;</span>
+            <h1>WTP Real Estate</h1>
+            <p>Commission Management System</p>
+        </div>
+        <div class="login-box">
+            {% if error %}
+            <div class="error-msg">&#9888; {{ error }}</div>
+            {% endif %}
+            <form method="POST">
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" name="email" placeholder="your@email.com" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" name="password" placeholder="&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;" required>
+                </div>
+                <button type="submit" class="btn-login">&#128274; Sign In</button>
+            </form>
+            <div class="info-box">
+                <strong>Admin:</strong> admin@xxxxx.com<br>
+                Agent accounts are created by admin
+            </div>
         </div>
     </div>
 </body>
@@ -2306,8 +3337,11 @@ def logout():
 def new_listing():
     if "user_id" not in session or session["user_role"] != "agent":
         return redirect("/login")
-
-    conn = sqlite3.connect("real_estate.db")
+    # Retired — redirect all agents to unified submission form
+    return redirect("/agent/unified-submit")
+    # ── OLD CODE BELOW — kept for reference only ──
+    if False:
+        conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
 
     # Get transaction type from URL
@@ -2323,7 +3357,7 @@ def new_listing():
                    p.location, p.description, p.status, p.commission_rate,
                    p.project_sale_type
             FROM projects p
-            WHERE p.status = 'active' AND p.is_active = 1
+            WHERE p.status = 'active'
             ORDER BY p.project_name
         """
         params = ()
@@ -2333,7 +3367,7 @@ def new_listing():
                    p.location, p.description, p.status, p.commission_rate,
                    p.project_sale_type
             FROM projects p
-            WHERE p.status = 'active' AND p.is_active = 1 AND p.project_sale_type = ?
+            WHERE p.status = 'active' AND p.project_sale_type = ?
             ORDER BY p.project_name
         """
         params = (transaction_type,)
@@ -2415,12 +3449,18 @@ def agent_dashboard():
         """
         SELECT 
             COUNT(*) as total_sales,
-            COALESCE(SUM(commission_amount), 0) as total_commission,
-            SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as pending,
-            SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as drafts,
-            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
-        FROM property_listings 
-        WHERE agent_id = ?
+            -- Commission only counts for APPROVED listings
+            COALESCE(SUM(CASE WHEN pl.status = 'approved'
+                THEN COALESCE(tce.amount, pl.commission_amount) ELSE 0 END), 0) as total_commission,
+            SUM(CASE WHEN pl.status = 'submitted' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN pl.status = 'draft' THEN 1 ELSE 0 END) as drafts,
+            SUM(CASE WHEN pl.status = 'rejected' THEN 1 ELSE 0 END) as rejected
+        FROM property_listings pl
+        LEFT JOIN taiko_commission_entries tce
+            ON tce.listing_id = pl.id
+            AND tce.agent_id = pl.agent_id
+            AND tce.entry_type = 'personal'
+        WHERE pl.agent_id = ?
     """,
         (user_id,),
     )
@@ -2521,19 +3561,23 @@ def agent_dashboard():
             # Note: We removed "commission_rate" and added "direct_rate"/"indirect_rate"
         })
 
-    # ============ 6. GET RECENT SALES ============
+    # ============ 6. GET RECENT SALES — use TAIKO personal payout ============
     cursor.execute(
         """
         SELECT 
             pl.id,
             pl.customer_name,
             pl.sale_price,
-            pl.commission_amount,
+            COALESCE(tce.amount, pl.commission_amount) as agent_payout,
             pl.status,
             pl.created_at,
             COALESCE(p.project_name, '') as project_name
         FROM property_listings pl
         LEFT JOIN projects p ON pl.project_id = p.id
+        LEFT JOIN taiko_commission_entries tce
+            ON tce.listing_id = pl.id
+            AND tce.agent_id = pl.agent_id
+            AND tce.entry_type = 'personal'
         WHERE pl.agent_id = ?
         ORDER BY pl.created_at DESC 
         LIMIT 10
@@ -2711,12 +3755,15 @@ def agent_dashboard():
         "upline_payments_count": upline_payments_count,
     }
 
-    # ============ 11. RENDER TEMPLATE ============
+    # ============ 11. GET RANK PROGRESS ============
+    rank_progress = get_agent_rank_progress(user_id)
+
+    # ============ 12. RENDER TEMPLATE ============
     return render_template(
         "agent/dashboard.html",
         user_name=session.get("user_name", "Agent"),
         total_sales=total_sales,
-        total_commission=total_commission,  # Already formatted earlier if needed
+        total_commission=total_commission,
         pending_count=pending_count,
         draft_count=draft_count,
         rejected_count=rejected_count,
@@ -2731,11 +3778,11 @@ def agent_dashboard():
         unread_count=unread_count,
         incomplete_submissions=incomplete_submissions,
         incomplete_count=incomplete_count,
-        upline_earnings=upline_earnings,  # PASS THE NUMBER, NOT FORMATTED STRING
+        upline_earnings=upline_earnings,
         upline_payments_count=upline_payments_count,
-        total_paid=total_paid,  # PASS THE NUMBER, NOT FORMATTED STRING
+        total_paid=total_paid,
         total_payments=total_payments,
-        agent_commission_rate=80,
+        rank_progress=rank_progress,
     )
 
 @app.route("/agent/my-downline")
@@ -2749,31 +3796,28 @@ def agent_downline():
 
     agent_id = session["user_id"]
 
-    # ========== GET CURRENT AGENT'S COMMISSION STRUCTURE ==========
+    # ========== GET CURRENT AGENT'S TAIKO RANK INFO ==========
     cursor.execute(
-        """
-        SELECT 
-            commission_structure,
-            upline_fund_pct,
-            upline2_fund_pct,
-            total_commission_fund_pct
-        FROM users 
-        WHERE id = ?
-    """,
+        "SELECT agent_rank, commission_rate, cumulative_gross FROM users WHERE id = ?",
         (agent_id,),
     )
-    
     agent_info = cursor.fetchone()
-    commission_structure = agent_info[0] if agent_info else 'fund_based'
-    
-    if commission_structure == 'fund_based':
-        direct_rate = agent_info[1] if agent_info and agent_info[1] is not None else 10.0
-        indirect_rate = agent_info[2] if agent_info and agent_info[2] is not None else 5.0
-        total_fund_pct = agent_info[3] if agent_info and agent_info[3] is not None else 2.0
-    else:
-        direct_rate = 5.0
-        indirect_rate = 2.5
-        total_fund_pct = None
+    my_rank = agent_info[0] if agent_info else 'REN'
+    my_pct  = float(agent_info[1] or 70) if agent_info else 70.0
+    my_cumul = float(agent_info[2] or 0) if agent_info else 0.0
+
+    # WTP RULE: Cumulative Gross = commission amount tracker for rank progression
+    # Uses commission_amount (not sale_price)
+    # Counts: submitted + approved
+    # Excluded: rejected, draft (if admin rejects, amount is deducted from rank progress)
+    cursor.execute(
+        """SELECT COALESCE(SUM(commission_amount), 0)
+           FROM property_listings
+           WHERE agent_id = ? AND status IN ('submitted', 'approved')""",
+        (agent_id,)
+    )
+    gross_row = cursor.fetchone()
+    my_cumul_display = float(gross_row[0] or 0) if gross_row else 0.0
 
     # ========== GET DOWNLINES ==========
     # Direct downlines
@@ -2822,156 +3866,96 @@ def agent_downline():
     direct_downline_list = []
     indirect_downline_list = []
 
+    # Helper: get downline agent's rank info + override earned/pending for current agent
+    def get_downline_override_stats(dl_id, entry_types):
+        # Rank info
+        cursor.execute(
+            "SELECT agent_rank, commission_rate FROM users WHERE id = ?", (dl_id,)
+        )
+        r = cursor.fetchone()
+        dl_rank = r[0] if r else 'REN'
+        dl_pct  = float(r[1] or 70) if r else 70.0
+        # Override gap
+        gap = round(my_pct - dl_pct, 4)
+        if gap > 0:
+            override_label = f"{int(my_pct)}% − {int(dl_pct)}% = {gap:.4g}% override"
+        elif gap == 0:
+            override_label = "WTP 2% (same rank)"
+        else:
+            override_label = f"Upline has lower rank — no override"
+
+        # Earned from taiko_commission_entries (paid via upline_commissions)
+        cursor.execute(
+            """SELECT COALESCE(SUM(amount),0), COUNT(*)
+               FROM upline_commissions
+               WHERE upline_id=? AND agent_id=?
+               AND commission_type IN ({})
+               AND status IN ('paid','approved','completed')""".format(
+                   ','.join('?'*len(entry_types))
+               ),
+            (agent_id, dl_id, *entry_types)
+        )
+        res = cursor.fetchone()
+        earned, earned_count = float(res[0] or 0), int(res[1] or 0)
+
+        # Pending
+        cursor.execute(
+            """SELECT COALESCE(SUM(amount),0), COUNT(*)
+               FROM upline_commissions
+               WHERE upline_id=? AND agent_id=?
+               AND commission_type IN ({})
+               AND status = 'pending'""".format(
+                   ','.join('?'*len(entry_types))
+               ),
+            (agent_id, dl_id, *entry_types)
+        )
+        res = cursor.fetchone()
+        pending, pending_count = float(res[0] or 0), int(res[1] or 0)
+
+        return dl_rank, dl_pct, gap, override_label, earned, earned_count, pending, pending_count
+
     # Process direct downlines
     for agent in direct_downlines:
         agent_id_val = agent[0]
-        
-        # Calculate EARNED commissions from upline_commissions (status = 'paid' or 'approved')
-        earned = 0
-        earned_count = 0
-        if 'upline_commissions' in tables:
-            cursor.execute(
-                """
-                SELECT SUM(amount), COUNT(*)
-                FROM upline_commissions 
-                WHERE upline_id = ? 
-                AND agent_id = ? 
-                AND commission_type = 'direct'
-                AND status IN ('paid', 'approved', 'completed')
-                """,
-                (agent_id, agent_id_val)
-            )
-            result = cursor.fetchone()
-            earned = result[0] or 0
-            earned_count = result[1] or 0
-        
-        # Calculate PENDING commissions from upline_commissions (status = 'pending')
-        pending = 0
-        pending_count = 0
-        if 'upline_commissions' in tables:
-            cursor.execute(
-                """
-                SELECT SUM(amount), COUNT(*)
-                FROM upline_commissions 
-                WHERE upline_id = ? 
-                AND agent_id = ? 
-                AND commission_type = 'direct'
-                AND status = 'pending'
-                """,
-                (agent_id, agent_id_val)
-            )
-            result = cursor.fetchone()
-            pending = result[0] or 0
-            pending_count = result[1] or 0
-        
-        # If no results in upline_commissions, check property_listings as fallback
-        if pending == 0 and 'property_listings' in tables:
-            cursor.execute(
-                """
-                SELECT SUM(commission_amount), COUNT(*)
-                FROM property_listings 
-                WHERE agent_id = ? AND status IN ('sold', 'pending') 
-                AND (commission_status IS NULL OR commission_status IN ('pending', 'unpaid'))
-                """,
-                (agent_id_val,)
-            )
-            result = cursor.fetchone()
-            pending_total = result[0] or 0
-            pending_count = result[1] or 0
-            pending = pending_total * direct_rate / 100
-        
+        dl_rank, dl_pct, gap, override_label, earned, earned_count, pending, pending_count =             get_downline_override_stats(agent_id_val, ('override','wtp_gen1'))
+
         direct_downline_list.append({
             "id": agent_id_val,
             "name": agent[1],
             "email": agent[2],
-            "commission_rate": direct_rate,
+            "agent_rank": dl_rank,
+            "commission_pct": dl_pct,
             "join_date": agent[3][:10] if agent[3] else "",
-            "commission_percentage": f"{direct_rate}%",
+            "commission_percentage": override_label,
             "relationship": "direct",
             "earned_from_agent": earned,
             "earned_count": earned_count,
             "pending_from_agent": pending,
             "pending_count": pending_count,
-            "commission_structure": agent[4] if len(agent) > 4 else 'fund_based',
         })
-        
         total_direct_earnings += earned
         total_direct_pending += pending
 
     # Process indirect downlines
     for agent in indirect_downlines:
         agent_id_val = agent[0]
-        
-        # Calculate EARNED commissions
-        earned = 0
-        earned_count = 0
-        if 'upline_commissions' in tables:
-            cursor.execute(
-                """
-                SELECT SUM(amount), COUNT(*)
-                FROM upline_commissions 
-                WHERE upline_id = ? 
-                AND agent_id = ? 
-                AND commission_type = 'indirect'
-                AND status IN ('paid', 'approved', 'completed')
-                """,
-                (agent_id, agent_id_val)
-            )
-            result = cursor.fetchone()
-            earned = result[0] or 0
-            earned_count = result[1] or 0
-        
-        # Calculate PENDING commissions
-        pending = 0
-        pending_count = 0
-        if 'upline_commissions' in tables:
-            cursor.execute(
-                """
-                SELECT SUM(amount), COUNT(*)
-                FROM upline_commissions 
-                WHERE upline_id = ? 
-                AND agent_id = ? 
-                AND commission_type = 'indirect'
-                AND status = 'pending'
-                """,
-                (agent_id, agent_id_val)
-            )
-            result = cursor.fetchone()
-            pending = result[0] or 0
-            pending_count = result[1] or 0
-        
-        # Fallback to property_listings
-        if pending == 0 and 'property_listings' in tables:
-            cursor.execute(
-                """
-                SELECT SUM(commission_amount), COUNT(*)
-                FROM property_listings 
-                WHERE agent_id = ? AND status IN ('sold', 'pending') 
-                AND (commission_status IS NULL OR commission_status IN ('pending', 'unpaid'))
-                """,
-                (agent_id_val,)
-            )
-            result = cursor.fetchone()
-            pending_total = result[0] or 0
-            pending_count = result[1] or 0
-            pending = pending_total * indirect_rate / 100
-        
+        dl_rank, dl_pct, gap, override_label, earned, earned_count, pending, pending_count =             get_downline_override_stats(agent_id_val, ('override','wtp_gen2'))
+
         indirect_downline_list.append({
             "id": agent_id_val,
             "name": agent[1],
             "email": agent[2],
-            "commission_rate": indirect_rate,
+            "agent_rank": dl_rank,
+            "commission_pct": dl_pct,
             "join_date": agent[3][:10] if agent[3] else "",
-            "commission_percentage": f"{indirect_rate}%",
+            "commission_percentage": override_label,
             "relationship": "indirect",
-            "direct_upline_name": agent[5] if len(agent) > 5 else "Direct Upline",
+            "direct_upline_name": agent[5] if len(agent) > 5 else "",
             "earned_from_agent": earned,
             "earned_count": earned_count,
             "pending_from_agent": pending,
             "pending_count": pending_count,
-            "commission_structure": agent[4] if len(agent) > 4 else 'fund_based',
         })
-        
         total_indirect_earnings += earned
         total_indirect_pending += pending
 
@@ -2984,32 +3968,35 @@ def agent_downline():
     print(f"DEBUG: Total indirect pending: {total_indirect_pending}")
     
     # Stats
-    total_pending = total_direct_pending + total_indirect_pending
+    total_pending  = total_direct_pending  + total_indirect_pending
     total_earnings = total_direct_earnings + total_indirect_earnings
-    
+
     stats_dict = {
-        "total_downline": len(direct_downline_list) + len(indirect_downline_list),
-        "direct_downline_count": len(direct_downline_list),
-        "indirect_downline_count": len(indirect_downline_list),
-        "total_direct_earnings": total_direct_earnings,
-        "total_indirect_earnings": total_indirect_earnings,
-        "total_direct_pending": total_direct_pending,
-        "total_indirect_pending": total_indirect_pending,
-        "total_your_earnings": total_earnings,
-        "total_your_pending": total_pending,
-        "commission_structure": commission_structure,
-        "direct_rate": direct_rate,
-        "indirect_rate": indirect_rate,
-        "total_fund_pct": total_fund_pct,
+        "total_downline":           len(direct_downline_list) + len(indirect_downline_list),
+        "direct_downline_count":    len(direct_downline_list),
+        "indirect_downline_count":  len(indirect_downline_list),
+        "total_direct_earnings":    total_direct_earnings,
+        "total_indirect_earnings":  total_indirect_earnings,
+        "total_direct_pending":     total_direct_pending,
+        "total_indirect_pending":   total_indirect_pending,
+        "total_your_earnings":      total_earnings,
+        "total_your_pending":       total_pending,
+        "my_rank":                  my_rank,
+        "my_pct":                   my_pct,
+        "my_cumul":                 my_cumul_display,  # includes submitted+approved
     }
 
+    rank_progress = get_agent_rank_progress(agent_id)
+
     conn.close()
-    
+
     return render_template(
         "agent/downline.html",
         direct_downline_agents=direct_downline_list,
         indirect_downline_agents=indirect_downline_list,
         stats=stats_dict,
+        rank_progress=rank_progress,
+        search_query=request.args.get('search', ''),
     )
 
 @app.route("/agent/downline-performance/<int:agent_id>")
@@ -3324,8 +4311,30 @@ def agent_notifications_page():
 <head>
     <title>My Notifications</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        
+    /* ── ADMIN TOPBAR ── */
+    body{margin:0;background:#f0f2f5;font-family:Arial,sans-serif}
+    .atb{background:#2c3e50;color:white;padding:12px 16px;display:flex;
+         align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+    .atb-title{font-size:1rem;font-weight:700}
+    .atb button{background:none;border:none;color:white;font-size:24px;cursor:pointer;padding:0;line-height:1}
+    .anav{background:white;max-height:0;overflow:hidden;transition:max-height .3s ease;
+          box-shadow:0 2px 6px rgba(0,0,0,.1)}
+    .anav.open{max-height:600px}
+    .anav a{display:block;padding:11px 16px;color:#007bff;text-decoration:none;
+            font-weight:600;font-size:14px;border-bottom:1px solid #f0f0f0}
+    .anav a:last-child{border-bottom:none}
+    .anav a:hover{background:#f0f7ff}
+    .anav a.nl{color:#dc3545}
+    .pwrap{max-width:1400px;margin:0 auto;padding:16px}
+    @media(min-width:641px){
+        .atb button{display:none}
+        .anav{max-height:none!important;overflow:visible;display:flex;flex-wrap:wrap;
+              gap:4px;align-items:center;padding:8px 16px}
+        .anav a{display:inline-block;padding:5px 10px;border-bottom:none;border-radius:6px;font-size:13px}
+    }
+    @media(max-width:640px){.pwrap{padding:10px}}
+        body{font-family:Arial,sans-serif}
         .notifications-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .notification-item { padding: 15px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #e0e0e0; }
         .notification-item.read { background: #f8f9fa; opacity: 0.7; }
@@ -3391,7 +4400,7 @@ def agent_notifications_page():
 </body>
 </html>"""
 
-    return render_template_string(notification_template, notifications=notifications)
+    return render_template('agent/notifications.html', notifications=notifications)
 
 
 # Add this temporary debug route to your app
@@ -3646,9 +4655,13 @@ def create_test_notification():
 
 @app.route("/agent/submissions")
 def agent_submissions():
-    """Agent view all their submissions - TEMPLATE VERSION"""
+    """Redirects to unified submissions page"""
     if "user_id" not in session or session["user_role"] != "agent":
         return redirect("/login")
+    return redirect("/agent/unified-submissions")
+    # ── OLD CODE BELOW — kept for reference only ──
+    if False:
+        pass
 
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
@@ -4119,6 +5132,60 @@ def agent_view_submission(listing_id):
 
     return template
 
+
+
+@app.route("/view-document/u<int:doc_id>")
+def view_unified_document(doc_id):
+    """View/download a unified submission document"""
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+
+    if session["user_role"] == "admin":
+        doc = conn.execute(
+            "SELECT * FROM unified_documents WHERE id=?",
+            (doc_id,)
+        ).fetchone()
+    else:
+        # Agent can only view their own submission docs
+        doc = conn.execute(
+            """SELECT ud.* FROM unified_documents ud
+               JOIN unified_submissions us ON us.id = ud.sub_id
+               WHERE ud.id=? AND us.agent_id=?""",
+            (doc_id, session["user_id"])
+        ).fetchone()
+    conn.close()
+
+    if not doc:
+        return "Document not found or access denied", 404
+
+    filepath_db = doc["filepath"]
+    app_root    = os.path.dirname(os.path.abspath(__file__))
+    filepath    = os.path.normpath(os.path.join(app_root, filepath_db))
+    filename    = os.path.basename(filepath)
+
+    if not os.path.exists(filepath):
+        # Try relative path directly
+        if os.path.exists(filepath_db):
+            filepath = filepath_db
+        else:
+            return f"File not found: {filename}", 404
+
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    types = {
+        "pdf":  "application/pdf",
+        "jpg":  "image/jpeg", "jpeg": "image/jpeg",
+        "png":  "image/png",
+        "doc":  "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+    content_type  = types.get(ext, "application/octet-stream")
+    as_attachment = request.args.get("download", "0") == "1"
+
+    return send_file(filepath, mimetype=content_type,
+                     as_attachment=as_attachment, download_name=filename)
 
 @app.route("/view-document/<int:doc_id>")
 def view_document(doc_id):
@@ -4623,12 +5690,8 @@ def submit_listing():
         # Apply caps (RM1,000 - RM50,000) to total commission
         total_commission = max(1000, min(total_commission, 50000))
 
-        # ============ APPLY FUND-BASED ALLOCATION ============
-        # Agent gets 80% of total commission under fund-based system
-        agent_commission = total_commission * 0.80  # 80% to agent
-        
-        # For commission_amount field, store agent's share (80%)
-        commission_to_store = agent_commission
+        # Store full gross commission — TAIKO engine splits at approval time
+        commission_to_store = total_commission
 
         # Save to database
         cursor.execute(
@@ -4649,7 +5712,7 @@ def submit_listing():
                 sale_type,
                 sale_price,
                 data.get("closing_date"),
-                round(commission_to_store, 2),  # Store agent's 80% share
+                round(commission_to_store, 2),  # Gross commission (TAIKO splits at approval)
                 status,
                 submitted_time,
                 data.get("notes", ""),
@@ -4951,13 +6014,10 @@ def submit_listing():
             "project_commission_rate": project_commission_rate,
             "unit_commission_rate": unit_commission_rate,
             "total_commission": float(total_commission),  # Total before allocation
-            "agent_share_percentage": 80,
-            "agent_commission": round(commission_to_store, 2),  # Agent's 80% share
+            "commission_method": "taiko_override",
+            "gross_commission": round(commission_to_store, 2),  # Full gross before TAIKO split
             "fund_allocation": {
-                "agent": 80,
-                "direct_upline": 10,
-                "indirect_upline": 5,
-                "company_fund": 5
+                "note": "Split calculated by TAIKO engine at approval"
             }
         }
 
@@ -4974,7 +6034,7 @@ def submit_listing():
                 session["user_id"],
                 sale_price,
                 commission_rate * 100,
-                round(commission_to_store, 2),  # Store agent's commission
+                round(commission_to_store, 2),  # Gross commission
                 json.dumps(calculation_details),
             ),
         )
@@ -5001,7 +6061,7 @@ def submit_listing():
             customer_name=data["customer_name"],
             property_address=data["property_address"],
             sale_price=sale_price,
-            commission=commission_to_store,  # Show agent's commission
+            commission=commission_to_store,  # Gross commission
             upload_message=upload_message
         )
 
@@ -5106,19 +6166,23 @@ def agent_commissions():
         'customer_desc': 'pl.customer_name DESC'
     }.get(sort_by, 'pl.approved_at DESC')
     
-    # Get paginated commissions
+    # Get paginated commissions — show agent's actual TAIKO payout not gross
     cursor.execute(f"""
         SELECT 
             pl.id,
             pl.customer_name,
             pl.sale_price,
-            pl.commission_amount,
+            COALESCE(tce.amount, pl.commission_amount) as agent_payout,
             pl.status,
             pl.approved_at,
             pl.created_at,
             COALESCE(p.project_name, '') as project_name
         FROM property_listings pl
         LEFT JOIN projects p ON pl.project_id = p.id
+        LEFT JOIN taiko_commission_entries tce
+            ON tce.listing_id = pl.id
+            AND tce.agent_id = pl.agent_id
+            AND tce.entry_type = 'personal'
         WHERE {where_sql}
         ORDER BY {order_by}
         LIMIT ? OFFSET ?
@@ -5126,13 +6190,17 @@ def agent_commissions():
     
     commissions = cursor.fetchall()
 
-    # Calculate totals for current filter
+    # Calculate totals for current filter — use TAIKO personal payout
     cursor.execute(f"""
         SELECT 
-            COALESCE(SUM(commission_amount), 0) as total_approved,
+            COALESCE(SUM(COALESCE(tce.amount, pl.commission_amount)), 0) as total_approved,
             COUNT(*) as total_count,
-            COALESCE(AVG(commission_amount), 0) as avg_commission
+            COALESCE(AVG(COALESCE(tce.amount, pl.commission_amount)), 0) as avg_commission
         FROM property_listings pl
+        LEFT JOIN taiko_commission_entries tce
+            ON tce.listing_id = pl.id
+            AND tce.agent_id = pl.agent_id
+            AND tce.entry_type = 'personal'
         WHERE {where_sql}
     """, params)
     totals = cursor.fetchone()
@@ -5209,20 +6277,23 @@ def agent_commissions():
             })
     
     if payment_type_filter in ['all', 'upline']:
-        cursor.execute(upline_payments_query + " ORDER BY uc.paid_at DESC LIMIT 10", (user_id,))
-        for payment in cursor.fetchall():
-            recent_payments_list.append({
-                "payment_date": payment[0],
-                "amount": float(payment[1]) if payment[1] else 0,
-                "payment_type": payment[2],
-                "payment_status": payment[3],
-                "reference": payment[4] if payment[4] != 'N/A' else None,
-                "project_name": payment[5] if payment[5] else None,
-                "customer_name": payment[6],
-                "selling_agent_name": payment[7],
-                "created_at": payment[8],
-                "is_upline_payment": True
-            })
+        try:
+            cursor.execute(upline_payments_query + " ORDER BY uc.paid_at DESC LIMIT 10", (user_id,))
+            for payment in cursor.fetchall():
+                recent_payments_list.append({
+                    "payment_date": payment[0],
+                    "amount": float(payment[1]) if payment[1] else 0,
+                    "payment_type": payment[2],
+                    "payment_status": payment[3],
+                    "reference": payment[4] if payment[4] != 'N/A' else None,
+                    "project_name": payment[5] if payment[5] else None,
+                    "customer_name": payment[6],
+                    "selling_agent_name": payment[7],
+                    "created_at": payment[8],
+                    "is_upline_payment": True
+                })
+        except Exception:
+            pass  # upline_commissions table may not exist yet
     
     # Sort and limit payments
     recent_payments_list.sort(key=lambda x: x["payment_date"] or "", reverse=True)
@@ -5234,12 +6305,16 @@ def agent_commissions():
             pl.id,
             pl.customer_name,
             pl.sale_price,
-            pl.commission_amount,
+            COALESCE(tce.amount, pl.commission_amount) as agent_payout,
             pl.status,
             pl.created_at,
             COALESCE(p.project_name, '') as project_name
         FROM property_listings pl
         LEFT JOIN projects p ON pl.project_id = p.id
+        LEFT JOIN taiko_commission_entries tce
+            ON tce.listing_id = pl.id
+            AND tce.agent_id = pl.agent_id
+            AND tce.entry_type = 'personal'
         WHERE pl.agent_id = ?
         ORDER BY pl.created_at DESC
         LIMIT 10
@@ -5247,13 +6322,17 @@ def agent_commissions():
     recent_sales = cursor.fetchall()
 
     # ===== 5. GET TOTAL STATS (unfiltered) =====
-    # Total approved commissions (for stats card)
+    # Total approved commissions (for stats card) — use TAIKO personal payout
     cursor.execute("""
         SELECT 
-            COALESCE(SUM(commission_amount), 0) as total_approved_amount,
+            COALESCE(SUM(COALESCE(tce.amount, pl.commission_amount)), 0) as total_approved_amount,
             COUNT(*) as total_approved_count
-        FROM property_listings 
-        WHERE agent_id = ? AND status = 'approved'
+        FROM property_listings pl
+        LEFT JOIN taiko_commission_entries tce
+            ON tce.listing_id = pl.id
+            AND tce.agent_id = pl.agent_id
+            AND tce.entry_type = 'personal'
+        WHERE pl.agent_id = ? AND pl.status = 'approved'
     """, (user_id,))
     approved_stats = cursor.fetchone()
     total_approved_amount = float(approved_stats[0]) if approved_stats and approved_stats[0] else 0
@@ -5270,22 +6349,29 @@ def agent_commissions():
     total_own_paid = float(total_own_paid_result[0]) if total_own_paid_result and total_own_paid_result[0] else 0
 
     # Total upline commissions
-    cursor.execute("""
-        SELECT 
-            COALESCE(SUM(amount), 0) as total_upline_paid
-        FROM upline_commissions 
-        WHERE upline_id = ? AND status = 'paid'
-    """, (user_id,))
-    total_upline_paid_result = cursor.fetchone()
-    total_upline_paid = float(total_upline_paid_result[0]) if total_upline_paid_result and total_upline_paid_result[0] else 0
+    try:
+        cursor.execute("""
+            SELECT 
+                COALESCE(SUM(amount), 0) as total_upline_paid
+            FROM upline_commissions 
+            WHERE upline_id = ? AND status = 'paid'
+        """, (user_id,))
+        total_upline_paid_result = cursor.fetchone()
+        total_upline_paid = float(total_upline_paid_result[0]) if total_upline_paid_result and total_upline_paid_result[0] else 0
+    except Exception:
+        total_upline_paid = 0
 
-    # Total pending (approved but not paid)
+    # Total pending (approved but not paid) — use TAIKO personal payout
     cursor.execute("""
         SELECT 
-            COALESCE(SUM(commission_amount), 0) as total_pending
-        FROM property_listings 
-        WHERE agent_id = ? AND status = 'approved' 
-        AND id NOT IN (
+            COALESCE(SUM(COALESCE(tce.amount, pl.commission_amount)), 0) as total_pending
+        FROM property_listings pl
+        LEFT JOIN taiko_commission_entries tce
+            ON tce.listing_id = pl.id
+            AND tce.agent_id = pl.agent_id
+            AND tce.entry_type = 'personal'
+        WHERE pl.agent_id = ? AND pl.status = 'approved'
+        AND pl.id NOT IN (
             SELECT listing_id FROM commission_payments WHERE agent_id = ? AND payment_status = 'paid'
         )
     """, (user_id, user_id))
@@ -5874,7 +6960,12 @@ def admin_dashboard():
                pl.approved_at, pl.approved_by, pl.notes, pl.metadata, pl.rejection_reason,
                pl.project_id, pl.unit_id,
                u.name as agent_name,
-               (SELECT COUNT(*) FROM documents d WHERE d.listing_id = pl.id) as document_count
+               (
+                   (SELECT COUNT(*) FROM documents d WHERE d.listing_id = pl.id)
+                   +
+                   COALESCE((SELECT COUNT(*) FROM unified_documents ud
+                    WHERE pl.notes LIKE '%unified:' || ud.sub_id || '%'), 0)
+               ) as document_count
         FROM property_listings pl
         LEFT JOIN users u ON pl.agent_id = u.id
         WHERE 1=1
@@ -5923,8 +7014,9 @@ def admin_dashboard():
         """
         SELECT 
             COUNT(*) as total_listings,
-            COALESCE(SUM(sale_price), 0) as total_sales,
-            COALESCE(SUM(commission_amount), 0) as total_commissions,
+            -- Total Sales and Commissions: APPROVED only
+            COALESCE(SUM(CASE WHEN status='approved' THEN sale_price ELSE 0 END), 0) as total_sales,
+            COALESCE(SUM(CASE WHEN status='approved' THEN commission_amount ELSE 0 END), 0) as total_commissions,
             SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
             SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as pending,
             SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
@@ -6011,25 +7103,57 @@ def admin_dashboard():
             }
         )
 
-    # Calculate stats - all listings are treated as sales for now
-    total_listings = stats[0] if stats else 0
-    
+    # Stats: total_listings = approved only; pending/rejected shown separately
+    approved_count = stats[3] if stats else 0
+
     stats_dict = {
-        "total_listings": total_listings,
-        "total_sales": stats[1] if stats and stats[1] else 0,
-        "total_rentals": 0,  # Set to 0 until you add rental functionality
-        "total_commissions": total_commissions,
+        "total_listings": approved_count,          # approved only
+        "total_sales": stats[1] if stats else 0,   # approved sale prices only
+        "total_rentals": 0,
+        "total_commissions": total_commissions,    # approved commissions only
         "agent_commissions": agent_commissions,
         "upline_commissions": upline_commissions,
         "total_paid": total_paid,
         "balance": balance,
-        "approved": stats[3] if stats else 0,
+        "approved": approved_count,
         "pending": stats[4] if stats else 0,
         "rejected": stats[5] if stats else 0,
         "draft": stats[6] if stats else 0,
-        "sales_count": total_listings,  # All are sales for now
-        "rentals_count": 0,  # Set to 0
+        "sales_count": approved_count,
+        "rentals_count": 0,
     }
+
+    # Agent rank snapshot for dashboard
+    agents_snapshot = []
+    try:
+        conn2 = get_db_connection()
+        snap_rows = conn2.execute("""
+            SELECT u.id, u.name, u.agent_rank, u.commission_rate, u.cumulative_gross,
+                (SELECT COALESCE(SUM(pl.commission_amount),0) FROM property_listings pl
+                 WHERE pl.agent_id=u.id AND pl.status IN ('submitted','approved')) AS display_gross,
+                (SELECT COUNT(*) FROM property_listings pl2
+                 WHERE pl2.agent_id=u.id AND pl2.status='submitted') AS pending_count
+            FROM users u WHERE u.role='agent'
+            ORDER BY display_gross DESC
+            LIMIT 5
+        """).fetchall()
+        conn2.close()
+        RANK_NEXT = {'REN':('Assoc REN',30000),'Assoc REN':('Elite REN',90000),
+                     'Elite REN':('TL',210000),'TL':('ATL',450000),'ATL':('ATL',450000)}
+        for r in snap_rows:
+            nxt = RANK_NEXT.get(r[2] or 'REN', ('Assoc REN', 30000))
+            agents_snapshot.append({
+                'name':           r[1],
+                'agent_rank':     r[2] or 'REN',
+                'commission_rate': float(r[3] or 70),
+                'cumulative_gross': float(r[4] or 0),
+                'display_gross':  float(r[5] or 0),
+                'pending_count':  int(r[6] or 0),
+                'next_rank':      nxt[0],
+                'next_threshold': nxt[1],
+            })
+    except Exception:
+        agents_snapshot = []
 
     return render_template(
         "admin/dashboard.html",
@@ -6042,6 +7166,7 @@ def admin_dashboard():
         search_query=search_query,
         total_agents=total_agents,
         todays_submissions=todays_submissions,
+        agents_snapshot=agents_snapshot,
     )
 
 
@@ -6118,7 +7243,7 @@ def view_documents(listing_id):
     )
     listing = cursor.fetchone()
 
-    # Get uploaded documents
+    # Get uploaded documents from old documents table
     cursor.execute(
         """
         SELECT * FROM documents 
@@ -6129,6 +7254,25 @@ def view_documents(listing_id):
     )
     documents = cursor.fetchall()
 
+    # Also get unified_documents linked via notes field
+    unified_docs = []
+    try:
+        import re as _re
+        notes_row = cursor.execute(
+            "SELECT notes FROM property_listings WHERE id=?", (listing_id,)
+        ).fetchone()
+        if notes_row and notes_row[0] and "unified:" in (notes_row[0] or ""):
+            m = _re.search(r"unified:([a-f0-9-]+)", notes_row[0])
+            if m:
+                sub_id = m.group(1)
+                cursor.execute(
+                    "SELECT id, filename, filepath, file_type, file_size, doc_label, uploaded_at FROM unified_documents WHERE sub_id=? ORDER BY uploaded_at DESC",
+                    (sub_id,)
+                )
+                unified_docs = cursor.fetchall()
+    except Exception:
+        unified_docs = []
+
     conn.close()
 
     if not listing:
@@ -6138,7 +7282,7 @@ def view_documents(listing_id):
     success_msg = request.args.get("success")
     error_msg = request.args.get("error")
 
-    # Prepare document data
+    # Combine old + unified docs
     docs_list = []
     for doc in documents:
         docs_list.append(
@@ -6478,8 +7622,20 @@ def view_documents(listing_id):
     </html>
     """
 
-    return render_template_string(
-        enhanced_doc_template,
+    # Append unified documents
+    for ud in unified_docs:
+        docs_list.append({
+            "id":          "u" + str(ud[0]),
+            "filename":    ud[1],
+            "filepath":    ud[2],
+            "file_type":   (ud[3] or "unknown").lower(),
+            "file_size":   ud[4],
+            "uploaded_at": ud[6],
+            "notes":       ud[5] or "Supporting Document",
+        })
+
+    return render_template(
+        "admin/documents.html",
         listing_id=listing_id,
         customer_name=listing[3] if listing else "Unknown",
         customer_email=listing[4] if listing else "Unknown",
@@ -6495,9 +7651,6 @@ def view_documents(listing_id):
         approved_at=listing[13] if listing else "",
         documents=docs_list,
         document_count=len(docs_list),
-        get_file_icon=get_file_icon,
-        format_file_size=format_file_size,
-        can_preview_in_browser=can_preview_in_browser,
         success_msg=success_msg,
         error_msg=error_msg,
     )
@@ -6664,14 +7817,11 @@ admin_dashboard_table_section = """
                                 📎 View Docs ({{ sub.document_count }})
                             </a>
                             
-                            {% if sub.document_count >= 3 %}
                             <a href="/admin/approve/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #28a745; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
-                                ✅ Approve
+                                ✅ Approve{% if sub.document_count < 3 %} *{% endif %}
                             </a>
-                            {% else %}
-                            <button style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled>
-                                ❌ Approve (Incomplete)
-                            </button>
+                            {% if sub.document_count < 3 %}
+                            <span style="font-size:10px;color:#856404">* Low docs ({{ sub.document_count }})</span>
                             {% endif %}
                             
                             <a href="/admin/reject/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
@@ -6757,76 +7907,92 @@ updated_pending_query = """
 # ============ ADD WORKING ADMIN FEATURES ============
 @app.route("/admin/agents")
 def manage_agents():
-    """Display all agents with their commission structures"""
+    """Display all agents with their TAIKO rank and commission structures"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
     
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
     
-    # UPDATED QUERY: Get all agents with their NEW commission fields
     cursor.execute("""
-        SELECT 
+        SELECT
             u.id,
             u.email,
             u.name,
             u.role,
             u.upline_id,
-            u.upline_commission_rate,
             u.created_at,
-            u.upline2_id,
-            u.upline2_commission_rate,
+            (SELECT COUNT(*) FROM property_listings pl WHERE pl.agent_id = u.id) AS total_listings,
+            (SELECT COALESCE(SUM(pl.commission_amount),0) FROM property_listings pl WHERE pl.agent_id = u.id AND pl.status='approved') AS total_commission,
+            u.agent_rank,
             u.commission_rate,
-            u.total_listings,
-            u.total_commission,
-            -- NEW FIELDS:
-            u.commission_structure,
-            u.total_commission_fund_pct,
-            u.agent_fund_pct,
-            u.upline_fund_pct,
-            u.upline2_fund_pct,
-            u.company_fund_pct,
-            -- Upline details
-            ul.name as upline_name,
-            ul.email as upline_email,
-            ul2.name as upline2_name,
-            ul2.email as upline2_email
+            u.cumulative_gross,
+            ul.name AS upline_name,
+            ul.email AS upline_email,
+            ul.agent_rank AS upline_rank,
+            (SELECT COALESCE(SUM(pl2.commission_amount),0) FROM property_listings pl2 WHERE pl2.agent_id = u.id AND pl2.status IN ('submitted','approved')) AS pending_gross,
+            (SELECT COUNT(*) FROM property_listings pl3 WHERE pl3.agent_id = u.id AND pl3.status = 'submitted') AS pending_count
         FROM users u
         LEFT JOIN users ul ON u.upline_id = ul.id
-        LEFT JOIN users ul2 ON u.upline2_id = ul2.id
         WHERE u.role = 'agent'
-        ORDER BY u.created_at DESC
+        ORDER BY u.cumulative_gross DESC, u.created_at DESC
     """)
     
     agents_data = cursor.fetchall()
     conn.close()
-    
-    # Convert to list of dictionaries for easier template access
+
+    # WTP rank thresholds (cumulative gross commission)
+    RANK_THRESHOLDS = [
+        ('REN',       0,      70),
+        ('Assoc REN', 30000,  75),
+        ('Elite REN', 90000,  80),
+        ('TL',        210000, 85),
+        ('ATL',       450000, 90),
+    ]
+
+    def get_next_rank(gross):
+        for i, (rank, threshold, pct) in enumerate(RANK_THRESHOLDS):
+            if gross < threshold:
+                return rank, threshold, pct
+            if i + 1 < len(RANK_THRESHOLDS):
+                next_rank, next_thresh, next_pct = RANK_THRESHOLDS[i+1]
+                if gross < next_thresh:
+                    return next_rank, next_thresh, next_pct
+        return 'ATL', 450000, 90
+
     agents = []
-    for agent in agents_data:
+    for a in agents_data:
+        pending_gross  = float(a[14] or 0)   # idx 14 = pending_gross
+        pending_count  = int(a[15] or 0)    # idx 15 = pending_count
+        approved_gross = float(a[10] or 0)  # idx 10 = cumulative_gross
+        # Display gross = submitted + approved commission
+        display_gross  = pending_gross
+
+        # Next rank info based on display_gross
+        next_rank_info = get_next_rank(display_gross)
+
         agents.append({
-            'id': agent[0],
-            'email': agent[1],
-            'name': agent[2],
-            'role': agent[3],
-            'upline_id': agent[4],
-            'upline_commission_rate': agent[5],
-            'created_at': agent[6],
-            'upline2_id': agent[7],
-            'upline2_commission_rate': agent[8],
-            'commission_rate': agent[9],
-            'total_listings': agent[10],
-            'total_commission': agent[11],
-            'commission_structure': agent[12],
-            'total_commission_fund_pct': agent[13],
-            'agent_fund_pct': agent[14],
-            'upline_fund_pct': agent[15],
-            'upline2_fund_pct': agent[16],
-            'company_fund_pct': agent[17],
-            'upline_name': agent[18],
-            'upline_email': agent[19],
-            'upline2_name': agent[20],
-            'upline2_email': agent[21]
+            'id':              a[0],
+            'email':           a[1],
+            'name':            a[2],
+            'role':            a[3],
+            'upline_id':       a[4],
+            'created_at':      a[5],
+            'total_listings':  a[6],
+            'total_commission': float(a[7] or 0),
+            'agent_rank':      a[8] or 'REN',
+            'commission_rate': float(a[9] or 70),
+            'cumulative_gross': approved_gross,    # DB approved value
+            'display_gross':   display_gross,      # submitted+approved (rank tracker)
+            'pending_gross':   pending_gross - approved_gross,  # submitted only portion
+            'pending_count':   pending_count,
+            'upline_name':     a[11],
+            'upline_email':    a[12],
+            'upline_rank':     a[13],
+            'next_rank':       next_rank_info[0],
+            'next_threshold':  next_rank_info[1],
+            'next_pct':        next_rank_info[2],
+            'progress_pct':    min(100, round(display_gross / next_rank_info[1] * 100, 1)) if next_rank_info[1] > 0 else 100,
         })
     
     return render_template("admin/manage_agents.html", agents=agents)
@@ -6840,7 +8006,7 @@ def agent_hierarchy():
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
 
-    # UPDATED QUERY: Get all agents with NEW fund-based commission fields
+    # UPDATED QUERY: Get all agents with TAIKO rank fields
     cursor.execute(
         """
         SELECT 
@@ -6854,17 +8020,13 @@ def agent_hierarchy():
             u3.name as upline2_name,
             u3.email as upline2_email,
             u1.created_at,
-            -- NEW FIELDS:
-            u1.commission_structure,
-            u1.total_commission_fund_pct,
-            u1.agent_fund_pct,
-            u1.upline_fund_pct,
-            u1.upline2_fund_pct,
-            u1.company_fund_pct,
-            -- Legacy fields (keep for backward compatibility)
-            u1.upline_commission_rate,
-            u1.upline2_commission_rate,
+            -- TAIKO rank fields
+            u1.agent_rank,
             u1.commission_rate,
+            u1.cumulative_gross,
+            -- Legacy fields (kept for backward compat)
+            u1.upline_commission_rate,
+            NULL as upline2_commission_rate,  -- column removed
             -- Statistics
             (SELECT COUNT(*) FROM users u4 WHERE u4.upline_id = u1.id AND u4.role = 'agent') as downline_count,
             (SELECT COUNT(*) FROM property_listings pl WHERE pl.agent_id = u1.id) as total_listings,
@@ -6895,37 +8057,35 @@ def agent_hierarchy():
     # Build hierarchy tree
     def build_hierarchy_tree():
         """Build hierarchical tree structure"""
-        # Create agent nodes
+        # New column index map:
+        # 0=id, 1=name, 2=email, 3=upline_id, 4=upline2_id,
+        # 5=upline_name, 6=upline_email, 7=upline2_name, 8=upline2_email,
+        # 9=created_at, 10=agent_rank, 11=commission_rate, 12=cumulative_gross,
+        # 13=upline_commission_rate, 14=upline2_commission_rate,
+        # 15=downline_count, 16=total_listings, 17=total_commission
         nodes = {}
         for agent in agents:
             agent_id = agent[0]
             nodes[agent_id] = {
-                "id": agent[0],
-                "name": agent[1],
-                "email": agent[2],
-                "upline_id": agent[3],
-                "upline2_id": agent[4],
-                "upline_name": agent[5],
-                "upline_email": agent[6],
-                "upline2_name": agent[7],
-                "upline2_email": agent[8],
-                "join_date": agent[9],
-                # NEW FIELDS:
-                "commission_structure": agent[10],
-                "total_commission_fund_pct": agent[11],
-                "agent_fund_pct": agent[12],
-                "upline_fund_pct": agent[13],
-                "upline2_fund_pct": agent[14],
-                "company_fund_pct": agent[15],
-                # Legacy fields:
-                "upline_commission_rate": agent[16],
-                "upline2_commission_rate": agent[17],
-                "commission_rate": agent[18],
-                # Statistics
-                "downline_count": agent[19],
-                "total_listings": agent[20],
-                "total_commission": agent[21] or 0,
-                "downlines": [],  # Will be filled with child nodes
+                "id":                    agent[0],
+                "name":                  agent[1],
+                "email":                 agent[2],
+                "upline_id":             agent[3],
+                "upline2_id":            agent[4],
+                "upline_name":           agent[5],
+                "upline_email":          agent[6],
+                "upline2_name":          agent[7],
+                "upline2_email":         agent[8],
+                "join_date":             agent[9],
+                "agent_rank":            agent[10] or "REN",
+                "commission_rate":       agent[11] or 70.0,
+                "cumulative_gross":      agent[12] or 0.0,
+                "upline_commission_rate":  agent[13],
+                "upline2_commission_rate": agent[14],
+                "downline_count":        agent[15] or 0,
+                "total_listings":        agent[16] or 0,
+                "total_commission":      agent[17] or 0,
+                "downlines": [],
             }
 
         # Build tree by connecting downlines
@@ -6953,155 +8113,97 @@ def agent_hierarchy():
 
     hierarchy_tree = build_hierarchy_tree()
 
-    # Render HTML tree - UPDATED FOR FUND-BASED COMMISSIONS
+    # Render horizontal org-chart tree
+    RANK_ICONS = {"REN":"🟣","Assoc REN":"🔵","Elite REN":"⭐","TL":"🏅","ATL":"👑"}
+    RANK_COLORS = {
+        "REN":       "#4a1ea8",
+        "Assoc REN": "#0055b3",
+        "Elite REN": "#7a4f00",
+        "TL":        "#0a5c30",
+        "ATL":       "#7a3300",
+    }
+    RANK_BG = {
+        "REN":       "#ede8ff",
+        "Assoc REN": "#dbeeff",
+        "Elite REN": "#fff4cc",
+        "TL":        "#d6f5e3",
+        "ATL":       "#fff0e0",
+    }
+    THRESHOLDS = [
+        ("REN",       0,       30000),
+        ("Assoc REN", 30000,   90000),
+        ("Elite REN", 90000,   210000),
+        ("TL",        210000,  450000),
+        ("ATL",       450000,  None),
+    ]
+
+    def render_node(agent):
+        rank  = agent.get("agent_rank", "REN")
+        pct   = float(agent.get("commission_rate") or 70)
+        cumul = float(agent.get("cumulative_gross") or 0)
+        icon  = RANK_ICONS.get(rank, "🟣")
+        color = RANK_COLORS.get(rank, "#333")
+        bg    = RANK_BG.get(rank, "#f8f9fa")
+        aid   = agent["id"]
+        has_children = bool(agent["downlines"])
+
+        # Progress
+        prog = 0
+        next_label = "🏆 Top"
+        for rname, rmin, rmax in THRESHOLDS:
+            if rank == rname:
+                if rmax:
+                    prog = min(100, int((cumul - rmin) / (rmax - rmin) * 100))
+                    next_label = f"RM {max(0,rmax-cumul):,.0f} → next"
+                else:
+                    prog = 100
+                break
+
+        toggle_btn = f'<button class="toggle-btn" onclick="toggleNode({aid})" title="Collapse/Expand">▾</button>' if has_children else ''
+
+        # Build children HTML
+        children_html = ""
+        if has_children:
+            children_html = f'<div class="children" id="children-{aid}">'
+            for child in agent["downlines"]:
+                children_html += render_node(child)
+            children_html += '</div>'
+
+        return f'''
+<div class="tree-node" id="node-{aid}">
+  <div class="node-card" style="border-top:3px solid {color}; background:{bg};"
+       onclick="showDetail({aid})"
+       data-id="{aid}"
+       data-name="{agent['name']}"
+       data-email="{agent['email']}"
+       data-rank="{rank}"
+       data-pct="{int(pct)}"
+       data-cumul="{cumul:,.2f}"
+       data-upline="{agent['upline_name'] or 'Top Level'}"
+       data-downlines="{agent['downline_count'] or 0}"
+       data-listings="{agent['total_listings'] or 0}"
+       data-commission="{float(agent['total_commission'] or 0):,.2f}"
+       data-joined="{str(agent['join_date'] or '')[:10]}"
+       data-prog="{prog}"
+       data-next="{next_label}">
+    <div class="node-top">
+      <span class="node-rank-badge" style="background:{color}; color:#fff;">{icon} {rank}</span>
+      {toggle_btn}
+    </div>
+    <div class="node-name">{agent['name']}</div>
+    <div class="node-pct" style="color:{color};">{int(pct)}%</div>
+    <div class="node-bar-bg"><div class="node-bar-fg" style="width:{prog}%; background:{color};"></div></div>
+    <div class="node-sub">#{aid} · {agent['total_listings'] or 0} listings</div>
+  </div>
+  {children_html}
+</div>'''
+
     def render_tree_html(agents_list, level=0, parent_id=None):
+        if not agents_list:
+            return ""
         html = ""
         for agent in agents_list:
-            # Determine level-specific styling
-            level_class = f"level-{min(level, 3)}"
-            padding_left = level * 40  # Indent based on level
-
-            # Calculate statistics
-            total_downlines = agent["downline_count"]
-            total_commission = agent["total_commission"] or 0
-
-            # Determine if this agent has downlines
-            has_downlines = len(agent["downlines"]) > 0
-            
-            # Determine commission structure to display
-            is_fund_based = agent.get("commission_structure") == "fund_based"
-            
-            # Commission display based on structure
-            commission_display = ""
-            if is_fund_based:
-                commission_display = f"""
-                    <div class="detail-row">
-                        <div class="detail-item">
-                            <span class="detail-label">Fund:</span>
-                            <span class="detail-value">{agent.get('total_commission_fund_pct') or 2.0}% of sale</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Agent Share:</span>
-                            <span class="detail-value" style="color: #28a745;">{agent.get('agent_fund_pct') or 80.0}%</span>
-                        </div>
-                    </div>
-                    
-                    <div class="detail-row">
-                        <div class="detail-item">
-                            <span class="detail-label">Direct Upline:</span>
-                            <span class="detail-value">{agent.get('upline_fund_pct') or 10.0}% of fund</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Indirect Upline:</span>
-                            <span class="detail-value">{agent.get('upline2_fund_pct') or 5.0}% of fund</span>
-                        </div>
-                    </div>
-                    
-                    <div class="detail-row">
-                        <div class="detail-item">
-                            <span class="detail-label">Company:</span>
-                            <span class="detail-value">{agent.get('company_fund_pct') or 5.0}% of fund</span>
-                        </div>
-                    </div>
-                """
-            else:
-                commission_display = f"""
-                    <div class="detail-row">
-                        <div class="detail-item">
-                            <span class="detail-label">Upline Rate:</span>
-                            <span class="detail-value">{agent.get('upline_commission_rate') or 0}%</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Upline2 Rate:</span>
-                            <span class="detail-value">{agent.get('upline2_commission_rate') or 0}%</span>
-                        </div>
-                    </div>
-                    
-                    <div class="detail-row">
-                        <div class="detail-item">
-                            <span class="detail-label">Own Rate:</span>
-                            <span class="detail-value">{agent.get('commission_rate') or 0}%</span>
-                        </div>
-                    </div>
-                """
-
-            html += f"""
-            <div class="hierarchy-item {level_class}" style="margin-left: {padding_left}px;">
-                <div class="agent-card">
-                    <div class="agent-header">
-                        <div class="agent-avatar">
-                            <span class="avatar-icon">👤</span>
-                            <span class="level-badge">L{level + 1}</span>
-                        </div>
-                        <div class="agent-info">
-                            <h3>{agent['name']}</h3>
-                            <p class="agent-email">{agent['email']}</p>
-                            <div class="agent-id">ID: #{agent['id']}</div>
-                            <div style="font-size: 10px; margin-top: 3px;">
-                                <span class="commission-structure" style="background: {'#28a745' if is_fund_based else '#6c757d'}; color: white; padding: 2px 6px; border-radius: 3px;">
-                                    {'💰 Fund-Based' if is_fund_based else '⚡ Legacy'}
-                                </span>
-                            </div>
-                        </div>
-                        <div class="agent-actions">
-                            <a href="/admin/edit-agent/{agent['id']}" class="btn-edit">✏️ Edit</a>
-                            <a href="/admin/agents?view={agent['id']}" class="btn-view">👁️ View</a>
-                        </div>
-                    </div>
-        
-                    <div class="agent-details">
-                        <div class="detail-row">
-                            <div class="detail-item">
-                                <span class="detail-label">Direct Upline:</span>
-                                <span class="detail-value">{agent['upline_name'] or 'TOP LEVEL'}</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-label">Indirect Upline:</span>
-                                <span class="detail-value">{agent['upline2_name'] or 'None'}</span>
-                            </div>
-                        </div>
-            
-                        {commission_display}
-            
-                        <div class="detail-row">
-                            <div class="detail-item">
-                                <span class="detail-label">Downlines:</span>
-                                <span class="detail-value badge-downline">{total_downlines} agent(s)</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-label">Listings:</span>
-                                <span class="detail-value badge-listings">{agent['total_listings'] or 0}</span>
-                            </div>
-                        </div>
-            
-                        <div class="detail-row">
-                            <div class="detail-item">
-                                <span class="detail-label">Total Commission:</span>
-                                <span class="detail-value" style="color: #28a745; font-weight: bold;">RM{float(total_commission):,.2f}</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-label">Joined:</span>
-                                <span class="detail-value">{agent['join_date'][:10] if agent['join_date'] else 'N/A'}</span>
-                            </div>
-                        </div>
-            
-                        {f'<div class="downline-preview" style="background: #e7f3ff;"><strong>Fund-Based Commission:</strong> Agent gets {agent.get("agent_fund_pct") or 80.0}% of {agent.get("total_commission_fund_pct") or 2.0}% fund</div>' if is_fund_based else ''}
-            
-                        {f'<div class="downline-preview"><strong>Direct Downlines:</strong> {downline_groups.get(agent["id"], "None")}</div>' if downline_groups.get(agent["id"]) else ''}
-                   </div>
-        
-                   {f'<div class="connector-line" style="left: {padding_left + 15}px;"></div>' if has_downlines else ''}
-               </div>
-            """
-
-            # Recursively render downlines
-            if agent["downlines"]:
-                html += f'<div class="downline-container">'
-                html += render_tree_html(agent["downlines"], level + 1, agent["id"])
-                html += "</div>"
-
-            html += "</div>"
-
+            html += render_node(agent)
         return html
 
     hierarchy_html = render_tree_html(hierarchy_tree) if hierarchy_tree else ""
@@ -7109,12 +8211,17 @@ def agent_hierarchy():
     # Calculate statistics
     total_agents = len(agents)
     top_level_count = sum(1 for agent in agents if agent[3] is None or agent[3] == "")
-    with_downlines = sum(1 for agent in agents if agent[19] and int(agent[19]) > 0)
-    total_commission = sum(float(agent[21] or 0) for agent in agents)
-    
-    # Count fund-based vs legacy agents
-    fund_based_count = sum(1 for agent in agents if agent[10] == 'fund_based')
-    legacy_count = total_agents - fund_based_count
+    with_downlines = sum(1 for agent in agents if agent[15] and int(agent[15]) > 0)
+    total_commission = sum(float(agent[17] or 0) for agent in agents)
+
+    # Count agents per TAIKO rank (index 10 = agent_rank)
+    rank_counts = {'REN': 0, 'Assoc REN': 0, 'Elite REN': 0, 'TL': 0, 'ATL': 0}
+    for agent in agents:
+        r = agent[10] or 'REN'
+        if r in rank_counts:
+            rank_counts[r] += 1
+        else:
+            rank_counts['REN'] += 1
 
     return render_template(
         "admin/agent_hierarchy.html",
@@ -7124,224 +8231,94 @@ def agent_hierarchy():
         top_level_count=top_level_count,
         with_downlines=with_downlines,
         total_commission=total_commission,
-        fund_based_count=fund_based_count,
-        legacy_count=legacy_count
+        rank_counts=rank_counts,
     )
 
 
 @app.route("/admin/add-agent", methods=["GET", "POST"])
 def add_agent():
-    """Add new agent with upline structure"""
+    """Add new agent with TAIKO rank selection"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
-
-    # Get all existing agents for upline selection
     cursor.execute(
-        """
-        SELECT id, name, email 
-        FROM users 
-        WHERE role = 'agent' 
-        ORDER BY name
-    """
+        "SELECT id, name, email, agent_rank FROM users WHERE role='agent' ORDER BY name"
     )
-    existing_agents = cursor.fetchall()
+    existing_agents = [
+        {"id": r[0], "name": r[1], "email": r[2], "agent_rank": r[3] or "REN"}
+        for r in cursor.fetchall()
+    ]
     conn.close()
 
     if request.method == "POST":
-        name = request.form["name"]
-        email = request.form["email"]
-        password = request.form["password"]
-        upline_id = request.form.get("upline_id", None)
+        name             = request.form.get("name", "").strip()
+        email            = request.form.get("email", "").strip()
+        password         = request.form.get("password", "")
+        upline_id        = request.form.get("upline_id") or None
+        initial_rank     = request.form.get("initial_rank", "REN")
+        cumulative_gross = float(request.form.get("cumulative_gross") or 0)
+        reason           = request.form.get("reason", "").strip() or "Admin new agent creation"
 
-        # Set upline commission rate to 0 (admin will set later)
-        upline_commission_rate = 0.00
+        # Validate rank and get payout %
+        valid_ranks = [r["rank"] for r in TAIKO_RANKS]
+        if initial_rank not in valid_ranks:
+            initial_rank = "REN"
+        commission_rate = next(r["payout_pct"] for r in TAIKO_RANKS if r["rank"] == initial_rank)
 
         hashed_pw = generate_password_hash(password)
 
         conn = sqlite3.connect("real_estate.db")
         cursor = conn.cursor()
         try:
+            # Auto-resolve upline2 from upline's upline
+            upline2_id = None
+            if upline_id:
+                cursor.execute("SELECT upline_id FROM users WHERE id = ?", (upline_id,))
+                row = cursor.fetchone()
+                upline2_id = row[0] if row else None
+
             cursor.execute(
                 """
-                INSERT INTO users (email, password, name, role, upline_id, upline_commission_rate)
-                VALUES (?, ?, ?, 'agent', ?, ?)
-            """,
-                (email, hashed_pw, name, upline_id, upline_commission_rate),
+                INSERT INTO users
+                    (email, password, name, role, upline_id, upline2_id,
+                     agent_rank, commission_rate, cumulative_gross, upline_commission_rate)
+                VALUES (?, ?, ?, 'agent', ?, ?, ?, ?, ?, 0)
+                """,
+                (email, hashed_pw, name, upline_id, upline2_id,
+                 initial_rank, commission_rate, cumulative_gross),
             )
-
-            # Get the new agent's ID
             new_agent_id = cursor.lastrowid
 
-            # If upline is specified, update the hierarchy
-            if upline_id:
-                # You can add hierarchy tracking here if needed
-                pass
+            # Log to rank_promotion_log if non-default rank was assigned
+            if initial_rank != "REN" or cumulative_gross > 0:
+                cursor.execute(
+                    """
+                    INSERT INTO rank_promotion_log
+                        (agent_id, old_rank, new_rank, old_pct, new_pct,
+                         cumulative_gross_at_promotion, promoted_by, admin_id, reason)
+                    VALUES (?, 'REN', ?, 70, ?, ?, 'admin', ?, ?)
+                    """,
+                    (new_agent_id, initial_rank, commission_rate,
+                     cumulative_gross, session["user_id"], reason),
+                )
 
             conn.commit()
             conn.close()
-            return redirect("/admin/agents?success=Agent added successfully!")
+            flash(
+                f"✅ Agent {name} created successfully as {initial_rank} ({int(commission_rate)}%).",
+                "success"
+            )
+            return redirect("/admin/agents")
         except Exception as e:
             conn.rollback()
             conn.close()
-            return f"Error: {str(e)}"
+            flash(f"❌ Error creating agent: {str(e)}", "error")
+            return redirect("/admin/add-agent")
 
-    # GET request - show form
-    add_agent_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Add New Agent</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                max-width: 600px; 
-                margin: 50px auto; 
-                padding: 20px; 
-                background: #f5f5f5;
-            }
-            .form-box { 
-                background: white; 
-                padding: 30px; 
-                border-radius: 10px; 
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            }
-            h2 { 
-                margin-top: 0; 
-                color: #333;
-                border-bottom: 2px solid #007bff;
-                padding-bottom: 10px;
-            }
-            .form-group {
-                margin-bottom: 20px;
-            }
-            label { 
-                display: block; 
-                margin-bottom: 8px; 
-                font-weight: bold; 
-                color: #555;
-            }
-            input, select { 
-                width: 100%; 
-                padding: 12px; 
-                border: 1px solid #ddd; 
-                border-radius: 5px; 
-                box-sizing: border-box;
-                font-size: 16px;
-            }
-            input:focus, select:focus {
-                border-color: #007bff;
-                outline: none;
-                box-shadow: 0 0 5px rgba(0,123,255,0.3);
-            }
-            button { 
-                width: 100%; 
-                padding: 14px; 
-                background: #28a745; 
-                color: white; 
-                border: none; 
-                border-radius: 5px; 
-                cursor: pointer; 
-                font-size: 16px;
-                font-weight: bold;
-                margin-top: 10px;
-            }
-            button:hover { 
-                background: #218838; 
-            }
-            .back-link { 
-                display: block; 
-                margin-top: 20px; 
-                text-align: center; 
-                color: #007bff; 
-                text-decoration: none;
-            }
-            .back-link:hover {
-                text-decoration: underline;
-            }
-            .info-box {
-                background: #e8f4ff;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 15px 0;
-                border-left: 4px solid #007bff;
-            }
-            .hierarchy-example {
-                background: #f0f9ff;
-                padding: 15px;
-                border-radius: 5px;
-                margin: 15px 0;
-                font-size: 14px;
-                color: #666;
-            }
-            .hierarchy-example h4 {
-                margin-top: 0;
-                color: #333;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="form-box">
-            <h2>➕ Add New Agent</h2>
-            
-            <div class="info-box">
-                <strong>📋 Upline System:</strong>
-                <p>Each agent can be assigned to an upline (supervising agent). This creates a hierarchy for commission tracking.</p>
-            </div>
-            
-            <div class="hierarchy-example">
-                <h4>📊 Example Hierarchy:</h4>
-                <ul>
-                    <li>Level 1: Eunice (Top Level)</li>
-                    <li>Level 2: Erwin (Upline of Derrick)</li>
-                    <li>Level 3: Derrick (New agent under Erwin)</li>
-                </ul>
-                <p><em>Note: Upline commission rate will be set by admin separately.</em></p>
-            </div>
-            
-            <form method="POST">
-                <div class="form-group">
-                    <label>Full Name *</label>
-                    <input type="text" name="name" placeholder="Enter agent's full name" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>Email Address *</label>
-                    <input type="email" name="email" placeholder="Enter email address" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>Password *</label>
-                    <input type="password" name="password" placeholder="Create a password" required minlength="6">
-                </div>
-                
-                <div class="form-group">
-                    <label>Upline (Optional)</label>
-                    <select name="upline_id">
-                        <option value="">-- No Upline (Top Level) --</option>
-                        {% for agent in existing_agents %}
-                        <option value="{{ agent[0] }}">{{ agent[1] }} ({{ agent[2] }})</option>
-                        {% endfor %}
-                    </select>
-                    <small style="color: #666;">Select the supervising agent for this new agent. Leave blank if top level.</small>
-                </div>
-                
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <strong> Note:</strong> Upline commission rate will be set to 0% initially. Admin can adjust it later in agent settings.
-                </div>
-                
-                <button type="submit">✅ Create Agent Account</button>
-            </form>
-            
-            <a href="/admin/agents" class="back-link">← Back to Agents List</a>
-        </div>
-    </body>
-    </html>
-    """
-
-    return render_template_string(add_agent_template, existing_agents=existing_agents)
+    # GET — render external template
+    return render_template("admin/add_agent.html", existing_agents=existing_agents)
 
 
 @app.route("/admin/edit-agent/<int:agent_id>", methods=["GET", "POST"])
@@ -7367,12 +8344,9 @@ def edit_agent(agent_id):
             u.upline2_id,
             u.total_listings,
             u.total_commission,
-            u.commission_structure,
-            u.total_commission_fund_pct,
-            u.agent_fund_pct,
-            u.upline_fund_pct,
-            u.upline2_fund_pct,
-            u.company_fund_pct
+            u.agent_rank,
+            u.commission_rate,
+            u.cumulative_gross
         FROM users u
         WHERE u.id = ? AND u.role = "agent"
     """,
@@ -7408,399 +8382,84 @@ def edit_agent(agent_id):
 
     if request.method == "POST":
         try:
-            name = request.form["name"]
-            email = request.form["email"]
-            upline_id = request.form.get("upline_id", None)
-            password = request.form.get("password", "")
-            
-            # NEW: Fund-based commission fields
-            commission_structure = request.form.get("commission_structure", "fund_based")
-            total_fund_pct = float(request.form.get("total_fund_pct", 2.0))
-            agent_fund_pct = float(request.form.get("agent_fund_pct", 80.0))
-            upline_fund_pct = float(request.form.get("upline_fund_pct", 10.0))
-            upline2_fund_pct = float(request.form.get("upline2_fund_pct", 5.0))
-            company_fund_pct = float(request.form.get("company_fund_pct", 5.0))
-            
-            # Auto-set upline2 based on upline's upline
+            name      = request.form["name"]
+            email     = request.form["email"]
+            upline_id = request.form.get("upline_id") or None
+            password  = request.form.get("password", "")
+
+            # Auto-resolve upline2 from upline's upline
             upline2_id = None
             if upline_id:
-                from app import update_upline_chain
-                upline2_id = update_upline_chain(agent_id, upline_id)
-            
-            # Build update query with NEW commission fields
+                cursor.execute("SELECT upline_id FROM users WHERE id = ?", (upline_id,))
+                row = cursor.fetchone()
+                upline2_id = row[0] if row else None
+
             if password:
                 hashed_pw = generate_password_hash(password)
                 cursor.execute(
                     """
-                    UPDATE users 
-                    SET name = ?, email = ?, 
-                        upline_id = ?, upline2_id = ?,
-                        commission_structure = ?,
-                        total_commission_fund_pct = ?,
-                        agent_fund_pct = ?,
-                        upline_fund_pct = ?,
-                        upline2_fund_pct = ?,
-                        company_fund_pct = ?,
-                        password = ?
+                    UPDATE users
+                    SET name = ?, email = ?, upline_id = ?, upline2_id = ?, password = ?
                     WHERE id = ?
-                """,
-                    (
-                        name,
-                        email,
-                        upline_id,
-                        upline2_id,
-                        commission_structure,
-                        total_fund_pct,
-                        agent_fund_pct,
-                        upline_fund_pct,
-                        upline2_fund_pct,
-                        company_fund_pct,
-                        hashed_pw,
-                        agent_id,
-                    ),
+                    """,
+                    (name, email, upline_id, upline2_id, hashed_pw, agent_id),
                 )
             else:
                 cursor.execute(
                     """
-                    UPDATE users 
-                    SET name = ?, email = ?, 
-                        upline_id = ?, upline2_id = ?,
-                        commission_structure = ?,
-                        total_commission_fund_pct = ?,
-                        agent_fund_pct = ?,
-                        upline_fund_pct = ?,
-                        upline2_fund_pct = ?,
-                        company_fund_pct = ?
+                    UPDATE users
+                    SET name = ?, email = ?, upline_id = ?, upline2_id = ?
                     WHERE id = ?
-                """,
-                    (
-                        name,
-                        email,
-                        upline_id,
-                        upline2_id,
-                        commission_structure,
-                        total_fund_pct,
-                        agent_fund_pct,
-                        upline_fund_pct,
-                        upline2_fund_pct,
-                        company_fund_pct,
-                        agent_id,
-                    ),
+                    """,
+                    (name, email, upline_id, upline2_id, agent_id),
                 )
-            
+
             conn.commit()
             conn.close()
-            return redirect("/admin/agents?success=Agent updated successfully!")
-        
+            flash(f"\u2705 Agent {name} updated successfully.", "success")
+            return redirect("/admin/agents")
+
         except Exception as e:
             conn.rollback()
             conn.close()
-            return f"Error updating agent: {str(e)}"
+            flash(f"\u274c Error updating agent: {str(e)}", "error")
+            return redirect(f"/admin/edit-agent/{agent_id}")
     
-    # GET request - show edit form
+    # GET request — build a clean agent dict and render the external template
     conn.close()
-    
-    # Extract values from query result
-    # Index mapping based on updated SELECT query:
-    # 0: id, 1: email, 2: password, 3: name, 4: role, 5: upline_id, 6: created_at,
-    # 7: upline2_id, 8: total_listings, 9: total_commission, 10: commission_structure,
-    # 11: total_commission_fund_pct, 12: agent_fund_pct, 13: upline_fund_pct,
-    # 14: upline2_fund_pct, 15: company_fund_pct
-    
-    # Use the updated template with fund-based commissions
-    edit_agent_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Edit Agent</title>
-        <style>
-            body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
-            .form-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            h2 { margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-            .info-box { background: #e8f4ff; padding: 15px; border-radius: 5px; margin: 15px 0; }
-            .form-group { margin-bottom: 15px; }
-            label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-            input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
-            button { padding: 12px 25px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px; }
-            button:hover { background: #0056b3; }
-            .btn-secondary { background: #6c757d; }
-            .btn-secondary:hover { background: #545b62; }
-            .commission-section { 
-                background: #f8f9fa; 
-                padding: 20px; 
-                border-radius: 5px; 
-                margin: 20px 0; 
-                border: 1px solid #dee2e6;
-            }
-            .commission-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 15px;
-                margin-top: 10px;
-            }
-            .commission-box {
-                background: white;
-                padding: 15px;
-                border-radius: 5px;
-                border-left: 4px solid #007bff;
-            }
-            .commission-box:nth-child(2) {
-                border-left-color: #28a745;
-            }
-            .commission-box:nth-child(3) {
-                border-left-color: #ffc107;
-            }
-            .commission-box:nth-child(4) {
-                border-left-color: #dc3545;
-            }
-            .commission-box:nth-child(5) {
-                border-left-color: #6f42c1;
-            }
-            small { color: #666; font-size: 13px; display: block; margin-top: 5px; }
-            .total-check {
-                background: #d1ecf1;
-                padding: 10px;
-                border-radius: 5px;
-                margin-top: 10px;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="form-box">
-            <h2>✏️ Edit Agent: {{ agent_name }}</h2>
-            
-            <div class="info-box">
-                <p><strong>Agent ID:</strong> #{{ agent_id }}</p>
-                <p><strong>Current Email:</strong> {{ agent_email }}</p>
-                <p><strong>Current Direct Upline:</strong> {{ upline_name }}</p>
-                <p><strong>Current Indirect Upline:</strong> {{ upline2_name }}</p>
-                <p><strong>Joined:</strong> {{ join_date }}</p>
-                <p><strong>Commission Structure:</strong> {{ commission_structure|upper }}</p>
-            </div>
-            
-            <form method="POST" onsubmit="return validateCommissionTotal()">
-                <div class="form-group">
-                    <label>Full Name</label>
-                    <input type="text" name="name" value="{{ agent_name }}" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>Email Address</label>
-                    <input type="email" name="email" value="{{ agent_email }}" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>Direct Upline</label>
-                    <select name="upline_id">
-                        <option value="">-- No Direct Upline --</option>
-                        {% for agent in existing_agents %}
-                        <option value="{{ agent[0] }}" {% if upline_id == agent[0] %}selected{% endif %}>
-                            {{ agent[1] }} ({{ agent[2] }})
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <small>Indirect upline (Upline 2) will be set automatically based on this selection</small>
-                </div>
-                
-                <div class="commission-section">
-                    <h4 style="margin-top: 0; color: #333;">💰 Fund-Based Commission Settings</h4>
-                    
-                    <div class="form-group">
-                        <label>Commission Structure</label>
-                        <select name="commission_structure" id="commission_structure" onchange="toggleCommissionType()">
-                            <option value="fund_based" {% if commission_structure == 'fund_based' %}selected{% endif %}>
-                                Fund-Based (Recommended)
-                            </option>
-                            <option value="legacy" {% if commission_structure == 'legacy' %}selected{% endif %}>
-                                Legacy (Percentage-based)
-                            </option>
-                        </select>
-                        <small>Fund-based: Percentage of sale creates commission fund, then split percentages</small>
-                    </div>
-                    
-                    <div id="fund_based_settings">
-                        <div class="commission-grid">
-                            <div class="commission-box">
-                                <label>Total Fund Percentage (%)</label>
-                                <input type="number" name="total_fund_pct" id="total_fund_pct"
-                                       value="{{ total_fund_pct|default('2.0') }}" 
-                                       min="0.1" max="10" step="0.1" required>
-                                <small>Percentage of sale that creates commission fund</small>
-                            </div>
-                            
-                            <div class="commission-box">
-                                <label>Agent's Fund Share (%)</label>
-                                <input type="number" name="agent_fund_pct" id="agent_fund_pct"
-                                       value="{{ agent_fund_pct|default('80.0') }}" 
-                                       min="0" max="100" step="0.1" required>
-                                <small>Agent's percentage of the commission fund</small>
-                            </div>
-                            
-                            <div class="commission-box">
-                                <label>Direct Upline Share (%)</label>
-                                <input type="number" name="upline_fund_pct" id="upline_fund_pct"
-                                       value="{{ upline_fund_pct|default('10.0') }}" 
-                                       min="0" max="100" step="0.1" required>
-                                <small>Direct upline's percentage of the commission fund</small>
-                            </div>
-                            
-                            <div class="commission-box">
-                                <label>Indirect Upline Share (%)</label>
-                                <input type="number" name="upline2_fund_pct" id="upline2_fund_pct"
-                                       value="{{ upline2_fund_pct|default('5.0') }}" 
-                                       min="0" max="100" step="0.1" required>
-                                <small>Indirect upline's percentage of the commission fund</small>
-                            </div>
-                            
-                            <div class="commission-box">
-                                <label>Company Balance (%)</label>
-                                <input type="number" name="company_fund_pct" id="company_fund_pct"
-                                       value="{{ company_fund_pct|default('5.0') }}" 
-                                       min="0" max="100" step="0.1" required>
-                                <small>Company's percentage of the commission fund</small>
-                            </div>
-                        </div>
-                        
-                        <div id="total_check" class="total-check">
-                            Total Percentage: <span id="total_percentage">100.0</span>%
-                        </div>
-                        
-                        <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 5px;">
-                            <strong>💡 Example for RM1,000,000 sale:</strong><br>
-                            <span id="example_text">
-                                Calculating...
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Password (Leave blank to keep current)</label>
-                    <input type="password" name="password" placeholder="Enter new password">
-                    <div style="color: #666; font-size: 14px; margin-top: 5px;">
-                        Only fill this if you want to change the agent's password
-                    </div>
-                </div>
-                
-                <div style="margin-top: 25px;">
-                    <button type="submit">💾 Save Changes</button>
-                    <a href="/admin/agents" class="btn-secondary" style="padding: 12px 25px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px;">Cancel</a>
-                </div>
-            </form>
-        </div>
-        
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            updateCommissionTotal();
-            updateExample();
-        });
-        
-        function toggleCommissionType() {
-            const structure = document.getElementById('commission_structure').value;
-            const fundSettings = document.getElementById('fund_based_settings');
-            
-            if (structure === 'fund_based') {
-                fundSettings.style.display = 'block';
-            } else {
-                fundSettings.style.display = 'none';
-            }
-        }
-        
-        function updateCommissionTotal() {
-            const agentPct = parseFloat(document.getElementById('agent_fund_pct').value) || 0;
-            const uplinePct = parseFloat(document.getElementById('upline_fund_pct').value) || 0;
-            const upline2Pct = parseFloat(document.getElementById('upline2_fund_pct').value) || 0;
-            const companyPct = parseFloat(document.getElementById('company_fund_pct').value) || 0;
-            
-            const total = agentPct + uplinePct + upline2Pct + companyPct;
-            const totalElement = document.getElementById('total_percentage');
-            
-            totalElement.textContent = total.toFixed(1);
-            
-            if (Math.abs(total - 100.0) > 0.1) {
-                totalElement.style.color = '#dc3545';
-                totalElement.parentElement.style.background = '#f8d7da';
-            } else {
-                totalElement.style.color = '#28a745';
-                totalElement.parentElement.style.background = '#d1ecf1';
-            }
-        }
-        
-        function updateExample() {
-            const totalFundPct = parseFloat(document.getElementById('total_fund_pct').value) || 2.0;
-            const agentPct = parseFloat(document.getElementById('agent_fund_pct').value) || 80.0;
-            const uplinePct = parseFloat(document.getElementById('upline_fund_pct').value) || 10.0;
-            const upline2Pct = parseFloat(document.getElementById('upline2_fund_pct').value) || 5.0;
-            const companyPct = parseFloat(document.getElementById('company_fund_pct').value) || 5.0;
-            
-            const saleAmount = 1000000;
-            const totalFund = saleAmount * (totalFundPct / 100);
-            
-            const exampleText = `
-                • Total commission fund: RM${saleAmount.toLocaleString()} × ${totalFundPct}% = RM${totalFund.toFixed(2).toLocaleString()}<br>
-                • Agent gets: RM${totalFund.toFixed(2).toLocaleString()} × ${agentPct}% = RM${(totalFund * agentPct/100).toFixed(2).toLocaleString()}<br>
-                • Direct upline gets: RM${totalFund.toFixed(2).toLocaleString()} × ${uplinePct}% = RM${(totalFund * uplinePct/100).toFixed(2).toLocaleString()}<br>
-                • Indirect upline gets: RM${totalFund.toFixed(2).toLocaleString()} × ${upline2Pct}% = RM${(totalFund * upline2Pct/100).toFixed(2).toLocaleString()}<br>
-                • Company keeps: RM${totalFund.toFixed(2).toLocaleString()} × ${companyPct}% = RM${(totalFund * companyPct/100).toFixed(2).toLocaleString()}
-            `;
-            
-            document.getElementById('example_text').innerHTML = exampleText;
-        }
-        
-        function validateCommissionTotal() {
-            const structure = document.getElementById('commission_structure').value;
-            
-            if (structure === 'fund_based') {
-                const agentPct = parseFloat(document.getElementById('agent_fund_pct').value) || 0;
-                const uplinePct = parseFloat(document.getElementById('upline_fund_pct').value) || 0;
-                const upline2Pct = parseFloat(document.getElementById('upline2_fund_pct').value) || 0;
-                const companyPct = parseFloat(document.getElementById('company_fund_pct').value) || 0;
-                
-                const total = agentPct + uplinePct + upline2Pct + companyPct;
-                
-                if (Math.abs(total - 100.0) > 0.1) {
-                    if (!confirm(`Commission percentages total ${total.toFixed(1)}%, not 100%. Are you sure you want to save?`)) {
-                        return false;
-                    }
-                }
-            }
-            
-            return true;
-        }
-        
-        // Attach event listeners
-        const commissionInputs = [
-            'agent_fund_pct', 'upline_fund_pct', 'upline2_fund_pct', 'company_fund_pct', 'total_fund_pct'
-        ];
-        
-        commissionInputs.forEach(id => {
-            document.getElementById(id).addEventListener('input', function() {
-                updateCommissionTotal();
-                updateExample();
-            });
-        });
-        </script>
-    </body>
-    </html>
-    """
-    
-    return render_template_string(
-        edit_agent_template,
-        agent_id=agent[0],
-        agent_name=agent[3],
-        agent_email=agent[1],
-        upline_id=agent[5],
-        upline_name=upline_name,
-        upline2_name=upline2_name,
-        commission_structure=agent[10] if len(agent) > 10 and agent[10] else 'fund_based',
-        total_fund_pct=agent[11] if len(agent) > 11 and agent[11] else 2.0,
-        agent_fund_pct=agent[12] if len(agent) > 12 and agent[12] else 80.0,
-        upline_fund_pct=agent[13] if len(agent) > 13 and agent[13] else 10.0,
-        upline2_fund_pct=agent[14] if len(agent) > 14 and agent[14] else 5.0,
-        company_fund_pct=agent[15] if len(agent) > 15 and agent[15] else 5.0,
-        join_date=agent[6][:10] if agent[6] else "Unknown",
-        existing_agents=existing_agents,
+
+    # Build agent dict (index: 0=id,1=email,2=pw,3=name,4=role,5=upline_id,
+    #  6=created_at,7=upline2_id,8=total_listings,9=total_commission,
+    #  10=agent_rank,11=commission_rate,12=cumulative_gross)
+    agent_dict = {
+        "id":              agent[0],
+        "email":           agent[1],
+        "name":            agent[3],
+        "upline_id":       agent[5],
+        "created_at":      agent[6],
+        "total_listings":  agent[8],
+        "total_commission": agent[9],
+        "agent_rank":      agent[10] or "REN",
+        "commission_rate": agent[11] or 70.0,
+        "cumulative_gross": agent[12] or 0.0,
+        "upline_name":     upline_name if upline_name != "None" else None,
+    }
+
+    # Enrich existing_agents list with rank for the dropdown
+    conn2 = sqlite3.connect("real_estate.db")
+    cur2  = conn2.cursor()
+    cur2.execute(
+        "SELECT id, name, email, agent_rank FROM users WHERE role='agent' AND id != ? ORDER BY name",
+        (agent_id,)
+    )
+    all_agents = [{"id": r[0], "name": r[1], "email": r[2], "agent_rank": r[3] or "REN"}
+                  for r in cur2.fetchall()]
+    conn2.close()
+
+    return render_template(
+        "admin/edit_agent.html",
+        agent=agent_dict,
+        all_agents=all_agents,
     )
 
 
@@ -8026,8 +8685,8 @@ def commission_report():
 </body>
 </html>"""
 
-    return render_template_string(
-        commission_template,
+    return render_template(
+        "admin/commissions.html",
         commissions_list=commissions_list,
         total_paid=total_paid,
         total_approved=total_approved,
@@ -8208,119 +8867,92 @@ def admin_settings():
     settings_template = (
         """
     <!DOCTYPE html>
-    <html>
-    <head>
-        <title>System Settings</title>
-        <style>
-            body { 
-                font-family: Arial, sans-serif; 
-                margin: 20px; 
-                background: #f5f5f5; 
-                max-width: 1000px; 
-            }
-            .header { 
-                background: white; 
-                padding: 20px; 
-                border-radius: 10px; 
-                margin-bottom: 20px; 
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            }
-            .settings-section { 
-                background: white; 
-                padding: 25px; 
-                border-radius: 10px; 
-                margin: 20px 0; 
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            }
-            .form-group { 
-                margin-bottom: 15px; 
-            }
-            label { 
-                display: block; 
-                margin-bottom: 5px; 
-                font-weight: bold; 
-                color: #555;
-            }
-            input, select, textarea { 
-                width: 100%; 
-                padding: 10px; 
-                border: 1px solid #ddd; 
-                border-radius: 5px; 
-                box-sizing: border-box;
-            }
-            button { 
-                padding: 10px 20px; 
-                background: #007bff; 
-                color: white; 
-                border: none; 
-                border-radius: 5px; 
-                cursor: pointer; 
-                margin-top: 10px;
-            }
-            .btn { 
-                padding: 10px 20px; 
-                background: #007bff; 
-                color: white; 
-                border: none; 
-                border-radius: 5px; 
-                cursor: pointer; 
-                text-decoration: none;
-                display: inline-block;
-            }
-            .checkbox-group {
-                margin: 10px 0;
-            }
-            .checkbox-group label {
-                display: flex;
-                align-items: center;
-                margin-bottom: 8px;
-                font-weight: normal;
-            }
-            .checkbox-group input[type="checkbox"] {
-                width: auto;
-                margin-right: 10px;
-            }
-            .setting-note {
-                font-size: 12px;
-                color: #666;
-                margin-top: 5px;
-                display: block;
-            }
-            .success-message {
-                background: #d4edda;
-                color: #155724;
-                padding: 10px 15px;
-                border-radius: 5px;
-                margin-bottom: 15px;
-                border: 1px solid #c3e6cb;
-            }
-            .error-message {
-                background: #f8d7da;
-                color: #721c24;
-                padding: 10px 15px;
-                border-radius: 5px;
-                margin-bottom: 15px;
-                border: 1px solid #f5c6cb;
-            }
-            .nav {
-                margin-top: 10px;
-            }
-            .nav a {
-                margin-right: 15px;
-                color: #007bff;
-                text-decoration: none;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>⚙️ System Settings</h1>
-            <div class="nav">
-                <a href="/admin/dashboard">← Dashboard</a>
-            </div>
-        </div>
-        
-        <!-- Display success/error messages -->
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>System Settings</title>
+<style>
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+        .topbar { background:#2c3e50; color:white; padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px; position:sticky; top:0; z-index:100; }
+        .topbar-title { font-size:1rem; font-weight:700; }
+        .topbar-right { display:flex; align-items:center; gap:10px; }
+        .topbar-right a { color:#a8c8ff; text-decoration:none; font-size:13px; }
+        .hamburger { display:none; background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:2px 6px; }
+        .nav-bar { background:white; padding:10px 16px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+        .nav-bar a { color:#007bff; text-decoration:none; font-weight:600; font-size:13px; padding:5px 10px; border-radius:6px; white-space:nowrap; }
+        .nav-bar a:hover { background:#f0f7ff; }
+        .nav-bar a.nav-btn { background:#2563eb; color:white; }
+        .nav-bar a.nav-logout { color:#dc3545; }
+        .wrap { max-width:1400px; margin:0 auto; padding:16px; }
+        .card { background:white; border-radius:10px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin-bottom:16px; }
+        .scard { background:white; border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08); border-top:3px solid #ddd; }
+        .scard h3 { margin:0 0 6px; font-size:12px; color:#888; font-weight:600; text-transform:uppercase; }
+        .scard-val { font-size:1.4rem; font-weight:800; margin-bottom:2px; }
+        .tbl-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        table { width:100%; border-collapse:collapse; background:white; min-width:500px; }
+        th { background:#2c3e50; color:white; padding:10px 12px; text-align:left; font-size:12px; white-space:nowrap; }
+        td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:13px; vertical-align:top; }
+        tr:last-child td { border-bottom:none; } tr:hover td { background:#fafbfc; }
+        .badge { padding:3px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+        .act-btn { display:inline-block; padding:5px 10px; border:none; border-radius:5px; font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; margin:2px 0; }
+        .act-green{background:#28a745;color:white} .act-blue{background:#007bff;color:white}
+        .act-red{background:#dc3545;color:white} .act-grey{background:#6c757d;color:white}
+        .act-orange{background:#fd7e14;color:white} .act-purple{background:#6f42c1;color:white}
+        .filter-wrap { background:white; border-radius:10px; padding:14px 16px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+        .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .filter-row select,.filter-row input { padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:13px; flex:1; min-width:120px; }
+        .btn-go { padding:7px 14px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
+        .btn-clr { padding:7px 12px; background:#6c757d; color:white; border:none; border-radius:6px; font-size:13px; text-decoration:none; display:inline-block; }
+        .sec-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+        .sec-hdr h2 { margin:0; font-size:15px; }
+        .empty { padding:30px; text-align:center; background:white; border-radius:10px; }
+        .form-group { margin-bottom:16px; }
+        label { display:block; margin-bottom:5px; font-weight:600; color:#444; font-size:13px; }
+        input[type=text],input[type=email],input[type=password],input[type=number],select,textarea { width:100%; padding:9px 11px; border:1px solid #ccc; border-radius:6px; font-size:14px; background:#fafafa; }
+        input:focus,select:focus,textarea:focus { outline:none; border-color:#007bff; background:white; }
+        .btn-primary { background:#007bff; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; }
+        .btn-secondary { background:#6c757d; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; text-decoration:none; display:inline-block; }
+        .flash-s { background:#d4edda; color:#155724; padding:10px 14px; border-radius:6px; margin-bottom:14px; border-left:4px solid #28a745; font-size:13px; }
+        .flash-e { background:#f8d7da; color:#721c24; padding:10px 14px; border-radius:6px; margin-bottom:14px; border-left:4px solid #dc3545; font-size:13px; }
+        @media(max-width:640px) {
+            .hamburger { display:block; }
+            .nav-bar { display:none; flex-direction:column; align-items:stretch; padding:8px 12px; gap:2px; }
+            .nav-bar.open { display:flex; }
+            .nav-bar a { padding:10px 12px; font-size:14px; border-bottom:1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom:none; }
+            .wrap { padding:10px; }
+            .stats-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
+            .scard { padding:12px; } .scard-val { font-size:1.2rem; }
+            .filter-row { flex-direction:column; align-items:stretch; }
+            .filter-row select,.filter-row input,.btn-go,.btn-clr { width:100%; }
+            td,th { padding:8px 10px!important; font-size:12px; }
+        }
+</style>
+</head>
+<body>
+<div class="topbar">
+    <div class="topbar-title">&#9881; System Settings</div>
+    <div class="topbar-right"><button class="hamburger" onclick="toggleNav()">&#9776;</button></div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard" class="nav-active">&#128202; Dashboard</a>
+  <a href="/admin/projects">&#127962; Projects</a>
+  <a href="/admin/create-project" class="nav-btn">&#10010; New Project</a>
+  <a href="/admin/agents">&#128101; Agents</a>
+  <a href="/admin/agent-hierarchy">&#128279; Hierarchy</a>
+  <a href="/admin/payments">&#9993; Payments</a>
+  <a href="/admin/commissions">&#128176; Commissions</a>
+  <a href="/admin/unified-submissions">&#128203; Unified Submissions</a>
+  <a href="/admin/agent-performance">&#128200; Performance</a>
+  <a href="/admin/commission-calculator">&#9889; Calc</a>
+  <a href="/admin/settings">&#9881; Settings</a>
+  <a href="/admin/export-data">&#128228; Export</a>
+</div>
+<div class="wrap">
+<!-- Display success/error messages -->
         """
         + """
         {% if success %}
@@ -8635,8 +9267,12 @@ def admin_settings():
     success_msg = request.args.get("success")
     error_msg = request.args.get("error")
 
-    return render_template_string(
-        settings_template, success=success_msg, error=error_msg
+    return render_template(
+        "admin/settings.html",
+        success=success_msg,
+        error=error_msg,
+        payment_settings=payment_settings,
+        notification_settings=notification_settings,
     )
 
 
@@ -8832,7 +9468,7 @@ def create_payment_voucher(payment_id, agent_id, amount, payment_date, payment_m
 
 @app.route("/admin/approve/<int:listing_id>")
 def approve_listing(listing_id):
-    """UPDATED: Approve listing using FUND-BASED commission system"""
+    """Approve listing and run TAIKO EA override commission engine."""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
@@ -8841,209 +9477,159 @@ def approve_listing(listing_id):
         conn = sqlite3.connect("real_estate.db")
         cursor = conn.cursor()
 
-        # 1. Get listing details WITH FUND-BASED FIELDS
+        # ── 1. Fetch listing + agent basics ──
         cursor.execute(
             """
-            SELECT pl.*, 
-                   u.name as agent_name, 
-                   u.upline_id, 
-                   u.upline2_id,
-                   -- FUND-BASED FIELDS:
-                   u.commission_structure,
-                   u.total_commission_fund_pct,
-                   u.agent_fund_pct,
-                   u.upline_fund_pct,
-                   u.upline2_fund_pct,
-                   u.company_fund_pct
+            SELECT pl.id, pl.agent_id, pl.status, pl.sale_price,
+                   pl.commission_amount, pl.project_id, pl.unit_id,
+                   u.name as agent_name, u.agent_rank, u.commission_rate
             FROM property_listings pl
             JOIN users u ON pl.agent_id = u.id
             WHERE pl.id = ?
-        """,
+            """,
             (listing_id,),
         )
-
         listing = cursor.fetchone()
 
         if not listing:
             flash("❌ Listing not found", "error")
             return redirect("/admin/documents")
 
-        if listing[8] == "approved":  # status column
+        if listing[2] == "approved":
             flash("⚠️ Listing already approved", "warning")
             return redirect(f"/admin/documents/{listing_id}")
 
-        agent_id = listing[1]
-        agent_name = listing[20] if len(listing) > 20 else "Unknown"
-        sale_price = listing[7]  # sale_price column
-        direct_upline_id = listing[22] if len(listing) > 22 else None
-        upline2_id = listing[23] if len(listing) > 23 else None
-        
-        # FUND-BASED FIELDS (indices based on SELECT query above)
-        commission_structure = listing[24] if len(listing) > 24 else 'fund_based'
-        total_fund_pct = float(listing[25]) if len(listing) > 25 and listing[25] is not None else 2.0
-        agent_fund_pct = float(listing[26]) if len(listing) > 26 and listing[26] is not None else 80.0
-        upline_fund_pct = float(listing[27]) if len(listing) > 27 and listing[27] is not None else 10.0
-        upline2_fund_pct = float(listing[28]) if len(listing) > 28 and listing[28] is not None else 5.0
-        company_fund_pct = float(listing[29]) if len(listing) > 29 and listing[29] is not None else 5.0
+        agent_id        = listing[1]
+        sale_price      = float(listing[3] or 0)
+        project_id      = listing[5]
+        unit_id         = listing[6]
+        agent_name      = listing[7]
+        agent_rank      = listing[8] or "REN"
+        agent_rate      = float(listing[9] or 70)
 
-        # 2. Update listing status
+        # ── 2. Determine gross commission from project/unit rate ──
+        commission_rate_pct = 2.0          # default 2%
+        commission_source   = "default"
+
+        if project_id:
+            cursor.execute("SELECT commission_rate FROM projects WHERE id = ?", (project_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                commission_rate_pct = float(row[0])
+                commission_source   = "project"
+
+        if unit_id:
+            cursor.execute("SELECT commission_rate FROM project_units WHERE id = ?", (unit_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                commission_rate_pct = float(row[0])
+                commission_source   = "unit"
+
+        # Gross commission = full developer commission (before any split)
+        gross_commission = sale_price * (commission_rate_pct / 100)
+        gross_commission = max(1000.0, min(gross_commission, 50000.0))  # same caps as before
+
+        # ── 3. Mark listing as approved ──
         cursor.execute(
             """
-            UPDATE property_listings 
-            SET status = 'approved', 
-                approved_at = ?,
-                approved_by = ?,
-                commission_status = 'pending'
+            UPDATE property_listings
+            SET status            = 'approved',
+                approved_at       = ?,
+                approved_by       = ?,
+                commission_status = 'pending',
+                commission_amount = ?
             WHERE id = ?
-        """,
+            """,
             (
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 session["user_id"],
+                gross_commission,
                 listing_id,
             ),
         )
+        conn.commit()
+        conn.close()
+        conn = None
 
-        # 3. FUND-BASED COMMISSION CALCULATION
-        # Calculate total commission fund
-        total_fund = sale_price * (total_fund_pct / 100)
-        
-        # Agent's share
-        agent_payment_amount = total_fund * (agent_fund_pct / 100)
-        
-        # Create AGENT commission payment
-        cursor.execute(
+        # ── 4. Run TAIKO commission engine ──
+        #    This function opens its own connection, writes taiko_commission_entries,
+        #    updates cumulative_gross + total_commission for all parties,
+        #    checks for auto-promotion, and logs to commission_calculations.
+        entries = calculate_taiko_commission(listing_id, agent_id, gross_commission)
+
+        # ── 5. Mirror agent's personal payout into commission_payments table
+        #    (used by existing payment-tracking UI) ──
+        agent_entry = next((e for e in entries if e["type"] == "personal"), None)
+        agent_payout = agent_entry["amount"] if agent_entry else gross_commission * (agent_rate / 100)
+
+        conn2 = sqlite3.connect("real_estate.db")
+        cur2  = conn2.cursor()
+
+        cur2.execute(
             """
-            INSERT INTO commission_payments
+            INSERT OR IGNORE INTO commission_payments
             (listing_id, agent_id, commission_amount, payment_status, created_at)
             VALUES (?, ?, ?, 'pending', ?)
-        """,
-            (
-                listing_id,
-                agent_id,
-                agent_payment_amount,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ),
+            """,
+            (listing_id, agent_id, agent_payout,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
         )
 
-        # 4. Create DIRECT upline commission using FUND-BASED rate
-        if direct_upline_id and upline_fund_pct > 0:
-            direct_commission = total_fund * (upline_fund_pct / 100)
+        # ── 6. Mirror upline overrides into upline_commissions table
+        #    (used by existing upline payout UI) ──
+        for e in entries:
+            if e["type"] in ("override", "wtp_gen1", "wtp_gen2") and e.get("amount", 0) > 0:
+                cur2.execute(
+                    """
+                    INSERT INTO upline_commissions
+                    (listing_id, agent_id, upline_id, amount, status,
+                     commission_type, commission_rate, created_at)
+                    VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+                    """,
+                    (
+                        listing_id,
+                        agent_id,
+                        e["agent_id"],
+                        e["amount"],
+                        e["type"],                          # override / wtp_gen1 / wtp_gen2
+                        e.get("gap_pct") or e.get("wtp_pct") or 0,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    ),
+                )
 
-            # 4a. Upline commission record (direct) - USE FUND-BASED RATE
-            cursor.execute(
-                """
-                INSERT INTO upline_commissions
-                (listing_id, agent_id, upline_id, amount, status, 
-                 commission_type, commission_rate, created_at)
-                VALUES (?, ?, ?, ?, 'pending', 'direct', ?, ?)
-            """,
-                (
-                    listing_id,
-                    agent_id,
-                    direct_upline_id,
-                    direct_commission,
-                    upline_fund_pct,  # USE FUND-BASED RATE (10%), not legacy 5%
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ),
+        # ── 7. Notify selling agent ──
+        #    Check if a promotion happened (check_and_promote_agent already ran
+        #    inside calculate_taiko_commission — read the updated rank back)
+        cur2.execute("SELECT agent_rank FROM users WHERE id = ?", (agent_id,))
+        new_rank_row = cur2.fetchone()
+        new_rank     = new_rank_row[0] if new_rank_row else agent_rank
+        promoted     = new_rank != agent_rank
+
+        if promoted:
+            notif_title = "🎉 Listing Approved + Rank Promotion!"
+            notif_msg   = (
+                f"Your listing #{listing_id} has been approved. "
+                f"Congratulations — you have been promoted from {agent_rank} to {new_rank}! "
+                f"Your new payout rate applies from your next deal."
+            )
+        else:
+            notif_title = "✅ Listing Approved"
+            notif_msg   = (
+                f"Your listing #{listing_id} has been approved. "
+                f"Commission of RM {agent_payout:,.2f} is pending payout."
             )
 
-        # 5. Create INDIRECT upline commission using FUND-BASED rate
-        if upline2_id and upline2_fund_pct > 0:
-            indirect_commission = total_fund * (upline2_fund_pct / 100)
-
-            # NO commission_payments for indirect upline either!
-            # Only upline_commissions record
-            cursor.execute("""
-                INSERT INTO upline_commissions
-                (listing_id, agent_id, upline_id, amount, status, 
-                 commission_type, commission_rate, created_at)
-                VALUES (?, ?, ?, ?, 'pending', 'indirect', ?, ?)
-            """, (
-                listing_id,
-                agent_id,  # Selling agent (Erwin)
-                upline2_id,  # Indirect upline (Edmond)
-                indirect_commission,
-                upline2_fund_pct,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ))
-
-        # 6. COMPANY balance (optional - can be saved to separate table)
-        if company_fund_pct > 0:
-            company_balance = total_fund * (company_fund_pct / 100)
-            # You might want to save this to a company_earnings table
-            # cursor.execute("INSERT INTO company_earnings ...", (listing_id, company_balance, ...))
-
-        # 7. Save calculation details to commission_calculations table
-        cursor.execute(
-            """
-            INSERT INTO commission_calculations
-            (listing_id, agent_id, sale_price, base_rate, commission, calculation_details)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            (
-                listing_id,
-                agent_id,
-                sale_price,
-                total_fund_pct,
-                agent_payment_amount,
-                json.dumps({
-                    "commission_source": "fund_based",
-                    "total_fund_percentage": total_fund_pct,
-                    "total_commission_fund": float(total_fund),
-                    "agent_fund_pct": agent_fund_pct,
-                    "upline_fund_pct": upline_fund_pct,
-                    "upline2_fund_pct": upline2_fund_pct,
-                    "company_fund_pct": company_fund_pct,
-                    "commission_structure": commission_structure,
-                    "calculated_at": datetime.now().isoformat()
-                })
-            ),
-        )
-
-        # 8. Update agent's total commission
-        cursor.execute(
-            """
-            UPDATE users 
-            SET total_commission = COALESCE(total_commission, 0) + ? 
-            WHERE id = ?
-        """,
-            (agent_payment_amount, agent_id),
-        )
-
-        # Update direct upline's total commission
-        if direct_upline_id and upline_fund_pct > 0:
-            cursor.execute(
-                """
-                UPDATE users 
-                SET total_commission = COALESCE(total_commission, 0) + ? 
-                WHERE id = ?
-            """,
-                (direct_commission, direct_upline_id),
-            )
-
-        # Update indirect upline's total commission
-        if upline2_id and upline2_fund_pct > 0:
-            cursor.execute(
-                """
-                UPDATE users 
-                SET total_commission = COALESCE(total_commission, 0) + ? 
-                WHERE id = ?
-            """,
-                (indirect_commission, upline2_id),
-            )
-
-        # 9. Create notification for agent
-        cursor.execute(
+        cur2.execute(
             """
             INSERT INTO agent_notifications
-            (agent_id, title, message, notification_type, 
+            (agent_id, title, message, notification_type,
              related_id, related_type, priority, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+            """,
             (
                 agent_id,
-                "✅ Listing Approved",
-                f"Your submission #{listing_id} has been approved.",
+                notif_title,
+                notif_msg,
                 "listing_approved",
                 listing_id,
                 "listing",
@@ -9052,18 +9638,26 @@ def approve_listing(listing_id):
             ),
         )
 
-        # 10. COMMIT EVERYTHING
-        conn.commit()
-        conn.close()
+        conn2.commit()
+        conn2.close()
 
-        flash(f"✅ Listing #{listing_id} approved! Fund-based commissions calculated.", "success")
+        # ── 8. Build a readable summary for the flash message ──
+        total_distributed = sum(e["amount"] for e in entries)
+        override_count    = sum(1 for e in entries if e["type"] in ("override","wtp_gen1","wtp_gen2"))
+        promo_note        = f" | 🎉 {agent_name} promoted to {new_rank}!" if promoted else ""
+        flash(
+            f"✅ Listing #{listing_id} approved! "
+            f"Gross: RM {gross_commission:,.2f} | "
+            f"Agent payout: RM {agent_payout:,.2f} ({agent_rank} {int(agent_rate)}%) | "
+            f"{override_count} override(s) distributed.{promo_note}",
+            "success"
+        )
         return redirect(f"/admin/documents/{listing_id}")
 
     except Exception as e:
         if conn:
             conn.rollback()
             conn.close()
-
         flash(f"❌ Approval failed: {str(e)}", "error")
         return redirect(f"/admin/documents/{listing_id}")
 
@@ -9383,7 +9977,10 @@ def admin_payments():
     print(f"Upline query: {query_upline}")
 
     try:
-        cursor.execute(query_upline, params_upline)
+        try:
+            cursor.execute(query_upline, params_upline)
+        except Exception:
+            cursor.execute("SELECT 1 WHERE 0")  # empty result
         upline_payments = cursor.fetchall()
         print(f"Found {len(upline_payments)} upline payments")
     except Exception as e:
@@ -9422,7 +10019,10 @@ def admin_payments():
 
         query_upline_simple += " ORDER BY uc.created_at DESC"
 
-        cursor.execute(query_upline_simple, params_upline)
+        try:
+            cursor.execute(query_upline_simple, params_upline)
+        except Exception:
+            cursor.execute("SELECT 1 WHERE 0")  # empty result
         upline_payments = cursor.fetchall()
 
     # ============ 3. CALCULATE SEPARATE STATS ============
@@ -9480,17 +10080,19 @@ def admin_payments():
     cursor.execute(query_cp_stats)
     cp_stats = cursor.fetchone()
 
-    # Get stats from upline_commissions table
-    query_uc_stats = """
-        SELECT 
-            COUNT(*) as total_upline_payments,
-            SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_upline_paid_db,
-            SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_upline_pending_db
-        FROM upline_commissions
-    """
-
-    cursor.execute(query_uc_stats)
-    uc_stats = cursor.fetchone()
+    # Get stats from upline_commissions table (may not exist)
+    uc_stats = None
+    try:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_upline_payments,
+                SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_upline_paid_db,
+                SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) as total_upline_pending_db
+            FROM upline_commissions
+        """)
+        uc_stats = cursor.fetchone()
+    except Exception:
+        uc_stats = (0, 0, 0)
 
     # ============ 5. CALCULATE COMBINED STATS ============
     # Use the calculated values instead of database values to ensure consistency
@@ -10166,7 +10768,7 @@ def payment_details(payment_id):
                     <div style="display: flex; gap: 10px; margin-top: 10px;">
                         <a href="/admin/payments" class="btn" style="background: #6c757d;">← Back to Payments</a>
                         {% if payment_data.payment_status != 'paid' %}
-                        <a href="/admin/mark-paid/{{ payment_data.id }}" class="btn" style="background: #28a745;">✅ Mark as Paid</a>
+                        <a href="/admin/mark-commission-paid/CP-{{ payment_data.id }}" class="btn" style="background: #28a745;">✅ Mark as Paid</a>
                         {% endif %}
                     </div>
                 </div>
@@ -11352,6 +11954,16 @@ def create_project():
             category = data.get("category", "condo")
             commission_rate = float(data.get("project_commission", 3.0))
 
+            # WTP commission config fields
+            comm_dev_rate     = float(data.get("comm_dev_rate", 2.0))
+            comm_sst_rate     = float(data.get("comm_sst_rate", 8.0))
+            comm_company_pct  = float(data.get("comm_company_pct", 15.0))
+            comm_pic_pct      = float(data.get("comm_pic_pct", 10.0))
+            comm_agents_pct   = float(data.get("comm_agents_pct", 75.0))
+            comm_pic_rank     = data.get("comm_pic_rank", "REN")
+            comm_pic_agent_id = int(data.get("comm_pic_agent_id", 0)) or None
+            comm_pic_name     = data.get("comm_pic_name", "").strip() or None
+
             # Validate required fields
             if not project_name or not location:
                 flash("❌ Project Name and Location are required", "error")
@@ -11365,20 +11977,19 @@ def create_project():
             cursor.execute(
                 """
                 INSERT INTO projects 
-                (project_name, description, location, project_type, category, 
-                 commission_rate, project_sale_type, created_by, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (project_name, description, location, project_type, category,
+                 commission_rate, project_sale_type, created_by, status,
+                 comm_dev_rate, comm_sst_rate, comm_company_pct,
+                 comm_pic_pct, comm_agents_pct, comm_pic_rank,
+                 comm_pic_agent_id, comm_pic_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
-                    project_name,
-                    description,
-                    location,
-                    project_type,
-                    category,
-                    commission_rate,
-                    project_sale_type,
-                    session["user_id"],
-                    "active",
+                    project_name, description, location, project_type, category,
+                    commission_rate, project_sale_type, session["user_id"], "active",
+                    comm_dev_rate, comm_sst_rate, comm_company_pct,
+                    comm_pic_pct, comm_agents_pct, comm_pic_rank,
+                    comm_pic_agent_id, comm_pic_name,
                 ),
             )
 
@@ -11404,20 +12015,21 @@ def create_project():
                     commission = float(unit_commission) if unit_commission else None
 
                     # ✅ UPDATED: Use correct column names that match database
+                    # unit_code stored in unit_type field (no unit_code column in schema)
+                    combined_type = (unit_code + ' – ' + unit_type).strip(' –') if unit_type else unit_code
                     cursor.execute(
                         """
                         INSERT INTO project_units 
-                        (project_id, unit_code, unit_type, base_price, square_feet, 
+                        (project_id, unit_type, base_price, square_feet, 
                         commission_rate, quantity, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             project_id,
-                            unit_code,
-                            unit_type,
-                            price,  # Maps to base_price column
-                            size,  # Maps to square_feet column
-                            commission,  # commission_rate column already exists
+                            combined_type,
+                            price,
+                            size,
+                            commission,
                             1,
                             "available",
                         ),
@@ -11445,967 +12057,320 @@ def create_project():
             return redirect("/admin/create-project")
 
     # GET request - show form
-    # ✅ FIX 3: Updated HTML with Sales/Rental dropdown
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Create New Project</title>
-        <style>
-            body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }
-            .form-container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            h1 { color: #333; margin-bottom: 30px; }
-            .form-group { margin-bottom: 20px; }
-            label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-            input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; }
-            .form-row { display: flex; gap: 20px; }
-            .form-row > div { flex: 1; }
-            .btn { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
-            .btn-secondary { background: #6c757d; }
-            .units-section { margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 5px; }
-            .unit-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
-            .unit-row input { flex: 1; }
-            .commission-info { background: #e8f4ff; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        </style>
-    </head>
-    <body>
-        <div class="form-container">
-            <h1>🏗️ Create New Project</h1>
-            
-            <form method="POST" onsubmit="return validateForm()">
-                <!-- Basic Project Info -->
-                <div class="form-group">
-                    <label>Project Name *</label>
-                    <input type="text" name="name" required id="projectName">
-                </div>
-                
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea name="description" rows="3"></textarea>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Location *</label>
-                        <input type="text" name="location" required id="location">
-                    </div>
-                    <div class="form-group">
-                        <label>Project Type</label>
-                        <select name="project_type">
-                            <option value="residential">Residential</option>
-                            <option value="commercial">Commercial</option>
-                            <option value="mixed">Mixed Development</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Category</label>
-                        <select name="category">
-                            <option value="condo">Condo/Apartment</option>
-                            <option value="landed">Landed House</option>
-                            <option value="commercial">Commercial</option>
-                            <option value="industrial">Industrial</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <!-- ✅ FIX 4: ADDED Sales/Rental Section -->
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Sales or Rental *</label>
-                        <select name="project_sale_type" required id="projectSaleType">
-                            <option value="">-- Select --</option>
-                            <option value="sales">Sales</option>
-                            <option value="rental">Rental</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <!-- Empty for spacing -->
-                    </div>
-                    <div class="form-group">
-                        <!-- Empty for spacing -->
-                    </div>
-                </div>
-                
-                <!-- Commission Settings -->
-                <div class="commission-info">
-                    <h2>💰 Commission Settings</h2>
-                    
-                    <div class="form-group">
-                        <label>Default Project Commission Rate (%)</label>
-                        <input type="number" name="project_commission" min="0" max="100" step="0.1" 
-                               value="3.0" style="max-width: 150px;">
-                        <small style="color: #666;">Base commission rate for this project</small>
-                    </div>
-                    
-                    <div style="background: #d4edda; padding: 10px; border-radius: 5px; margin-top: 15px;">
-                        <strong>💡 Commission Calculation:</strong>
-                        <ul style="margin: 5px 0 0 20px; color: #555;">
-                            <li>Unit-specific commission overrides project commission</li>
-                            <li>If no unit rate, uses project commission rate</li>
-                            <li>Commission = Sale Price × Commission Rate</li>
-                            <li>Commission is capped: Min RM1,000 - Max RM50,000</li>
-                        </ul>
-                    </div>
-                </div>
-                
-                <!-- Units Section -->
-                <div class="units-section">
-                    <h3>🏠 Project Units</h3>
-                    <p style="color: #666; margin-bottom: 15px;">Add units that agents can sell. All units will be marked as "available".</p>
-                    
-                    <div id="unitsContainer">
-                        <!-- Unit rows will be added here by JavaScript -->
-                        <div class="unit-row">
-                            <input type="text" name="unit_code_1" placeholder="Unit Code (e.g., A-101)" required>
-                            <input type="text" name="unit_type_1" placeholder="Type (e.g., 3BR, Studio)">
-                            <input type="number" name="unit_price_1" placeholder="Price (Optional)" step="1000">
-                            <input type="number" name="unit_size_1" placeholder="Size sq ft (Optional)" step="10">
-                            <input type="number" name="unit_commission_1" placeholder="Comm % (Optional)" min="0" max="100" step="0.1">
-                        </div>
-                    </div>
-                    
-                    <button type="button" onclick="addUnit()" style="background: #28a745; color: white; padding: 8px 15px; border: none; border-radius: 5px; margin-top: 10px;">
-                        ➕ Add Another Unit
-                    </button>
-                </div>
-                
-                <div style="margin-top: 30px;">
-                    <button type="submit" class="btn" id="submitBtn">✅ Create Project</button>
-                    <a href="/admin/projects" class="btn btn-secondary" style="margin-left: 10px;">Cancel</a>
-                </div>
-            </form>
-        </div>
-        
-        <script>
-            let unitCounter = 1;
-            
-            function addUnit() {
-                unitCounter++;
-                const unitsContainer = document.getElementById('unitsContainer');
-                
-                const unitRow = document.createElement('div');
-                unitRow.className = 'unit-row';
-                // ✅ FIX 5: Fixed template literal - changed RM{} to $ {}
-                unitRow.innerHTML = `
-                    <input type="text" name="unit_code_${unitCounter}" placeholder="Unit Code (e.g., A-101)" required>
-                    <input type="text" name="unit_type_${unitCounter}" placeholder="Type (e.g., 3BR, Studio)">
-                    <input type="number" name="unit_price_${unitCounter}" placeholder="Price (Optional)" step="1000">
-                    <input type="number" name="unit_size_${unitCounter}" placeholder="Size sq ft (Optional)" step="10">
-                    <input type="number" name="unit_commission_${unitCounter}" placeholder="Comm % (Optional)" min="0" max="100" step="0.1">
-                `;
-                
-                unitsContainer.appendChild(unitRow);
-            }
-            
-            function validateForm() {
-                const projectName = document.getElementById('projectName').value.trim();
-                const location = document.getElementById('location').value.trim();
-                const projectSaleType = document.getElementById('projectSaleType').value;
-                const submitBtn = document.getElementById('submitBtn');
-                
-                // Validate required fields
-                if (!projectName || !location || !projectSaleType) {
-                    alert('Please fill all required fields: Project Name, Location, and Sales/Rental');
-                    return false;
-                }
-                
-                // Disable button to prevent double submission
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = 'Creating...';
-                
-                return true; // Allow form submission
-            }
-        </script>
-    </body>
-    </html>
-    """
+    _conn = get_db_connection()
+    _cur  = _conn.cursor()
+    _cur.execute("""SELECT id, name, agent_rank, commission_rate FROM users
+                    WHERE role='agent' ORDER BY name""")
+    _agents = [{"id": r[0], "name": r[1], "rank": r[2] or "REN", "rate": float(r[3] or 70)}
+               for r in _cur.fetchall()]
+    _conn.close()
+
+    _rank_label = {"ATL":"ATL (90%)", "TL":"TL (85%)", "ELITE":"Elite REN (80%)",
+                   "ASSOC":"Assoc REN (75%)", "REN":"REN (70%)"}
+    _agent_opts = '<option value="">-- Select PIC Agent --</option>'
+    for _ag in _agents:
+        _rd = _rank_label.get(_ag["rank"], _ag["rank"])
+        _agent_opts += (f'<option value="{_ag["id"]}" data-rank="{_ag["rank"]}" '
+                        f'data-name="{_ag["name"]}">{_ag["name"]} — {_rd}</option>')
+
+    return render_template("admin/create_project.html", agent_opts=_agent_opts)
 
 
 @app.route("/admin/edit-project/<int:project_id>", methods=["GET", "POST"])
 def edit_project(project_id):
-    """Edit existing project"""
+    """Edit project — renders templates/admin/edit_project.html"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
-
-    # Get project details
-    cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
-    project = cursor.fetchone()
-
-    if not project:
+    cursor.execute("""
+        SELECT id, project_name, category, project_type, location, description,
+               status, commission_rate, created_by, created_at, updated_at,
+               project_sale_type,
+               COALESCE(comm_dev_rate, 2.0), COALESCE(comm_sst_rate, 8.0),
+               COALESCE(comm_company_pct, 15.0), COALESCE(comm_pic_pct, 10.0),
+               COALESCE(comm_agents_pct, 75.0), COALESCE(comm_pic_rank, 'REN'),
+               comm_pic_agent_id, COALESCE(comm_pic_name, '')
+        FROM projects WHERE id = ?
+    """, (project_id,))
+    row = cursor.fetchone()
+    if not row:
         conn.close()
         return "Project not found", 404
 
-    # Get existing units
     cursor.execute(
         "SELECT * FROM project_units WHERE project_id = ? ORDER BY unit_type",
-        (project_id,),
+        (project_id,)
     )
     existing_units = cursor.fetchall()
 
     if request.method == "POST":
         try:
             data = request.form
-            sale_type = data.get("sale_type", "sales")  # Default to sales
-
-            # Update main project
-            cursor.execute(
-                """
-                UPDATE projects 
-                SET project_name = ?,
-                    category = ?,
-                    project_type = ?,
-                    location = ?,
-                    description = ?,
-                    commission_rate = ?,
-                    updated_at = ?
-                WHERE id = ?
-            """,
-                (
-                    data["project_name"],
-                    data["category"],
-                    data["project_type"],
-                    data.get("location", ""),
-                    data.get("description", ""),
-                    float(data.get("project_commission", 0)),
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    project_id,
-                ),
-            )
-
-            # Delete existing units (we'll recreate them)
-            cursor.execute(
-                "DELETE FROM project_units WHERE project_id = ?", (project_id,)
-            )
-
-            # Handle unit types - dynamic form fields
-            unit_counter = 0
-            while f"unit_type_{unit_counter}" in data:
-                unit_type = data.get(f"unit_type_{unit_counter}")
-                square_feet = data.get(f"square_feet_{unit_counter}")
-                base_price = data.get(f"base_price_{unit_counter}")
-                rental_price = data.get(f"rental_price_{unit_counter}")
-                unit_commission = data.get(f"unit_commission_{unit_counter}")
-                quantity = data.get(f"quantity_{unit_counter}", 1)
-
-                if unit_type:  # Only insert if unit type is provided
-                    cursor.execute(
-                        """
-                        INSERT INTO project_units 
-                        (project_id, unit_type, square_feet, base_price, rental_price, 
+            cursor.execute("""
+                UPDATE projects SET
+                    project_name=?, category=?, project_type=?,
+                    location=?, description=?, commission_rate=?,
+                    comm_dev_rate=?, comm_sst_rate=?, comm_company_pct=?,
+                    comm_pic_pct=?, comm_agents_pct=?, comm_pic_rank=?,
+                    comm_pic_agent_id=?, comm_pic_name=?, updated_at=?
+                WHERE id=?
+            """, (
+                data["project_name"], data["category"], data["project_type"],
+                data.get("location", ""), data.get("description", ""),
+                float(data.get("project_commission", 0)),
+                float(data.get("comm_dev_rate", 2.0)),
+                float(data.get("comm_sst_rate", 8.0)),
+                float(data.get("comm_company_pct", 15.0)),
+                float(data.get("comm_pic_pct", 10.0)),
+                float(data.get("comm_agents_pct", 75.0)),
+                data.get("comm_pic_rank", "REN"),
+                int(data.get("comm_pic_agent_id", 0)) or None,
+                data.get("comm_pic_name", "").strip() or None,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), project_id,
+            ))
+            cursor.execute("DELETE FROM project_units WHERE project_id = ?", (project_id,))
+            n = 0
+            while f"unit_type_{n}" in data:
+                ut = data.get(f"unit_type_{n}")
+                if ut:
+                    sf  = data.get(f"square_feet_{n}")
+                    bp  = data.get(f"base_price_{n}")
+                    rp  = data.get(f"rental_price_{n}")
+                    cr  = data.get(f"unit_commission_{n}")
+                    qty = data.get(f"quantity_{n}", 1)
+                    cursor.execute("""
+                        INSERT INTO project_units
+                        (project_id, unit_type, square_feet, base_price, rental_price,
                          commission_rate, quantity, status)
                         VALUES (?, ?, ?, ?, ?, ?, ?, 'available')
-                    """,
-                        (
-                            project_id,
-                            unit_type,
-                            int(square_feet) if square_feet else None,
-                            float(base_price) if base_price else None,
-                            float(rental_price) if rental_price else None,
-                            float(unit_commission) if unit_commission else None,
-                            int(quantity) if quantity else 1,
-                        ),
-                    )
-
-                unit_counter += 1
-
+                    """, (
+                        project_id, ut,
+                        int(sf) if sf else None,
+                        float(bp) if bp else None,
+                        float(rp) if rp else None,
+                        float(cr) if cr else None,
+                        int(qty) if qty else 1,
+                    ))
+                n += 1
             conn.commit()
             conn.close()
-
-            return redirect(
-                f"/admin/project/{project_id}?success=Project updated successfully!"
-            )
-
+            return redirect(f"/admin/project/{project_id}?success=Project updated successfully!")
         except Exception as e:
             conn.rollback()
             conn.close()
-            return f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Error</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
-                    .error-box {{ border: 2px solid #dc3545; padding: 30px; border-radius: 10px; text-align: center; }}
-                    h2 {{ color: #dc3545; }}
-                </style>
-            </head>
-            <body>
-                <div class="error-box">
-                    <h2>❌ Error Updating Project</h2>
-                    <p><strong>Error:</strong> {str(e)}</p>
-                    <div style="margin-top: 30px;">
-                        <a href="/admin/edit-project/{project_id}" style="background: #007bff; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px; margin-right: 10px;">Try Again</a>
-                        <a href="/admin/project/{project_id}" style="background: #6c757d; color: white; padding: 10px 20px; 
-                           text-decoration: none; border-radius: 5px;">Back to Project</a>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
+            return f"<h2>Error: {str(e)}</h2><a href='/admin/edit-project/{project_id}'>Try Again</a>"
 
-    # GET request - show edit form
-    # Build existing units JavaScript data
-    units_js_data = []
-    for unit in existing_units:
-        units_js_data.append(
-            {
-                "unit_type": unit[2],
-                "square_feet": unit[3] or "",
-                "base_price": unit[4] or "",
-                "rental_price": unit[5] or "",
-                "commission_rate": unit[6] or "",
-                "quantity": unit[7] or 1,
-            }
-        )
+    # GET — load agents for PIC selector
+    agent_conn = get_db_connection()
+    agent_cur  = agent_conn.cursor()
+    agent_cur.execute("""SELECT id, name, agent_rank, commission_rate FROM users
+                         WHERE role='agent'
+                         ORDER BY name""")
+    agents = [{"id":r[0],"name":r[1],"rank":r[2] or "REN","rate":float(r[3] or 70)}
+              for r in agent_cur.fetchall()]
+    agent_conn.close()
+
+    curr_pic_id = int(row[18]) if row[18] else 0
+    rank_labels = {"ATL":"ATL (90%)","TL":"TL (85%)","ELITE":"Elite REN (80%)",
+                   "ASSOC":"Assoc REN (75%)","REN":"REN (70%)"}
+    agent_opts = '<option value="">-- Select PIC Agent --</option>'
+    for ag in agents:
+        sel = ' selected' if curr_pic_id and ag["id"] == curr_pic_id else ''
+        agent_opts += (f'<option value="{ag["id"]}" data-rank="{ag["rank"]}" '
+                       f'data-name="{ag["name"]}"{sel}>'
+                       f'{ag["name"]} — {rank_labels.get(ag["rank"], ag["rank"])}</option>')
+
+    units_data = []
+    for u in existing_units:
+        units_data.append({
+            "unit_type":       u[2] or "",
+            "square_feet":     u[3] or "",
+            "base_price":      u[4] or "",
+            "rental_price":    u[5] or "",
+            "commission_rate": u[6] or "",
+            "quantity":        u[7] or 1,
+        })
 
     conn.close()
 
-    edit_project_template = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Edit Project - {project[1]}</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-            .container {{ max-width: 1000px; margin: 0 auto; }}
-            .header {{ background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-            .form-container {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-            .form-section {{ border: 1px solid #e0e0e0; padding: 20px; margin-bottom: 20px; border-radius: 8px; }}
-            .form-group {{ margin-bottom: 15px; }}
-            label {{ display: block; margin-bottom: 5px; font-weight: bold; color: #555; }}
-            .required:after {{ content: " *"; color: red; }}
-            input, select, textarea {{ width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }}
-            .btn {{ padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-right: 10px; text-decoration: none; display: inline-block; }}
-            .btn-primary {{ background: #007bff; color: white; }}
-            .btn-secondary {{ background: #6c757d; color: white; }}
-            .unit-row {{ display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 50px; gap: 10px; margin-bottom: 10px; align-items: end; }}
-            .delete-unit {{ background: #dc3545; color: white; border: none; border-radius: 5px; padding: 8px 12px; cursor: pointer; }}
-            .add-unit {{ background: #28a745; color: white; border: none; border-radius: 5px; padding: 8px 15px; cursor: pointer; margin: 10px 0; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>✏️ Edit Project: {project[1]}</h1>
-                <div>
-                    <a href="/admin/project/{project_id}" class="btn btn-secondary">← Back to Project</a>
-                    <a href="/admin/projects" class="btn btn-secondary">📋 All Projects</a>
-                </div>
-            </div>
-            
-            <form method="POST" class="form-container">
-                <!-- Basic Project Information -->
-                <div class="form-section">
-                    <h2>📋 Basic Information</h2>
-                    <div class="form-group">
-                        <label class="required">Project Name</label>
-                        <input type="text" name="project_name" value="{project[1]}" required>
-                    </div>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div class="form-group">
-                            <label class="required">Category</label>
-                            <select name="category" id="categorySelect" required onchange="togglePriceFields()">
-                                <option value="sales" {'selected' if project[2] == 'sales' else ''}>Sales</option>
-                                <option value="rental" {'selected' if project[2] == 'rental' else ''}>Rental</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="required">Project Type</label>
-                            <select name="project_type" required>
-                                <option value="residential" {'selected' if project[3] == 'residential' else ''}>Residential</option>
-                                <option value="commercial" {'selected' if project[3] == 'commercial' else ''}>Commercial</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Location</label>
-                        <input type="text" name="location" value="{project[4] or ''}" placeholder="e.g., Downtown, Singapore">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Description</label>
-                        <textarea name="description" rows="3">{project[5] or ''}</textarea>
-                    </div>
-                </div>
-                
-                <!-- Unit Types -->
-                <div class="form-section">
-                    <h2>🏠 Unit Types & Pricing</h2>
-                    <p style="color: #666; margin-bottom: 15px;">Modify unit types for this project</p>
-                    
-                    <div id="unitContainer">
-                        <!-- Unit rows will be added here by JavaScript -->
-                    </div>
-                    
-                    <button type="button" class="add-unit" onclick="addUnitRow()">➕ Add Another Unit Type</button>
-                </div>
-                
-                <!-- Commission Settings -->
-                <div class="form-section">
-                    <h2>💰 Commission Settings</h2>
-                    
-                    <div class="form-group">
-                        <label>Default Project Commission Rate (%)</label>
-                        <input type="number" name="project_commission" min="0" max="100" step="0.1" 
-                               value="{project[7] or 3.0}" placeholder="e.g., 3.0">
-                        <small>This rate will be used if no unit-specific rate is set</small>
-                    </div>
-                    
-                    <div style="background: #e8f4ff; padding: 15px; border-radius: 5px; margin-top: 15px;">
-                        <strong>💡 Commission Calculation:</strong>
-                        <ul style="margin: 10px 0 0 0; padding-left: 20px;">
-                            <li>Unit-specific commission overrides project commission</li>
-                            <li>Commission = Sale Price × Commission Rate</li>
-                            <li>Commission is capped: Min RM1,000 - Max RM50,000</li>
-                        </ul>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 30px; text-align: center;">
-                    <button type="submit" class="btn btn-primary">✅ Save Changes</button>
-                    <button type="reset" class="btn btn-secondary" onclick="loadExistingUnits()">🔄 Reset Form</button>
-                    <a href="/admin/project/{project_id}" class="btn btn-secondary">Cancel</a>
-                </div>
-            </form>
-        </div>
-        
-        <script>
-        let unitCounter = 0;
-        const existingUnits = {json.dumps(units_js_data)};
-        
-        function togglePriceFields() {{
-            const category = document.getElementById('categorySelect').value;
-            const priceLabels = document.querySelectorAll('.price-label');
-            const rentalInputs = document.querySelectorAll('.rental-input');
-            
-            if (category === 'sales') {{
-                priceLabels.forEach(label => {{
-                    label.textContent = 'Sale Price (RM)';
-                }});
-                rentalInputs.forEach(input => {{
-                    input.style.display = 'none';
-                    input.previousElementSibling.style.display = 'none';
-                }});
-            }} else if (category === 'rental') {{
-                priceLabels.forEach(label => {{
-                    label.textContent = 'Monthly Rent (RM)';
-                }});
-                rentalInputs.forEach(input => {{
-                    input.style.display = 'block';
-                    input.previousElementSibling.style.display = 'block';
-                }});
-            }}
-        }}
-        
-        function addUnitRow(unitData = null) {{
-            const container = document.getElementById('unitContainer');
-            const category = document.getElementById('categorySelect').value;
-            
-            const unitRow = document.createElement('div');
-            unitRow.className = 'unit-row';
-            unitRow.id = `unitRow_RM{{unitCounter}}`;
-            
-            const unitType = unitData?.unit_type || '';
-            const squareFeet = unitData?.square_feet || '';
-            const basePrice = unitData?.base_price || '';
-            const rentalPrice = unitData?.rental_price || '';
-            const commission = unitData?.commission_rate || '';
-            const quantity = unitData?.quantity || 1;
-            
-            unitRow.innerHTML = `
-                <div>
-                    <label>Unit Type</label>
-                    <input type="text" name="unit_type_RM{{unitCounter}}" value="RM{{unitType}}" placeholder="e.g., Studio, 2-Bedroom" required>
-                </div>
-                <div>
-                    <label>Square Feet</label>
-                    <input type="number" name="square_feet_RM{{unitCounter}}" value="RM{{squareFeet}}" min="100" step="10" placeholder="e.g., 800">
-                </div>
-                <div>
-                    <label class="price-label">RM{{category === 'rental' ? 'Monthly Rent (RM)' : 'Sale Price (RM)'}}</label>
-                    <input type="number" name="base_price_RM{{unitCounter}}" value="RM{{basePrice}}" min="0" step="1000" required 
-                           placeholder="RM{{category === 'rental' ? 'e.g., 2500' : 'e.g., 500000'}}">
-                </div>
-                <div>
-                    <label class="rental-label" style="display: RM{{category === 'rental' ? 'block' : 'none'}}">Security Deposit (RM)</label>
-                    <input type="number" name="rental_price_RM{{unitCounter}}" value="RM{{rentalPrice}}" min="0" step="100" 
-                           class="rental-input" style="display: RM{{category === 'rental' ? 'block' : 'none'}}"
-                           placeholder="e.g., 5000">
-                </div>
-                <div>
-                    <label>Commission Rate (%)</label>
-                    <input type="number" name="unit_commission_RM{{unitCounter}}" value="RM{{commission}}" min="0" max="100" step="0.1" 
-                           placeholder="e.g., 3.0">
-                </div>
-                <div>
-                    <label>Quantity</label>
-                    <input type="number" name="quantity_RM{{unitCounter}}" value="RM{{quantity}}" min="1">
-                </div>
-                <div>
-                    <button type="button" class="delete-unit" onclick="removeUnitRow(RM{{unitCounter}})">🗑️</button>
-                </div>
-            `;
-            
-            container.appendChild(unitRow);
-            unitCounter++;
-        }}
-        
-        function removeUnitRow(rowId) {{
-            const row = document.getElementById(`unitRow_RM{{rowId}}`);
-            if (row) {{
-                row.remove();
-            }}
-        }}
-        
-        function loadExistingUnits() {{
-            document.getElementById('unitContainer').innerHTML = '';
-            unitCounter = 0;
-            existingUnits.forEach(unit => addUnitRow(unit));
-            if (existingUnits.length === 0) {{
-                addUnitRow();
-            }}
-        }}
-        
-        // Initialize with existing units on page load
-        document.addEventListener('DOMContentLoaded', function() {{
-            loadExistingUnits();
-        }});
-        </script>
-    </body>
-    </html>
-    """
+    project = {
+        "id":               row[0],
+        "name":             row[1] or "",
+        "category":         row[2] or "condo",
+        "project_type":     row[3] or "residential",
+        "location":         row[4] or "",
+        "description":      row[5] or "",
+        "commission_rate":  row[7] or 3.0,
+        "comm_dev_rate":    row[12],
+        "comm_sst_rate":    row[13],
+        "comm_company_pct": row[14],
+        "comm_pic_pct":     row[15],
+        "comm_agents_pct":  row[16],
+        "comm_pic_rank":    row[17],
+        "comm_pic_name":    row[19] or "",
+    }
 
-    return edit_project_template
-
+    return render_template(
+        "admin/edit_project.html",
+        project=project,
+        agent_opts=agent_opts,
+        units_json=json.dumps(units_data),
+        curr_pic_id=curr_pic_id,
+    )
 
 @app.route("/admin/projects")
 def list_projects():
-    """List all projects"""
+    """List all projects — renders templates/admin/projects.html"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
-    conn = sqlite3.connect("real_estate.db")
+    conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Get all projects
-    cursor.execute(
-        """
-        SELECT p.*, u.name as created_by_name, 
-               COUNT(pu.id) as unit_count,
-               SUM(pu.quantity) as total_units,
-               p.is_active
+    cursor.execute("""
+        SELECT p.id, p.project_name, p.category, p.project_type, p.location,
+               p.description, p.status, p.commission_rate, p.project_sale_type,
+               p.created_at, p.updated_at, u.name AS created_by_name,
+               COUNT(DISTINCT pu.id) AS unit_count,
+               CASE WHEN p.status = 'active' THEN 1 ELSE 0 END AS is_active,
+               SUM(pu.quantity) AS total_units
         FROM projects p
         LEFT JOIN users u ON p.created_by = u.id
         LEFT JOIN project_units pu ON p.id = pu.project_id
         GROUP BY p.id
-        ORDER BY p.is_active DESC, p.created_at DESC
-    """
-    )
-
-    projects = cursor.fetchall()
+        ORDER BY p.status DESC, p.created_at DESC
+    """)
+    rows = cursor.fetchall()
     conn.close()
 
-    if projects:
-        print(f"\n📋 PROJECTS STATUS CHECK:")
-        for p in projects:
-            if len(p) > 16:
-                print(f"  ID {p[0]}: {p[1]} - is_active = {p[16]}")
-            else:
-                print(f"  ID {p[0]}: {p[1]} - Not enough columns ({len(p)})")
-
-    # Calculate stats
+    projects = []
     active_count = 0
     total_units_sum = 0
     sales_count = 0
 
-    for p in projects:
-        # is_active at index 16
-        if len(p) > 16 and p[16] == 1:
+    for r in rows:
+        is_active = bool(r[13]) if r[13] is not None else True
+        created_at = r[9]
+        created_date = (created_at[:10] if isinstance(created_at, str) and len(created_at) >= 10
+                        else str(created_at)[:10] if created_at else "N/A")
+        total_units = int(r[14]) if r[14] else 0
+        category = (r[2] or "N/A").lower()
+        project_type = (r[3] or "N/A").lower()
+
+        if is_active:
             active_count += 1
-
-        # total_units at index 14
-        if len(p) > 14 and p[14] is not None:
-            try:
-                total_units_sum += int(p[14])
-            except:
-                pass
-
-        # category at index 2
-        if len(p) > 2 and p[2] == "sales":
+        total_units_sum += total_units
+        if r[8] == "sales":
             sales_count += 1
 
-    # Generate HTML
-    html = (
-        """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Manage Projects</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-            .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .nav a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
-            .stats { display: flex; gap: 15px; margin: 20px 0; flex-wrap: wrap; }
-            .stat-card { background: white; padding: 15px; border-radius: 8px; flex: 1; min-width: 120px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; }
-            .stat-value { font-size: 1.8em; font-weight: bold; }
-            .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
-            .project-card { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .project-header { padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-            .project-body { padding: 20px; }
-            .project-meta { display: flex; justify-content: space-between; margin: 10px 0; font-size: 14px; }
-            .badge { padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-            .badge-sales { background: #d4edda; color: #155724; }
-            .badge-rental { background: #cce5ff; color: #004085; }
-            .badge-residential { background: #fff3cd; color: #856404; }
-            .badge-commercial { background: #e2e3e5; color: #383d41; }
-            .btn { padding: 8px 16px; border-radius: 5px; text-decoration: none; display: inline-block; margin-right: 5px; font-size: 14px; }
-            .btn-view { background: #17a2b8; color: white; }
-            .btn-edit { background: #ffc107; color: #000; }
-            .btn-warning { background: #ffc107; color: #000; }
-            .btn-success { background: #28a745; color: white; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>🏢 Manage Projects</h1>
-            <div class="nav">
-                <a href="/admin/dashboard">← Dashboard</a>
-                <a href="/admin/create-project" style="background: #28a745; color: white; padding: 8px 16px; border-radius: 5px;">➕ Create New Project</a>
-            </div>
-        </div>
-        
-        <div class="stats">
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Total Projects</div>
-                <div class="stat-value" style="color: #007bff;">"""
-        + str(len(projects))
-        + """</div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Active Projects</div>
-                <div class="stat-value" style="color: #28a745;">"""
-        + str(active_count)
-        + """</div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Total Units</div>
-                <div class="stat-value" style="color: #6f42c1;">"""
-        + str(total_units_sum)
-        + """</div>
-            </div>
-            <div class="stat-card">
-                <div style="font-size: 14px; color: #666;">Sales Projects</div>
-                <div class="stat-value" style="color: #fd7e14;">"""
-        + str(sales_count)
-        + """</div>
-            </div>
-        </div>
-        
-        <div class="project-grid">
-    """
+        projects.append({
+            "id":           r[0],
+            "name":         r[1] or "Unnamed",
+            "category":     category,
+            "project_type": project_type,
+            "location":     r[4] or "Not specified",
+            "commission":   r[7] or "N/A",
+            "sale_type":    r[8] or "sales",
+            "created_date": created_date,
+            "created_by":   r[11] or "Unknown",
+            "unit_count":   r[12] or 0,
+            "total_units":  total_units,
+            "is_active":    is_active,
+        })
+
+    return render_template(
+        "admin/projects.html",
+        projects=projects,
+        total_projects=len(projects),
+        active_count=active_count,
+        total_units_sum=total_units_sum,
+        sales_count=sales_count,
     )
-
-    for project in projects:
-        if len(project) < 17:
-            continue
-
-        # CORRECT COLUMN INDICES based on debug:
-        project_id = project[0]
-        project_name = project[1]
-        category = project[2] or "N/A"
-        project_type = project[3] or "N/A"
-        location = project[4] or "Not specified"
-        commission = project[7] or "N/A"
-        created_at = project[9]  # Index 9, not 8!
-        created_by_name = project[11] or "Unknown"  # Index 11
-        unit_count = project[12] or 0  # Index 12
-        total_units = project[14] or 0  # Index 14 (not 13!)
-        is_active = project[16] if len(project) > 16 else 1  # Index 16
-
-        # Format date safely
-        if isinstance(created_at, str):
-            created_date = created_at[:10] if len(created_at) >= 10 else created_at
-        else:
-            created_date = str(created_at)[:10] if created_at else "N/A"
-
-        html += f"""
-            <div class="project-card">
-                <div class="project-header">
-                    <h3 style="margin: 0;">{project_name}
-                        <span style="background: {'#28a745' if is_active == 1 else '#6c757d'}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 10px;">
-                            {'Active' if is_active == 1 else 'Inactive'}
-                        </span>
-                    </h3>
-         
-                    <div style="margin-top: 5px; font-size: 14px;">
-                        <span class="badge badge-{category}">{category.title()}</span>
-                        <span class="badge badge-{project_type}">{project_type.title()}</span>
-                    </div>
-                </div>
-                <div class="project-body">
-                    <div class="project-meta">
-                        <div>
-                            <strong>Location:</strong><br>
-                            {location}
-                        </div>
-                        <div>
-                            <strong>Commission:</strong><br>
-                            {commission}%
-                        </div>
-                    </div>
-                    
-                    <div class="project-meta">
-                        <div>
-                            <strong>Units:</strong><br>
-                            {unit_count} types<br>
-                            {total_units} total
-                        </div>
-                        <div>
-                            <strong>Created:</strong><br>
-                            {created_date}<br>
-                            by {created_by_name}
-                        </div>
-                    </div>
-                    
-                    <div style="margin-top: 15px;">
-                        <a href="/admin/project/{project_id}" class="btn btn-view">👁️ View Details</a>
-                        <a href="/admin/edit-project/{project_id}" class="btn btn-edit">✏️ Edit</a>
-        """
-
-        if is_active == 1:
-            html += f"""
-                        <a href="/admin/toggle-project/{project_id}" 
-                           class="btn btn-warning"
-                           onclick="return confirm('Deactivate {project_name}? Agents will not see it.')">
-                           ⏸️ Deactivate
-                        </a>
-            """
-        else:
-            html += f"""
-                        <a href="/admin/toggle-project/{project_id}" 
-                           class="btn btn-success"
-                           onclick="return confirm('Activate {project_name}? Agents will see it again.')">
-                           ▶️ Activate
-                        </a>
-            """
-
-        html += """
-                    </div>
-                </div>
-            </div>
-        """
-
-    if not projects:
-        html += """
-        <div style="padding: 40px; text-align: center; background: white; border-radius: 10px; grid-column: 1 / -1;">
-            <h3>No projects found</h3>
-            <p>You haven't created any projects yet.</p>
-            <a href="/admin/create-project" style="background: #28a745; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none; display: inline-block; margin-top: 15px;">Create Your First Project</a>
-        </div>
-        """
-
-    html += """
-        </div>
-    </body>
-    </html>
-    """
-
-    return html
-
 
 @app.route("/admin/project/<int:project_id>")
 def view_project(project_id):
-    """View project details"""
+    """View project details — renders templates/admin/project_detail.html"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
-    conn = sqlite3.connect("real_estate.db")
+    conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Get project details
-    cursor.execute(
-        """
-        SELECT p.*, u.name as created_by_name
+    cursor.execute("""
+        SELECT p.id, p.project_name, p.category, p.project_type, p.location,
+               p.description, p.status, p.commission_rate, p.project_sale_type,
+               p.created_at, p.updated_at, u.name AS created_by_name,
+               p.is_active,
+               COALESCE(p.comm_dev_rate, 2.0)     AS comm_dev_rate,
+               COALESCE(p.comm_sst_rate, 8.0)     AS comm_sst_rate,
+               COALESCE(p.comm_company_pct, 15.0) AS comm_company_pct,
+               COALESCE(p.comm_pic_pct, 10.0)     AS comm_pic_pct,
+               COALESCE(p.comm_agents_pct, 75.0)  AS comm_agents_pct,
+               COALESCE(p.comm_pic_rank, 'REN')   AS comm_pic_rank,
+               COALESCE(p.comm_pic_name, '')       AS comm_pic_name
         FROM projects p
         LEFT JOIN users u ON p.created_by = u.id
         WHERE p.id = ?
-    """,
-        (project_id,),
-    )
-
-    project = cursor.fetchone()
-
-    if not project:
+    """, (project_id,))
+    row = cursor.fetchone()
+    if not row:
         conn.close()
         return "Project not found", 404
 
-    # Get project units
     cursor.execute(
         "SELECT * FROM project_units WHERE project_id = ? ORDER BY unit_type",
-        (project_id,),
+        (project_id,)
     )
-    units = cursor.fetchall()
-
+    unit_rows = cursor.fetchall()
     conn.close()
 
-    # Determine price label based on project_sale_type
-    price_label = "Sale Price" if project[11] == "sales" else "Monthly Rent"
+    project = {
+        "id":               row[0],
+        "name":             row[1] or "Unnamed",
+        "category":         (row[2] or "N/A").lower(),
+        "project_type":     (row[3] or "N/A").lower(),
+        "location":         row[4] or "",
+        "description":      row[5] or "",
+        "status":           row[6] or "active",
+        "commission_rate":  row[7] or 0,
+        "sale_type":        row[8] or "sales",
+        "created_at":       (row[9] or "")[:10],
+        "updated_at":       (row[10] or "")[:10] if row[10] else "",
+        "created_by":       row[11] or "Unknown",
+        "is_active":        bool(row[12]) if row[12] is not None else True,
+        "comm_dev_rate":    row[13],
+        "comm_sst_rate":    row[14],
+        "comm_company_pct": row[15],
+        "comm_pic_pct":     row[16],
+        "comm_agents_pct":  row[17],
+        "comm_pic_rank":    row[18],
+        "comm_pic_name":    row[19],
+    }
 
-    # Prepare units HTML
-    units_html = ""
-    if units:
-        for unit in units:
-            # Unit columns from earlier output:
-            # 0: id, 1: project_id, 2: unit_type, 3: square_feet,
-            # 4: base_price, 5: rental_price, 6: commission_rate,
-            # 7: quantity, 8: status, 9: created_at, 10: updated_at,
-            # 11: unit_code, 12: price, 13: size
+    price_label = "Sale Price" if project["sale_type"] == "sales" else "Monthly Rent"
 
-            # Choose correct price column
-            if project[11] == "rental":
-                # For rental projects, use rental_price OR base_price if rental_price is empty
-                price_value = unit[5] if unit[5] is not None else unit[4]
-            else:
-                # For sales projects, use base_price
-                price_value = unit[4]
+    units = []
+    for u in unit_rows:
+        price_val = u[5] if project["sale_type"] == "rental" and u[5] else u[4]
+        comm_val  = u[6] if u[6] else project["commission_rate"]
+        units.append({
+            "code":             u[11] if len(u) > 11 else "",
+            "unit_type":        u[2] or "",
+            "square_feet":      u[3] or "",
+            "price_display":    f"RM{price_val:,.2f}" if price_val else "N/A",
+            "commission_display": f"{comm_val}%" if comm_val else "N/A",
+            "quantity":         u[7] or 1,
+            "status":           u[8] or "available",
+        })
 
-            # Format price
-            formatted_price = f"RM{price_value:,.2f}" if price_value else "N/A"
-
-            # Get commission rate (unit or project default)
-            commission_rate = unit[6] if unit[6] else project[7]
-            formatted_commission = f"{commission_rate}%" if commission_rate else "N/A"
-
-            status_color = "#28a745" if unit[8] == "available" else "#dc3545"
-
-            units_html += f"""
-            <tr>
-                <td>{unit[11] or 'N/A'}</td>
-                <td>{unit[2] or 'N/A'}</td>
-                <td>{unit[3] or 'N/A'}</td>
-                <td>{formatted_price}</td>
-                <td>{formatted_commission}</td>
-                <td>{unit[7] or 1}</td>
-                <td><span style="color: {status_color}">{unit[8].title()}</span></td>
-            </tr>
-            """
-    else:
-        units_html = """
-        <tr>
-            <td colspan="7" style="text-align: center; padding: 40px; color: #666;">
-                <h3>No units defined yet</h3>
-                <p>Add unit types to this project by editing it.</p>
-            </td>
-        </tr>
-        """
-
-    # Create the template with corrected price_label
-    detail_template = f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>{project[1]} - Project Details</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-        .container {{ max-width: 1200px; margin: 0 auto; }}
-        .header {{ background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        .info-card {{ background: white; padding: 25px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        .unit-table {{ width: 100%; background: white; border-radius: 10px; overflow: hidden; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }}
-        th {{ background: #2c3e50; color: white; }}
-        .btn {{ padding: 8px 16px; border-radius: 5px; text-decoration: none; display: inline-block; margin-right: 10px; }}
-        .btn-back {{ background: #6c757d; color: white; }}
-        .btn-edit {{ background: #007bff; color: white; }}
-        .badge {{ background: #d4edda; color: #155724; padding: 5px 10px; border-radius: 3px; margin-right: 10px; font-size: 12px; }}
-        .badge-type {{ background: #cce5ff; color: #004085; }}
-        .badge-sale {{ background: #f8d7da; color: #721c24; }}
-        .badge-rental {{ background: #d1ecf1; color: #0c5460; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🏢 {project[1]}</h1>
-            <div style="margin-top: 10px;">
-                <a href="/admin/projects" class="btn btn-back">← Back to Projects</a>
-                <a href="/admin/edit-project/{project_id}" class="btn btn-edit">✏️ Edit Project</a>
-            </div>
-            <div style="margin-top: 10px;">
-                <span class="badge">{project[2].upper() if project[2] else 'N/A'}</span>
-                <span class="badge badge-type">{project[3].upper() if project[3] else 'N/A'}</span>
-                <span class="badge {'badge-sale' if project[11] == 'sales' else 'badge-rental'}">
-                    {project[11].upper() if project[11] else 'SALES'}
-                </span>
-            </div>
-        </div>
-        
-        <div class="info-card">
-            <h2>📋 Project Information</h2>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
-                <div>
-                    <p><strong>Location:</strong> {project[4] or 'Not specified'}</p>
-                    <p><strong>Default Commission:</strong> {project[7] or 'N/A'}%</p>
-                    <p><strong>Status:</strong> {project[6].title() if project[6] else 'N/A'}</p>
-                </div>
-                <div>
-                    <p><strong>Created:</strong> {project[9][:19] if project[9] else 'N/A'}</p>
-                    <p><strong>By:</strong> {project[12] or 'Unknown'}</p>
-                    <p><strong>Last Updated:</strong> {project[10][:19] if project[10] else 'N/A'}</p>
-                </div>
-            </div>
-            {f'<div style="margin-top: 15px;"><strong>Description:</strong><p>{project[5]}</p></div>' if project[5] else ''}
-        </div>
-        
-        <div class="info-card">
-            <h2>💰 Commission Structure</h2>
-            <div style="padding: 20px; background: #f8f9fa; border-radius: 8px; text-align: center;">
-                <div style="font-size: 14px; color: #666; margin-bottom: 10px;">Project Commission Rate</div>
-                <div style="font-size: 48px; font-weight: bold; color: #28a745;">
-                    {project[7] or 'N/A'}%
-                </div>
-                <div style="margin-top: 20px; padding: 15px; background: #e8f4ff; border-radius: 5px; text-align: left;">
-                    <strong>📌 Commission Rules:</strong>
-                    <ul style="margin: 10px 0 0 20px;">
-                        <li>This is the default commission rate for all sales in this project</li>
-                        <li>Unit-specific commission rates can override this default rate</li>
-                        <li>Commission is calculated as: Sale Price × Commission Rate</li>
-                        <li>Commission is subject to caps: Min RM1,000 - Max RM50,000</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        
-        <div class="info-card">
-            <h2>🏠 Project Units ({len(units)} units)</h2>
-            <table class="unit-table">
-                <thead>
-                    <tr>
-                        <th>Unit Code</th>
-                        <th>Unit Type</th>
-                        <th>Size (sqft)</th>
-                        <th>{price_label}</th>
-                        <th>Commission</th>
-                        <th>Quantity</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {units_html}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</body>
-</html>"""
-
-    return detail_template
-
+    success = request.args.get("success", "")
+    return render_template(
+        "admin/project_detail.html",
+        project=project,
+        units=units,
+        price_label=price_label,
+        success=success,
+    )
 
 @app.route("/admin/toggle-project/<int:project_id>")
 def toggle_project(project_id):
@@ -12617,30 +12582,126 @@ def export_data():
     conn.close()
 
     # If no export type specified, show export options page
+    # Build stats and agent list for the export page
+    conn2 = get_db_connection()
+    conn2.row_factory = sqlite3.Row
+    try:
+        stats_row = conn2.execute("""
+            SELECT
+                COUNT(*) as approved,
+                COALESCE(SUM(CASE WHEN status='approved' THEN sale_price END),0) as total_sales,
+                COALESCE(SUM(CASE WHEN status='approved' THEN commission_amount END),0) as total_commissions
+            FROM property_listings
+        """).fetchone()
+        stats_dict = dict(stats_row) if stats_row else {}
+        stats_dict['total_agents'] = conn2.execute("SELECT COUNT(*) FROM users WHERE role='agent'").fetchone()[0]
+
+        agents_rows = conn2.execute("""
+            SELECT u.name, u.email, u.agent_rank,
+                (SELECT COALESCE(SUM(pl.commission_amount),0) FROM property_listings pl WHERE pl.agent_id=u.id AND pl.status='approved') as total_commission,
+                (SELECT COALESCE(SUM(pl.commission_amount),0) FROM property_listings pl WHERE pl.agent_id=u.id AND pl.status IN ('submitted','approved')) as cumulative_gross,
+                (SELECT COUNT(*) FROM property_listings pl WHERE pl.agent_id=u.id) as total_listings
+            FROM users u WHERE u.role='agent'
+            ORDER BY cumulative_gross DESC
+        """).fetchall()
+        agents_data = [dict(r) for r in agents_rows]
+    except Exception:
+        stats_dict = {'total_agents':0,'approved':0,'total_sales':0,'total_commissions':0}
+        agents_data = []
+    finally:
+        conn2.close()
+
+    return render_template("admin/export.html", stats=stats_dict, agents=agents_data)
+
     export_template = """
     <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Export Data</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
-            .export-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
-            .export-card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
-            .export-icon { font-size: 48px; margin-bottom: 15px; }
-            .btn { padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 5px; display: inline-block; margin: 5px; }
-            .btn:hover { background: #218838; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>📤 Export Data</h1>
-            <div>
-                <a href="/admin/dashboard">← Dashboard</a>
-            </div>
-        </div>
-        
-        <div class="export-options">
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Export Data</title>
+<style>
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+        .topbar { background:#2c3e50; color:white; padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:8px; position:sticky; top:0; z-index:100; }
+        .topbar-title { font-size:1rem; font-weight:700; }
+        .topbar-right { display:flex; align-items:center; gap:10px; }
+        .topbar-right a { color:#a8c8ff; text-decoration:none; font-size:13px; }
+        .hamburger { display:none; background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:2px 6px; }
+        .nav-bar { background:white; padding:10px 16px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+        .nav-bar a { color:#007bff; text-decoration:none; font-weight:600; font-size:13px; padding:5px 10px; border-radius:6px; white-space:nowrap; }
+        .nav-bar a:hover { background:#f0f7ff; }
+        .nav-bar a.nav-btn { background:#2563eb; color:white; }
+        .nav-bar a.nav-logout { color:#dc3545; }
+        .wrap { max-width:1400px; margin:0 auto; padding:16px; }
+        .card { background:white; border-radius:10px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin-bottom:16px; }
+        .scard { background:white; border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08); border-top:3px solid #ddd; }
+        .scard h3 { margin:0 0 6px; font-size:12px; color:#888; font-weight:600; text-transform:uppercase; }
+        .scard-val { font-size:1.4rem; font-weight:800; margin-bottom:2px; }
+        .tbl-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        table { width:100%; border-collapse:collapse; background:white; min-width:500px; }
+        th { background:#2c3e50; color:white; padding:10px 12px; text-align:left; font-size:12px; white-space:nowrap; }
+        td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:13px; vertical-align:top; }
+        tr:last-child td { border-bottom:none; } tr:hover td { background:#fafbfc; }
+        .badge { padding:3px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+        .act-btn { display:inline-block; padding:5px 10px; border:none; border-radius:5px; font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; margin:2px 0; }
+        .act-green{background:#28a745;color:white} .act-blue{background:#007bff;color:white}
+        .act-red{background:#dc3545;color:white} .act-grey{background:#6c757d;color:white}
+        .act-orange{background:#fd7e14;color:white} .act-purple{background:#6f42c1;color:white}
+        .filter-wrap { background:white; border-radius:10px; padding:14px 16px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+        .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .filter-row select,.filter-row input { padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:13px; flex:1; min-width:120px; }
+        .btn-go { padding:7px 14px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
+        .btn-clr { padding:7px 12px; background:#6c757d; color:white; border:none; border-radius:6px; font-size:13px; text-decoration:none; display:inline-block; }
+        .sec-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+        .sec-hdr h2 { margin:0; font-size:15px; }
+        .empty { padding:30px; text-align:center; background:white; border-radius:10px; }
+        .form-group { margin-bottom:16px; }
+        label { display:block; margin-bottom:5px; font-weight:600; color:#444; font-size:13px; }
+        input[type=text],input[type=email],input[type=password],input[type=number],select,textarea { width:100%; padding:9px 11px; border:1px solid #ccc; border-radius:6px; font-size:14px; background:#fafafa; }
+        input:focus,select:focus,textarea:focus { outline:none; border-color:#007bff; background:white; }
+        .btn-primary { background:#007bff; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; }
+        .btn-secondary { background:#6c757d; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; text-decoration:none; display:inline-block; }
+        .flash-s { background:#d4edda; color:#155724; padding:10px 14px; border-radius:6px; margin-bottom:14px; border-left:4px solid #28a745; font-size:13px; }
+        .flash-e { background:#f8d7da; color:#721c24; padding:10px 14px; border-radius:6px; margin-bottom:14px; border-left:4px solid #dc3545; font-size:13px; }
+        @media(max-width:640px) {
+            .hamburger { display:block; }
+            .nav-bar { display:none; flex-direction:column; align-items:stretch; padding:8px 12px; gap:2px; }
+            .nav-bar.open { display:flex; }
+            .nav-bar a { padding:10px 12px; font-size:14px; border-bottom:1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom:none; }
+            .wrap { padding:10px; }
+            .stats-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
+            .scard { padding:12px; } .scard-val { font-size:1.2rem; }
+            .filter-row { flex-direction:column; align-items:stretch; }
+            .filter-row select,.filter-row input,.btn-go,.btn-clr { width:100%; }
+            td,th { padding:8px 10px!important; font-size:12px; }
+        }
+</style>
+</head>
+<body>
+<div class="topbar">
+    <div class="topbar-title">&#128228; Export Data</div>
+    <div class="topbar-right"><a href="/admin/dashboard">&#128202; Dashboard</a>
+        <button class="hamburger" onclick="toggleNav()">&#9776;</button></div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard" class="nav-active">&#128202; Dashboard</a>
+  <a href="/admin/projects">&#127962; Projects</a>
+  <a href="/admin/create-project" class="nav-btn">&#10010; New Project</a>
+  <a href="/admin/agents">&#128101; Agents</a>
+  <a href="/admin/agent-hierarchy">&#128279; Hierarchy</a>
+  <a href="/admin/payments">&#9993; Payments</a>
+  <a href="/admin/commissions">&#128176; Commissions</a>
+  <a href="/admin/unified-submissions">&#128203; Unified Submissions</a>
+  <a href="/admin/agent-performance">&#128200; Performance</a>
+  <a href="/admin/commission-calculator">&#9889; Calc</a>
+  <a href="/admin/settings">&#9881; Settings</a>
+  <a href="/admin/export-data">&#128228; Export</a>
+</div>
+<div class="wrap">
+
             <div class="export-card">
                 <div class="export-icon">💰</div>
                 <h3>Commissions Export</h3>
@@ -12683,248 +12744,303 @@ def export_data():
     </html>
     """
 
-    return render_template_string(export_template)
+    return render_template(
+        "admin/export.html",
+        stats=stats_dict,
+        agents=agents_data,
+    )
 
 
 @app.route("/admin/agent-performance")
 def agent_performance_admin():
-    """Admin view of agent performance analytics"""
+    """Admin view of agent performance analytics — WTP aware"""
     if "user_id" not in session or session["user_role"] != "admin":
         return redirect("/login")
 
     conn = sqlite3.connect("real_estate.db")
     cursor = conn.cursor()
 
-    # Get agent performance data - REMOVED agent_tier
-    cursor.execute(
-        """
-        SELECT 
-            u.id,
-            u.name,
-            u.email,
-            u.created_at as join_date,
-            COUNT(pl.id) as total_listings,
-            SUM(CASE WHEN pl.status = 'approved' THEN 1 ELSE 0 END) as approved_listings,
-            SUM(CASE WHEN pl.status = 'rejected' THEN 1 ELSE 0 END) as rejected_listings,
-            SUM(pl.sale_price) as total_sales,
-            SUM(pl.commission_amount) as total_commission,
-            AVG(pl.sale_price) as avg_sale_price,
-            AVG(pl.commission_amount) as avg_commission,
-            MAX(pl.approved_at) as last_approval
+    cursor.execute("""
+        SELECT u.id, u.name, u.email, u.agent_rank, u.commission_rate,
+               u.cumulative_gross, u.created_at, u.upline_id, up.name AS upline_name,
+               COUNT(DISTINCT pl.id) AS total_listings,
+               SUM(CASE WHEN pl.status='approved' THEN 1 ELSE 0 END) AS approved,
+               SUM(CASE WHEN pl.status='rejected' THEN 1 ELSE 0 END) AS rejected,
+               SUM(CASE WHEN pl.status='approved' THEN pl.sale_price ELSE 0 END) AS total_sales,
+               SUM(CASE WHEN pl.status='approved' THEN pl.commission_amount ELSE 0 END) AS total_comm
         FROM users u
+        LEFT JOIN users up ON u.upline_id = up.id
         LEFT JOIN property_listings pl ON u.id = pl.agent_id
         WHERE u.role = 'agent'
         GROUP BY u.id
-        ORDER BY total_commission DESC
-    """
-    )
+        ORDER BY total_comm DESC
+    """)
+    agents_raw = cursor.fetchall()
 
-    agents_data = cursor.fetchall()
+    cursor.execute("""
+        SELECT agent_id,
+               SUM(CASE WHEN entry_type='personal'  THEN amount ELSE 0 END),
+               SUM(CASE WHEN entry_type='override'  THEN amount ELSE 0 END),
+               SUM(CASE WHEN entry_type='wtp_gen1'  THEN amount ELSE 0 END),
+               SUM(CASE WHEN entry_type='wtp_gen2'  THEN amount ELSE 0 END),
+               COUNT(DISTINCT listing_id)
+        FROM taiko_commission_entries GROUP BY agent_id
+    """)
+    taiko_map = {r[0]: r for r in cursor.fetchall()}
 
-    # Get monthly performance data
-    cursor.execute(
-        """
-        SELECT 
-            strftime('%Y-%m', pl.approved_at) as month,
-            u.name as agent_name,
-            COUNT(pl.id) as listings,
-            SUM(pl.commission_amount) as commission
+    cursor.execute("""
+        SELECT strftime('%Y-%m', pl.approved_at) AS month, u.name, u.agent_rank,
+               COUNT(pl.id), SUM(pl.commission_amount)
         FROM property_listings pl
         JOIN users u ON pl.agent_id = u.id
-        WHERE pl.status = 'approved' AND pl.approved_at IS NOT NULL
-        GROUP BY month, u.id
-        ORDER BY month DESC, commission DESC
-        LIMIT 50
-    """
-    )
-
+        WHERE pl.status='approved' AND pl.approved_at IS NOT NULL
+        GROUP BY month, u.id ORDER BY month DESC, 5 DESC LIMIT 60
+    """)
     monthly_data = cursor.fetchall()
 
+    cursor.execute("""
+        SELECT rpl.promoted_at, u.name, rpl.old_rank, rpl.new_rank,
+               rpl.cumulative_gross_at_promotion
+        FROM rank_promotion_log rpl
+        JOIN users u ON rpl.agent_id = u.id
+        ORDER BY rpl.promoted_at DESC LIMIT 10
+    """)
+    recent_promotions = cursor.fetchall()
     conn.close()
 
-    # Prepare data for template - REMOVED tier references
-    performance_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Agent Performance</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-            .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .nav a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
-            .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin: 20px 0; }
-            .stat-box { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-            .stat-value { font-size: 1.5em; font-weight: bold; }
-            table { width: 100%; background: white; border-radius: 10px; overflow: hidden; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-            th { background: #2c3e50; color: white; }
-            .success-rate { font-weight: bold; }
-            .rate-high { color: #28a745; }
-            .rate-medium { color: #ffc107; }
-            .rate-low { color: #dc3545; }
-            .performance-section { margin: 30px 0; }
-            .section-header { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>📊 Agent Performance Analytics</h1>
-            <div class="nav">
-                <a href="/admin/dashboard">← Dashboard</a>
-                <a href="/admin/agents">👥 Manage Agents</a>
-                <a href="/admin/export-data?type=agents">📤 Export Report</a>
-            </div>
-        </div>
-        
-        <div class="stats-summary">
-            <div class="stat-box">
-                <div style="color: #666; font-size: 14px;">Total Agents</div>
-                <div class="stat-value" style="color: #007bff;">{{ agent_count }}</div>
-            </div>
-            <div class="stat-box">
-                <div style="color: #666; font-size: 14px;">Total Commissions</div>
-                <div class="stat-value" style="color: #28a745;">RM{{ "{:,.2f}".format(total_commissions) }}</div>
-            </div>
-            <div class="stat-box">
-                <div style="color: #666; font-size: 14px;">Total Sales</div>
-                <div class="stat-value" style="color: #6f42c1;">RM{{ "{:,.2f}".format(total_sales) }}</div>
-            </div>
-            <div class="stat-box">
-                <div style="color: #666; font-size: 14px;">Avg. Success Rate</div>
-                <div class="stat-value" style="color: #17a2b8;">{{ avg_success_rate }}%</div>
-            </div>
-        </div>
-        
-        <div class="performance-section">
-            <div class="section-header">
-                <h2 style="margin: 0;">👥 Agent Performance Ranking</h2>
-                <p>Sorted by total commission earned</p>
-            </div>
-            
-            {% if agents_data %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>Rank</th>
-                        <th>Agent</th>
-                        <th>Listings</th>
-                        <th>Approved</th>
-                        <th>Rejected</th>
-                        <th>Success Rate</th>
-                        <th>Total Sales</th>
-                        <th>Total Commission</th>
-                        <th>Avg. Sale</th>
-                        <th>Last Approval</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for agent in agents_data %}
-                    <tr>
-                        <td>{{ loop.index }}</td>
-                        <td>
-                            <strong>{{ agent[1] }}</strong><br>
-                            <small>{{ agent[2] }}</small>
-                        </td>
-                        <td>{{ agent[4] or 0 }}</td>
-                        <td>{{ agent[5] or 0 }}</td>
-                        <td>{{ agent[6] or 0 }}</td>
-                        <td>
-                            {% set total = agent[4] or 0 %}
-                            {% set approved = agent[5] or 0 %}
-                            {% if total > 0 %}
-                                {% set rate = (approved / total * 100)|round|int %}
-                                <span class="success-rate 
-                                    {% if rate >= 80 %}rate-high
-                                    {% elif rate >= 50 %}rate-medium
-                                    {% else %}rate-low
-                                    {% endif %}">
-                                    {{ rate }}%
-                                </span>
-                            {% else %}
-                                <span style="color: #999;">N/A</span>
-                            {% endif %}
-                        </td>
-                        <td>RM{{ "{:,.2f}".format(agent[7] or 0) }}</td>
-                        <td>
-                            <strong style="color: #28a745;">RM{{ "{:,.2f}".format(agent[8] or 0) }}</strong>
-                        </td>
-                        <td>RM{{ "{:,.0f}".format(agent[9] or 0) }}</td>
-                        <td>{{ agent[11][:10] if agent[11] else 'Never' }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <div style="padding: 40px; text-align: center; background: white; border-radius: 10px;">
-                <h3>No agent data available</h3>
-                <p>No agents have submitted any listings yet.</p>
-            </div>
-            {% endif %}
-        </div>
-        
-        <div class="performance-section">
-            <div class="section-header">
-                <h2 style="margin: 0;">📅 Monthly Performance</h2>
-                <p>Recent months commission activity</p>
-            </div>
-            
-            {% if monthly_data %}
-            <table>
-                <thead>
-                    <tr>
-                        <th>Month</th>
-                        <th>Agent</th>
-                        <th>Approved Listings</th>
-                        <th>Commission Earned</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for month in monthly_data %}
-                    <tr>
-                        <td>{{ month[0] }}</td>
-                        <td>{{ month[1] }}</td>
-                        <td>{{ month[2] or 0 }}</td>
-                        <td><strong>RM{{ "{:,.2f}".format(month[3] or 0) }}</strong></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <div style="padding: 20px; background: white; border-radius: 10px; text-align: center; color: #666;">
-                No monthly performance data available
-            </div>
-            {% endif %}
-        </div>
-    </body>
-    </html>
-    """
+    RANK_TARGETS = {
+        "REN":      {"next":"Assoc REN","cur_min":0,"next_min":30000},
+        "Assoc REN":{"next":"Elite REN","cur_min":30000,"next_min":90000},
+        "Elite REN":{"next":"TL","cur_min":90000,"next_min":210000},
+        "TL":       {"next":"ATL","cur_min":210000,"next_min":450000},
+        "ATL":      {"next":None,"cur_min":450000,"next_min":None},
+    }
+    agents = []
+    for r in agents_raw:
+        aid,name,email,rank,comm_rate,cumgross,joined,upline_id,upline_name,\
+            total_l,approved,rejected,total_sales,total_comm = r
+        cumgross=float(cumgross or 0); total_sales=float(total_sales or 0)
+        total_comm=float(total_comm or 0); rank=rank or "REN"
+        rt=RANK_TARGETS.get(rank,RANK_TARGETS["REN"])
+        if rt["next_min"]:
+            span=rt["next_min"]-rt["cur_min"]; done=max(0,cumgross-rt["cur_min"])
+            prog_pct=min(100,round(done/span*100,1)) if span else 100
+            remaining=max(0,rt["next_min"]-cumgross)
+        else:
+            prog_pct=100; remaining=0
+        tk=taiko_map.get(aid)
+        agents.append({"id":aid,"name":name,"email":email,"rank":rank,
+            "comm_rate":float(comm_rate or 70),"cumgross":cumgross,
+            "joined":(joined or "")[:10],"upline":upline_name or "—",
+            "total_l":total_l or 0,"approved":approved or 0,"rejected":rejected or 0,
+            "success_rate":round((approved or 0)/(total_l)*100) if total_l else 0,
+            "total_sales":total_sales,"total_comm":total_comm,
+            "personal_e":float(tk[1] or 0) if tk else 0,
+            "override_e":float(tk[2] or 0) if tk else 0,
+            "wtp1_e":float(tk[3] or 0) if tk else 0,
+            "wtp2_e":float(tk[4] or 0) if tk else 0,
+            "taiko_deals":tk[5] if tk else 0,
+            "prog_pct":prog_pct,"remaining":remaining,"next_rank":rt["next"]})
 
-    # Calculate summary statistics
-    agent_count = len(agents_data)
-    total_commissions = sum(agent[8] or 0 for agent in agents_data)
-    total_sales = sum(agent[7] or 0 for agent in agents_data)
+    rank_counts={}
+    for a in agents: rank_counts[a["rank"]]=rank_counts.get(a["rank"],0)+1
 
-    # Calculate average success rate
-    success_rates = []
-    for agent in agents_data:
-        total_listings = agent[4] or 0
-        approved = agent[5] or 0
-        if total_listings > 0:
-            success_rates.append((approved / total_listings) * 100)
-
-    avg_success_rate = (
-        round(sum(success_rates) / max(len(success_rates), 1)) if success_rates else 0
+    return render_template_string(AGENT_PERF_TEMPLATE,
+        agents=agents, monthly_data=monthly_data,
+        recent_promotions=recent_promotions,
+        total_agents=len(agents),
+        total_commissions=sum(a["total_comm"] for a in agents),
+        total_sales=sum(a["total_sales"] for a in agents),
+        avg_success=round(sum(a["success_rate"] for a in agents)/max(len(agents),1)),
+        rank_counts=rank_counts,
     )
 
-    return render_template_string(
-        performance_template,
-        agents_data=agents_data,
-        monthly_data=monthly_data,
-        agent_count=agent_count,
-        total_commissions=total_commissions,
-        total_sales=total_sales,
-        avg_success_rate=avg_success_rate,
-    )
+
+AGENT_PERF_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Agent Performance</title>
+<style>
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+        .topbar { background:#2c3e50; color:white; padding:12px 16px; display:flex;
+                  align-items:center; justify-content:space-between; gap:8px;
+                  position:sticky; top:0; z-index:100; }
+        .topbar-title { font-size:1rem; font-weight:700; }
+        .topbar-right { display:flex; align-items:center; gap:10px; }
+        .topbar-right a { color:#a8c8ff; text-decoration:none; font-size:13px; }
+        .hamburger { display:none; background:none; border:none; color:white; font-size:22px; cursor:pointer; padding:2px 6px; }
+        .nav-bar { background:white; padding:10px 16px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+        .nav-bar a { color:#007bff; text-decoration:none; font-weight:600; font-size:13px; padding:5px 10px; border-radius:6px; white-space:nowrap; }
+        .nav-bar a:hover { background:#f0f7ff; }
+        .nav-bar a.nav-btn { background:#2563eb; color:white; }
+        .nav-bar a.nav-logout { color:#dc3545; }
+        .wrap { max-width:1400px; margin:0 auto; padding:16px; }
+        .card { background:white; border-radius:10px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        .card-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#7a8fa0; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #eee; }
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin-bottom:16px; }
+        .scard { background:white; border-radius:10px; padding:14px 16px; box-shadow:0 1px 4px rgba(0,0,0,.08); border-top:3px solid #ddd; }
+        .scard h3 { margin:0 0 6px; font-size:12px; color:#888; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+        .scard-val { font-size:1.4rem; font-weight:800; margin-bottom:2px; }
+        .scard small { font-size:11px; color:#888; }
+        .tbl-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px; }
+        table { width:100%; border-collapse:collapse; background:white; min-width:500px; }
+        th { background:#2c3e50; color:white; padding:10px 12px; text-align:left; font-size:12px; white-space:nowrap; }
+        td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:13px; vertical-align:top; }
+        tr:last-child td { border-bottom:none; }
+        tr:hover td { background:#fafbfc; }
+        .badge { padding:3px 8px; border-radius:10px; font-size:11px; font-weight:700; }
+        .act-btn { display:inline-block; padding:5px 10px; border:none; border-radius:5px; font-size:12px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; margin:2px 0; }
+        .act-green { background:#28a745; color:white; }
+        .act-blue  { background:#007bff; color:white; }
+        .act-red   { background:#dc3545; color:white; }
+        .act-grey  { background:#6c757d; color:white; }
+        .act-purple{ background:#6f42c1; color:white; }
+        .filter-wrap { background:white; border-radius:10px; padding:14px 16px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.07); }
+        .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .filter-row select,.filter-row input { padding:7px 10px; border:1px solid #ddd; border-radius:6px; font-size:13px; flex:1; min-width:120px; }
+        .btn-go  { padding:7px 14px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; white-space:nowrap; }
+        .btn-clr { padding:7px 12px; background:#6c757d; color:white; border:none; border-radius:6px; font-size:13px; text-decoration:none; white-space:nowrap; display:inline-block; }
+        .sec-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px; }
+        .sec-hdr h2 { margin:0; font-size:15px; }
+        .empty { padding:30px; text-align:center; background:white; border-radius:10px; }
+        .form-group { margin-bottom:16px; }
+        label { display:block; margin-bottom:5px; font-weight:600; color:#444; font-size:13px; }
+        input[type=text],input[type=email],input[type=password],input[type=number],select,textarea {
+            width:100%; padding:9px 11px; border:1px solid #ccc; border-radius:6px; font-size:14px; background:#fafafa; }
+        input:focus,select:focus,textarea:focus { outline:none; border-color:#007bff; background:white; }
+        .btn-primary   { background:#007bff; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; }
+        .btn-secondary { background:#6c757d; color:white; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; text-decoration:none; display:inline-block; }
+        .flash-s { background:#d4edda; color:#155724; padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:13px; border-left:4px solid #28a745; }
+        .flash-e { background:#f8d7da; color:#721c24; padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:13px; border-left:4px solid #dc3545; }
+        @media(max-width:640px) {
+            .hamburger { display:block; }
+            .nav-bar { display:none; flex-direction:column; align-items:stretch; padding:8px 12px; gap:2px; }
+            .nav-bar.open { display:flex; }
+            .nav-bar a { padding:10px 12px; font-size:14px; border-bottom:1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom:none; }
+            .wrap { padding:10px; }
+            .stats-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
+            .scard { padding:12px; }
+            .scard-val { font-size:1.2rem; }
+            .filter-row { flex-direction:column; align-items:stretch; }
+            .filter-row select,.filter-row input,.btn-go,.btn-clr { width:100%; }
+            td,th { padding:8px 10px!important; font-size:12px; }
+        }
+        .rank-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700}
+        .rc-REN{background:#ede8ff;color:#4a1ea8}.rc-AssocREN{background:#dbeeff;color:#0055b3}
+        .rc-EliteREN{background:#fff4cc;color:#7a4f00}.rc-TL{background:#d6f5e3;color:#0a5c30}
+        .rc-ATL{background:#fff0e0;color:#7a3300}
+        .prog-bg{background:#e9ecef;border-radius:999px;height:5px;margin:3px 0}
+        .prog-fg{height:5px;border-radius:999px;background:linear-gradient(90deg,#007bff,#6f42c1)}
+        .earn-chip{padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
+        .ep{background:#d4edda;color:#155724}.eo{background:#cce5ff;color:#004085}.ew{background:#fff3cd;color:#856404}
+        .promo-row{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:13px}
+        .promo-row:last-child{border-bottom:none}
+        .promo-date{font-size:11px;color:#888;margin-left:auto;white-space:nowrap}
+        .perf-bottom{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+        @media(max-width:640px){
+            .perf-bottom{grid-template-columns:1fr}
+            #agentTable th:nth-child(6),#agentTable td:nth-child(6),
+            #agentTable th:nth-child(8),#agentTable td:nth-child(8){display:none}
+        }
+</style>
+</head>
+<body>
+<div class="topbar">
+    <div class="topbar-title">&#128200; Agent Performance</div>
+    <div class="topbar-right"><a href="/admin/export-data?type=agents">&#128228; Export</a><button class="hamburger" onclick="toggleNav()">&#9776;</button></div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard" class="nav-active">&#128202; Dashboard</a>
+  <a href="/admin/projects">&#127962; Projects</a>
+  <a href="/admin/create-project" class="nav-btn">&#10010; New Project</a>
+  <a href="/admin/agents">&#128101; Agents</a>
+  <a href="/admin/agent-hierarchy">&#128279; Hierarchy</a>
+  <a href="/admin/payments">&#9993; Payments</a>
+  <a href="/admin/commissions">&#128176; Commissions</a>
+  <a href="/admin/unified-submissions">&#128203; Unified Submissions</a>
+  <a href="/admin/agent-performance">&#128200; Performance</a>
+  <a href="/admin/commission-calculator">&#9889; Calc</a>
+  <a href="/admin/settings">&#9881; Settings</a>
+  <a href="/admin/export-data">&#128228; Export</a>
+</div>
+<div class="wrap">
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#007bff"><h3>Total Agents</h3><div class="scard-val" style="color:#007bff">{{ total_agents }}</div></div>
+  <div class="scard" style="border-top-color:#28a745"><h3>Commissions</h3><div class="scard-val" style="color:#28a745">RM{{ "{:,.0f}".format(total_commissions) }}</div></div>
+  <div class="scard" style="border-top-color:#6f42c1"><h3>Total Sales</h3><div class="scard-val" style="color:#6f42c1">RM{{ "{:,.0f}".format(total_sales) }}</div></div>
+  <div class="scard" style="border-top-color:#17a2b8"><h3>Avg Success</h3><div class="scard-val" style="color:#17a2b8">{{ avg_success }}%</div></div>
+</div>
+<div class="card" style="padding:12px 16px;margin-bottom:14px">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <strong style="font-size:13px">&#127942; Ranks:</strong>
+    {% set rs={"REN":"rc-REN","Assoc REN":"rc-AssocREN","Elite REN":"rc-EliteREN","TL":"rc-TL","ATL":"rc-ATL"} %}
+    {% for rn in ["REN","Assoc REN","Elite REN","TL","ATL"] %}{% if rank_counts.get(rn,0)>0 %}
+    <span class="rank-chip {{ rs.get(rn,'rc-REN') }}">{{ rn }} &bull; {{ rank_counts.get(rn,0) }}</span>
+    {% endif %}{% endfor %}
+    <span style="font-size:11px;color:#888;margin-left:auto">RM30k&#8594;Assoc|RM90k&#8594;Elite|RM210k&#8594;TL|RM450k&#8594;ATL</span>
+  </div>
+</div>
+<div class="filter-wrap">
+  <div class="filter-row">
+    <input type="text" id="searchInput" placeholder="Search agent..." oninput="filterTable()"/>
+    <select id="rankFilter" onchange="filterTable()"><option value="">All Ranks</option><option>REN</option><option>Assoc REN</option><option>Elite REN</option><option>TL</option><option>ATL</option></select>
+    <select id="sortBy" onchange="sortTable()"><option value="comm">Commission</option><option value="sales">Sales</option><option value="approved">Deals</option><option value="name">Name</option></select>
+    <span id="agentCount" style="font-size:12px;color:#666"></span>
+  </div>
+</div>
+<div class="tbl-wrap"><table id="agentTable">
+  <thead><tr><th>#</th><th>Agent</th><th>Rank &amp; Progress</th><th>Deals</th><th>Success</th><th>Earnings</th><th>Commission</th><th>Cum. Gross</th></tr></thead>
+  <tbody id="agentTbody">
+  {% for a in agents %}
+  <tr data-name="{{ a.name|lower }}" data-email="{{ a.email|lower }}" data-rank="{{ a.rank }}"
+      data-comm="{{ a.total_comm }}" data-sales="{{ a.total_sales }}" data-approved="{{ a.approved }}" data-cumgross="{{ a.cumgross }}">
+    <td style="color:#888;font-weight:700">{{ loop.index }}</td>
+    <td><strong>{{ a.name }}</strong><br><small style="color:#888">{{ a.email }}</small><br><small style="color:#555">&#8679; {{ a.upline }}</small></td>
+    <td style="min-width:140px">
+      {% set rs2={"REN":"rc-REN","Assoc REN":"rc-AssocREN","Elite REN":"rc-EliteREN","TL":"rc-TL","ATL":"rc-ATL"} %}
+      <span class="rank-chip {{ rs2.get(a.rank,'rc-REN') }}">{{ a.rank }} &bull; {{ a.comm_rate|int }}%</span>
+      <div class="prog-bg"><div class="prog-fg" style="width:{{ a.prog_pct }}%"></div></div>
+      {% if a.next_rank %}<small style="color:#888">{{ a.prog_pct }}% &#8594; {{ a.next_rank }}</small>{% else %}<small style="color:#28a745;font-weight:700">&#127942; ATL</small>{% endif %}
+    </td>
+    <td><div>{{ a.total_l }}</div><div style="color:#28a745;font-size:11px">&#10003;{{ a.approved }}</div><div style="color:#dc3545;font-size:11px">&#10007;{{ a.rejected }}</div></td>
+    <td>{% if a.total_l>0 %}<strong style="color:{% if a.success_rate>=80 %}#28a745{% elif a.success_rate>=50 %}#ffc107{% else %}#dc3545{% endif %}">{{ a.success_rate }}%</strong>{% else %}<span style="color:#aaa">—</span>{% endif %}</td>
+    <td>{% if a.personal_e>0 %}<span class="earn-chip ep">P RM{{ "{:,.0f}".format(a.personal_e) }}</span> {% endif %}{% if a.override_e>0 %}<span class="earn-chip eo">O RM{{ "{:,.0f}".format(a.override_e) }}</span> {% endif %}{% if a.wtp1_e+a.wtp2_e>0 %}<span class="earn-chip ew">W RM{{ "{:,.0f}".format(a.wtp1_e+a.wtp2_e) }}</span>{% endif %}{% if a.personal_e==0 and a.override_e==0 and a.wtp1_e==0 %}<span style="color:#aaa;font-size:11px">—</span>{% endif %}</td>
+    <td><strong style="color:#28a745">RM{{ "{:,.2f}".format(a.total_comm) }}</strong></td>
+    <td><strong>RM{{ "{:,.0f}".format(a.cumgross) }}</strong></td>
+  </tr>
+  {% else %}<tr><td colspan="8" style="text-align:center;padding:30px;color:#888">No agents found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<div class="perf-bottom">
+  <div>
+    <div class="sec-hdr"><h2>&#127942; Recent Promotions</h2></div>
+    {% if recent_promotions %}<div class="card" style="padding:0">{% for p in recent_promotions %}
+    <div class="promo-row">&#11014; <strong>{{ p[1] }}</strong> <span style="color:#28a745;font-weight:700">{{ p[2] }} &#8594; {{ p[3] }}</span>{% if p[4] %} <span style="font-size:11px;color:#666">RM{{ "{:,.0f}".format(p[4]) }}</span>{% endif %}<span class="promo-date">{{ p[0][:10] if p[0] else '' }}</span></div>
+    {% endfor %}</div>{% else %}<div class="empty"><p style="color:#888">No promotions yet.</p></div>{% endif %}
+  </div>
+  <div>
+    <div class="sec-hdr"><h2>&#128197; Monthly Activity</h2></div>
+    {% if monthly_data %}<div class="tbl-wrap" style="margin-bottom:0"><table><thead><tr><th>Month</th><th>Agent</th><th>Rank</th><th>Deals</th><th>Commission</th></tr></thead><tbody>
+    {% set rs3={"REN":"rc-REN","Assoc REN":"rc-AssocREN","Elite REN":"rc-EliteREN","TL":"rc-TL","ATL":"rc-ATL"} %}
+    {% for m in monthly_data %}<tr><td>{{ m[0] }}</td><td>{{ m[1] }}</td><td><span class="rank-chip {{ rs3.get(m[2],'rc-REN') }}">{{ m[2] }}</span></td><td>{{ m[3] }}</td><td><strong style="color:#28a745">RM{{ "{:,.2f}".format(m[4] or 0) }}</strong></td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<div class="empty"><p style="color:#888">No data yet.</p></div>{% endif %}
+  </div>
+</div>
+</div>
+<script>
+function filterTable(){const q=document.getElementById('searchInput').value.toLowerCase();const rank=document.getElementById('rankFilter').value;let v=0;document.querySelectorAll('#agentTbody tr').forEach(function(row){if(!row.dataset.name)return;const show=(!q||row.dataset.name.includes(q)||row.dataset.email.includes(q))&&(!rank||row.dataset.rank===rank);row.style.display=show?'':'none';if(show)v++;});let i=1;document.querySelectorAll('#agentTbody tr').forEach(function(row){if(row.style.display!=='none'&&row.cells[0])row.cells[0].textContent=i++;});document.getElementById('agentCount').textContent='Showing '+v+' agent'+(v!==1?'s':'');}
+function sortTable(){const key=document.getElementById('sortBy').value;const tbody=document.getElementById('agentTbody');const rows=Array.from(tbody.querySelectorAll('tr')).filter(r=>r.dataset.name);rows.sort(function(a,b){if(key==='name')return a.dataset.name.localeCompare(b.dataset.name);return(parseFloat(b.dataset[key])||0)-(parseFloat(a.dataset[key])||0);});rows.forEach(r=>tbody.appendChild(r));filterTable();}
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){filterTable();document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});});
+</script>
+</body>
+</html>"""
+
 
 
 @app.route("/admin/export-full-db")
@@ -13135,6 +13251,973 @@ Admin: {session.get('user_name', 'Unknown')}
         return render_template_string(error_template, error=str(e))
 
 
+
+# ============================================================
+# WTP COMMISSION CALCULATOR — Python engine (no DB writes)
+# ============================================================
+
+WTP_RANKS = {
+    "ATL":   {"label": "ATL",       "pct": 90.0},
+    "TL":    {"label": "TL",        "pct": 85.0},
+    "ELITE": {"label": "Elite REN", "pct": 80.0},
+    "ASSOC": {"label": "Assoc REN", "pct": 75.0},
+    "REN":   {"label": "REN",       "pct": 70.0},
+}
+WTP_RANK_KEYS = ["ATL", "TL", "ELITE", "ASSOC", "REN"]
+
+
+def wtp_calculate(payload):
+    try:
+        sp          = float(payload.get("sales_price", 0))
+        dev_rate    = float(payload.get("dev_rate", 2))
+        sst_rate    = float(payload.get("sst_rate", 8))
+        company_pct = float(payload.get("company_pct", 15))
+        pic_pct     = float(payload.get("pic_pct", 10))
+        agents_pct  = float(payload.get("agents_pct", 75))
+        pic_name    = payload.get("pic_name", "PIC")
+        pic_rank_k  = payload.get("pic_rank", "REN")
+        company_name= payload.get("company_name", "Company")
+        edmond_name = payload.get("edmond_name", "ATL")
+        edmond_deal = bool(payload.get("edmond_deal", False))
+        branches    = payload.get("branches", [])
+
+        split_total = company_pct + pic_pct + agents_pct
+        if abs(split_total - 100) > 0.001:
+            return {"ok": False, "error":
+                f"Company ({company_pct}%) + PIC ({pic_pct}%) + Agents ({agents_pct}%) = "
+                f"{split_total:.2f}%. Must sum to 100%."}
+
+        gross = sp * dev_rate / 100
+        net   = gross / (1 + sst_rate / 100) if sst_rate > 0 else gross
+        sst_amt = gross - net
+
+        pic_rank_pct  = WTP_RANKS.get(pic_rank_k, WTP_RANKS["REN"])["pct"]
+        pic_rank_lbl  = WTP_RANKS.get(pic_rank_k, WTP_RANKS["REN"])["label"]
+        agent_pool_pd = net * agents_pct / 100
+        company_pd    = net * company_pct / 100
+        pic_pool_pd   = net * pic_pct / 100
+        pic_earn_pd   = pic_pool_pd * pic_rank_pct / 100
+        pic_rem_pd    = pic_pool_pd - pic_earn_pd
+
+        total_deals = 1 if edmond_deal else 0
+        for b in branches:
+            for a in b.get("agents", []):
+                if a.get("hasDeal"):
+                    total_deals += 1
+
+        total_gross    = total_deals * gross
+        total_net      = total_deals * net
+        total_company  = total_deals * company_pd
+        total_pic_pool = total_deals * pic_pool_pd
+        total_pic_earn = total_deals * pic_earn_pd
+        total_pic_rem  = total_deals * pic_rem_pd
+
+        lines = []
+        all_payouts     = {}
+        cobroke_payouts = {}
+        branch_results  = []
+        ep = {"personal": 0, "overrides": 0, "wtp1": 0, "wtp2": 0, "total": 0}
+
+        def new_p(): return {"personal": 0, "overrides": 0, "wtp1": 0, "wtp2": 0, "total": 0}
+
+        if edmond_deal:
+            earn = agent_pool_pd * 0.90
+            ep["personal"] = earn
+            lines.append({"label": f"{edmond_name} (personal deal)",
+                "formula": f"90% × RM {agent_pool_pd:,.2f}",
+                "exp": "ATL 90% of agent pool",
+                "amount": earn, "isWTP": False, "isPIC": False, "branch": "Edmond"})
+
+        for bi, b in enumerate(branches):
+            ags = b.get("agents", [])
+            n = len(ags)
+            btag = f"Branch {bi+1}"
+            bp = {}
+            for a in ags:
+                k = (bi, a.get("name","") or f"a{bi}")
+                bp[k] = new_p(); all_payouts[k] = bp[k]
+
+            def akey(a): return (bi, a.get("name","") or f"a{bi}")
+
+            for ai, a in enumerate(ags):
+                if not a.get("hasDeal"): continue
+                cbs = a.get("cobroke", [])
+                cb_tot = sum(float(c.get("pct",0)) for c in cbs)
+                if cb_tot > 100:
+                    return {"ok": False, "error": f"{a.get('name','Agent')} co-broke total > 100%"}
+                rank_pct = WTP_RANKS.get(a.get("rank","REN"), WTP_RANKS["REN"])["pct"]
+                rank_lbl = WTP_RANKS.get(a.get("rank","REN"), WTP_RANKS["REN"])["label"]
+                sa   = agent_pool_pd * (1 - cb_tot/100)
+                earn = sa * rank_pct / 100
+                bp[akey(a)]["personal"] = earn
+                sfx  = f" (keeps {100-cb_tot:.0f}% of pool)" if cb_tot > 0 else ""
+                lines.append({"label": f"{a.get('name') or rank_lbl} (personal deal{sfx})",
+                    "formula": f"{rank_pct}% × RM {sa:,.2f}", "exp": f"Stream A: {rank_lbl} {rank_pct}%",
+                    "amount": earn, "isWTP": False, "isPIC": False, "branch": btag})
+
+                for cp in cbs:
+                    cp_pct  = float(cp.get("pct",0))
+                    if cp_pct <= 0: continue
+                    cp_name = cp.get("name") or f"Co-broke {ai+1}"
+                    sb      = agent_pool_pd * cp_pct / 100
+                    is_wtp  = bool(cp.get("isWTP"))
+                    chain   = cp.get("wtpChain",[])
+                    if is_wtp and chain:
+                        cb_earn = sb * rank_pct / 100
+                        lines.append({"label": f"{cp_name} co-broke ({cp_pct:.0f}%)",
+                            "formula": f"{rank_pct}% × RM {sb:,.2f}", "exp": f"WTP agent Stream B",
+                            "amount": cb_earn, "isWTP": False, "isPIC": False,
+                            "isCobroke": True, "isCobrokeWTP": True, "branch": btag})
+                        if cp_name not in cobroke_payouts:
+                            cobroke_payouts[cp_name] = {"earn":0,"overrides":0,"wtp1":0,"isWTP":True}
+                        cobroke_payouts[cp_name]["earn"] += cb_earn
+                        prev = rank_pct
+                        for ul in reversed(chain):
+                            up = WTP_RANKS.get(ul.get("rank","TL"), WTP_RANKS["TL"])["pct"]
+                            un = ul.get("name") or WTP_RANKS.get(ul.get("rank","TL"))["label"]
+                            gap = up - prev
+                            if gap > 0:
+                                ue = sb * gap / 100
+                                lines.append({"label": f"{un} override on {cp_name}",
+                                    "formula": f"({up}%−{prev}%) × RM {sb:,.2f}",
+                                    "exp": f"{gap}% gap on Stream B",
+                                    "amount": ue, "isWTP": False, "isPIC": False,
+                                    "isCobroke": True, "isCobrokeWTP": True, "branch": btag})
+                                if un not in cobroke_payouts:
+                                    cobroke_payouts[un] = {"earn":0,"overrides":0,"wtp1":0,"isWTP":True}
+                                cobroke_payouts[un]["overrides"] += ue
+                            prev = up
+                    else:
+                        lines.append({"label": f"{cp_name} co-broke ({cp_pct:.0f}% ext.)",
+                            "formula": f"RM {sb:,.2f} flat", "exp": "External agent",
+                            "amount": sb, "isWTP": False, "isPIC": False,
+                            "isCobroke": True, "isCobrokeWTP": False, "branch": btag})
+                        if cp_name not in cobroke_payouts:
+                            cobroke_payouts[cp_name] = {"earn":0,"overrides":0,"wtp1":0,"isWTP":False}
+                        cobroke_payouts[cp_name]["earn"] += sb
+
+            tg = [0.0]*n
+            for ai in range(n-1,-1,-1):
+                a = ags[ai]
+                if a.get("hasDeal"):
+                    cb_t = sum(float(c.get("pct",0)) for c in a.get("cobroke",[]))
+                    sa   = agent_pool_pd*(1-cb_t/100)
+                else:
+                    sa   = 0.0
+                tg[ai] = sa + (tg[ai+1] if ai < n-1 else 0)
+
+            for ai in range(n-1):
+                up   = ags[ai]; dn = ags[ai+1]
+                up_p = WTP_RANKS.get(up.get("rank","REN"),WTP_RANKS["REN"])["pct"]
+                dn_p = WTP_RANKS.get(dn.get("rank","REN"),WTP_RANKS["REN"])["pct"]
+                gap  = up_p - dn_p; t = tg[ai+1]
+                if t == 0: continue
+                uname = up.get("name") or WTP_RANKS.get(up.get("rank","REN"))["label"]
+                dname = dn.get("name") or WTP_RANKS.get(dn.get("rank","REN"))["label"]
+                if gap > 0:
+                    earn = t*gap/100; bp[akey(up)]["overrides"] += earn
+                    lines.append({"label": f"{uname} override on {dname}",
+                        "formula": f"({up_p}%−{dn_p}%) × RM {t:,.2f}",
+                        "exp": f"{gap}% gap on pool RM {t:,.2f}",
+                        "amount": earn, "isWTP": False, "isPIC": False, "branch": btag})
+                else:
+                    w1 = t*0.02; bp[akey(up)]["wtp1"] += w1
+                    lines.append({"label": f"{uname} WTP Gen1 on {dname}",
+                        "formula": f"2% × RM {t:,.2f}", "exp": "Same rank — WTP Gen1",
+                        "amount": w1, "isWTP": True, "isPIC": False, "branch": btag})
+                    if ai > 0:
+                        g2 = ags[ai-1]; g2n = g2.get("name") or WTP_RANKS.get(g2.get("rank","REN"))["label"]
+                        w2 = t*0.01; bp[akey(g2)]["wtp2"] += w2
+                        lines.append({"label": f"{g2n} WTP Gen2",
+                            "formula": f"1% × RM {t:,.2f}", "exp": "Indirect upline 1% WTP",
+                            "amount": w2, "isWTP": True, "isPIC": False, "branch": btag})
+
+            if ags:
+                fa = ags[0]; fp = WTP_RANKS.get(fa.get("rank","REN"),WTP_RANKS["REN"])["pct"]
+                bp0 = tg[0]
+                if bp0 > 0:
+                    gap = 90 - fp
+                    fname = fa.get("name") or WTP_RANKS.get(fa.get("rank","REN"))["label"]
+                    if gap > 0:
+                        ee = bp0*gap/100; ep["overrides"] += ee
+                        lines.append({"label": f"{edmond_name} override on {fname} ({btag})",
+                            "formula": f"(90%−{fp}%) × RM {bp0:,.2f}",
+                            "exp": f"{gap}% gap on {btag} pool",
+                            "amount": ee, "isWTP": False, "isPIC": False, "branch": btag})
+                        edmond_earn = ee
+                    else:
+                        w1 = bp0*0.02; ep["wtp1"] += w1
+                        lines.append({"label": f"{edmond_name} WTP Gen1 on {fname} ({btag})",
+                            "formula": f"2% × RM {bp0:,.2f}", "exp": "Same rank — WTP Gen1",
+                            "amount": w1, "isWTP": True, "isPIC": False, "branch": btag})
+                        edmond_earn = w1
+                    deals_b = sum(1 for a in ags if a.get("hasDeal"))
+                    branch_results.append({"id":bi+1,"name":btag,"agents":n,"deals":deals_b,"gross":bp0,"edmondEarn":edmond_earn})
+                else:
+                    branch_results.append({"id":bi+1,"name":btag,"agents":n,"deals":0,"gross":0,"edmondEarn":0})
+
+        lines.append({"label": f"{company_name} (Company {company_pct}% of net)",
+            "formula": f"{company_pct}% × RM {total_net:,.2f} ({total_deals} deal(s))",
+            "exp": f"Company earns {company_pct}% of total net",
+            "amount": total_company, "isWTP": False, "isPIC": False, "isCompany": True, "branch": "Company"})
+        lines.append({"label": f"{pic_name} pool ({pic_pct}% of net)",
+            "formula": f"{pic_pct}% × RM {total_net:,.2f} ({total_deals} deal(s))",
+            "exp": f"PIC pool. Rank: {pic_rank_lbl} {pic_rank_pct}%. Rem RM {total_pic_rem:,.2f} → co.",
+            "amount": total_pic_pool, "isWTP": False, "isPIC": True, "isPICpool": True, "branch": "PIC"})
+        lines.append({"label": f"{pic_name} ({pic_rank_lbl} {pic_rank_pct}% of pool)",
+            "formula": f"{pic_rank_pct}% × RM {total_pic_pool:,.2f}",
+            "exp": f"{pic_name} earns {pic_rank_lbl} ({pic_rank_pct}%) of pool",
+            "amount": total_pic_earn, "isWTP": False, "isPIC": True, "branch": "PIC"})
+
+        ep["total"] = ep["personal"]+ep["overrides"]+ep["wtp1"]+ep["wtp2"]
+        for k,p in all_payouts.items():
+            p["total"] = p["personal"]+p["overrides"]+p["wtp1"]+p["wtp2"]
+
+        return {
+            "ok": True,
+            "lines": lines,
+            "branch_results": branch_results,
+            "edmond_payout": ep,
+            "all_payouts": {str(k): v for k,v in all_payouts.items()},
+            "cobroke_payouts": cobroke_payouts,
+            "summary": {
+                "total_deals": total_deals,
+                "gross_per_deal": round(gross,2), "sst_per_deal": round(sst_amt,2),
+                "net_per_deal": round(net,2), "total_gross": round(total_gross,2),
+                "total_net": round(total_net,2), "total_company": round(total_company,2),
+                "total_pic_pool": round(total_pic_pool,2), "total_pic_earn": round(total_pic_earn,2),
+                "total_pic_rem": round(total_pic_rem,2), "agent_pool_per_deal": round(agent_pool_pd,2),
+                "pic_rank_lbl": pic_rank_lbl, "pic_rank_pct": pic_rank_pct,
+            }
+        }
+    except Exception as e:
+        import traceback
+        return {"ok": False, "error": str(e), "tb": traceback.format_exc()}
+
+
+@app.route("/admin/commission-calculator/calculate", methods=["POST"])
+def wtp_commission_calculate():
+    if "user_id" not in session or session.get("user_role") != "admin":
+        return jsonify({"ok": False, "error": "Unauthorized"}), 403
+    try:
+        result = wtp_calculate(request.get_json(force=True))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/admin/commission-calculator")
+def wtp_commission_calculator():
+    if "user_id" not in session or session.get("user_role") != "admin":
+        return redirect("/login")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""SELECT id,name,agent_rank,commission_rate FROM users
+                      WHERE role='agent'
+                      ORDER BY name""")
+    agents = [{"id":r[0],"name":r[1],"rank":r[2] or "REN","rate":float(r[3] or 70)}
+              for r in cursor.fetchall()]
+    cursor.execute("""SELECT id,project_name,
+                      COALESCE(comm_dev_rate,2),COALESCE(comm_sst_rate,8),
+                      COALESCE(comm_company_pct,15),COALESCE(comm_pic_pct,10),
+                      COALESCE(comm_agents_pct,75),COALESCE(comm_pic_rank,'REN')
+                      FROM projects WHERE status='active' ORDER BY project_name""")
+    projects = [{"id":r[0],"name":r[1],"comm_dev_rate":float(r[2]),"comm_sst_rate":float(r[3]),
+                 "comm_company_pct":float(r[4]),"comm_pic_pct":float(r[5]),
+                 "comm_agents_pct":float(r[6]),"comm_pic_rank":r[7]}
+                for r in cursor.fetchall()]
+    conn.close()
+    return render_template_string(
+        WTP_CALCULATOR_TEMPLATE,
+        agents=agents, projects=projects,
+        agents_json=json.dumps(agents), projects_json=json.dumps(projects),
+        admin_name=session.get("user_name","Admin"),
+    )
+
+
+@app.route("/admin/project/<int:project_id>/save-comm-config", methods=["POST"])
+def save_project_comm_config(project_id):
+    if "user_id" not in session or session.get("user_role") != "admin":
+        return jsonify({"ok": False, "error": "Unauthorized"}), 403
+    data = request.get_json(force=True)
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""UPDATE projects SET
+            comm_dev_rate=?,comm_sst_rate=?,comm_company_pct=?,
+            comm_pic_pct=?,comm_agents_pct=?,comm_pic_rank=?
+            WHERE id=?""",
+            (float(data.get("comm_dev_rate",2)),float(data.get("comm_sst_rate",8)),
+             float(data.get("comm_company_pct",15)),float(data.get("comm_pic_pct",10)),
+             float(data.get("comm_agents_pct",75)),data.get("comm_pic_rank","REN"),
+             project_id))
+        conn.commit(); conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+
+WTP_CALCULATOR_TEMPLATE = r"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WTP Commission Calculator</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+
+/* cards */
+.card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.card-title{font-size:13px;font-weight:700;color:#2c3e50;margin-bottom:16px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.step-num{background:#2563eb;color:white;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+
+/* formula banner */
+.formula-banner{background:#eff6ff;border-left:4px solid #2563eb;padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:14px;font-size:12px;color:#1e40af;font-weight:600}
+
+/* rank chips */
+.rank-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:white;padding:12px 16px;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.rank-bar span{font-size:11px;font-weight:700}
+.rchip{padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700;border:2px solid transparent}
+.rc-atl{background:#fff0e0;color:#7a3300}.rc-tl{background:#d6f5e3;color:#0a5c30}
+.rc-er{background:#fff4cc;color:#7a4f00}.rc-as{background:#dbeeff;color:#0055b3}
+.rc-ren{background:#ede8ff;color:#4a1ea8}.rc-arr{color:#ccc;font-size:14px}
+
+/* form layout */
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-group{margin-bottom:0}
+.form-group label{display:block;font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+.form-group input,.form-group select{width:100%;padding:9px 11px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:14px;background:#fafafa;transition:border .15s}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:#2563eb;background:white}
+.form-group input[readonly]{background:#f5f5f5;color:#666;cursor:default}
+.ipw{position:relative}
+.ipw .ipl{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:700;color:#888;pointer-events:none}
+.ipw input{padding-left:28px}
+@media(max-width:640px){.grid3{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}}
+
+/* rate-check bar */
+.rate-check{background:#f8f9fa;border-radius:7px;padding:9px 14px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.rate-check strong{font-weight:700}
+.ok{color:#16a34a}.bad{color:#dc3545}
+.small-note{font-size:11px;color:#666;margin-top:3px}
+
+/* project picker */
+.proj-card{background:white;border-radius:10px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.proj-card label{font-size:12px;font-weight:700;color:#444;white-space:nowrap}
+.proj-card select{flex:1;min-width:220px;padding:8px 11px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:13px;background:#fafafa}
+.proj-hint{font-size:11px;color:#888;flex-basis:100%}
+
+/* ATL section */
+.atl-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff8f0;border:1.5px solid #fcd34d;border-radius:8px;padding:12px 14px;margin-bottom:12px}
+.atl-badge{background:#7a3300;color:#fff0e0;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap}
+.tog{position:relative;display:inline-block;width:38px;height:20px}
+.tog input{opacity:0;width:0;height:0}
+.tog-sl{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:20px;transition:.3s}
+.tog input:checked+.tog-sl{background:#16a34a}
+.tog-sl:before{content:'';position:absolute;width:14px;height:14px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s}
+.tog input:checked+.tog-sl:before{left:21px}
+.tog-lbl{font-size:12px;font-weight:700;color:#666}
+.tw{display:flex;align-items:center;gap:6px}
+
+/* branches */
+.branches-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.branches-row{display:flex;gap:10px;min-width:max-content;padding:2px}
+.branch-col{min-width:240px;background:#f8f9fa;border-radius:8px;padding:12px;border:1.5px solid #e5e7eb}
+.branch-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.branch-title{font-size:11px;font-weight:700;text-transform:uppercase;color:#888;letter-spacing:.06em}
+.btn-del-branch{background:none;border:none;color:#dc3545;cursor:pointer;font-size:16px;padding:0 4px}
+.btn-add-branch{background:#eff6ff;border:1.5px dashed #2563eb;color:#2563eb;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;min-width:200px;text-align:center}
+.btn-add-branch:hover{background:#dbeafe}
+.agent-row{display:flex;align-items:center;gap:8px;padding:8px;background:white;border-radius:6px;margin-bottom:6px;border:1.5px solid #e5e7eb;cursor:pointer}
+.agent-row.selected{border-color:#2563eb;background:#eff6ff}
+.agent-row:hover{border-color:#93c5fd}
+.agent-rank-sel{padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-weight:700;background:#f8f9fa}
+.agent-name-inp{flex:1;padding:5px 7px;border:1px solid #ddd;border-radius:5px;font-size:12px}
+.agent-deal-chk{width:15px;height:15px;cursor:pointer}
+.agent-pct{font-family:monospace;font-size:13px;font-weight:800;color:#2563eb;margin-left:auto;white-space:nowrap}
+.btn-del-agent{background:none;border:none;color:#dc3545;cursor:pointer;font-size:14px;padding:0 2px}
+.btn-add-agent{width:100%;background:none;border:1.5px dashed #ccc;color:#888;border-radius:5px;padding:6px;font-size:12px;cursor:pointer;margin-top:4px}
+.btn-add-agent:hover{border-color:#2563eb;color:#2563eb}
+
+/* cobroke */
+.cobroke-tag{display:inline-block;background:#f0fdf4;border:1px solid #86efac;color:#166534;border-radius:4px;font-size:9px;padding:0 4px;font-weight:700;margin-left:4px}
+.cobroke-section{border-top:1px solid #e5e7eb;margin-top:6px;padding-top:6px}
+.cobroke-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.cobroke-row input{padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px}
+.cobroke-row input[type=number]{width:60px}
+.cobroke-wtpchk{width:13px;height:13px}
+.btn-cobroke{background:none;border:1.5px dashed #86efac;color:#166534;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin-top:4px;width:100%}
+
+/* calculate button */
+.btn-calc{background:#2563eb;color:white;border:none;border-radius:8px;padding:13px 28px;font-size:15px;font-weight:700;cursor:pointer;width:100%;margin-top:8px;transition:background .15s}
+.btn-calc:hover{background:#1d4ed8}
+
+/* alert */
+.flash-err{background:#f8d7da;color:#721c24;padding:10px 14px;border-radius:7px;margin-bottom:12px;border-left:4px solid #dc3545;font-size:13px;display:none}
+
+/* results */
+.result-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:14px}
+.rc{background:white;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:4px solid #ddd}
+.rc-atl-b{border-top-color:#f97316}.rc-tl-b{border-top-color:#22c55e}.rc-er-b{border-top-color:#eab308}
+.rc-as-b{border-top-color:#3b82f6}.rc-ren-b{border-top-color:#a855f7}.rc-co-b{border-top-color:#10b981}
+.rc-comp-b{border-top-color:#8b5cf6}.rc-pic-b{border-top-color:#f43f5e}
+.rc-name{font-weight:800;font-size:14px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-role{font-size:10px;color:#888;margin-bottom:8px;font-weight:600}
+.rc-line{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5}
+.rc-lbl{color:#666}.rc-val{font-weight:700}.rc-val.wtp{color:#0d9488}.rc-val.pic{color:#e11d48}.rc-val.company{color:#6d28d9}
+.rc-total{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:2px solid #f0f0f0;background:#f8f9fa;border-radius:6px;padding:8px 10px}
+.rc-total-lbl{font-size:10px;font-weight:700;color:#888;text-transform:uppercase}
+.rc-total-val{font-size:16px;font-weight:900;color:#1a2a3a}
+
+/* breakdown table */
+.bk{background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.bk-head{display:grid;grid-template-columns:2fr 1.5fr 2fr 1fr;gap:6px;padding:9px 14px;background:#2c3e50;color:white;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.bk-row{display:grid;grid-template-columns:2fr 1.5fr 2fr 1fr;gap:6px;padding:8px 14px;font-size:12px;border-bottom:1px solid #f5f5f5;align-items:center}
+.bk-row:hover{background:#fafbfc}
+.bk-sec{display:grid;grid-template-columns:2fr 1.5fr 2fr 1fr;gap:6px;padding:7px 14px;background:#eff6ff;font-weight:700;font-size:12px;border-top:2px solid #2563eb;color:#1e40af}
+.bk-amt{text-align:right;font-weight:700}
+.bk-amt.wtp{color:#0d9488}.bk-amt.pic{color:#e11d48}.bk-amt.company{color:#6d28d9}
+.is-wtp{background:#f0fdfa}
+@media(max-width:640px){.bk-head,.bk-row,.bk-sec{grid-template-columns:1fr 1fr;}.bk-head div:nth-child(3),.bk-row div:nth-child(3),.bk-sec div:nth-child(3){display:none}}
+
+/* summary box */
+.sum-box{background:white;border-radius:10px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.sum-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:14px}
+.sum-item{background:#f8f9fa;border-radius:7px;padding:10px 12px}
+.sum-lbl{display:block;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:3px}
+.sum-val{font-size:15px;font-weight:800;color:#1a2a3a}
+.sum-grand{display:flex;justify-content:space-between;align-items:center;background:#1a3a2a;border-radius:8px;padding:14px 18px}
+.sg-lbl{font-size:12px;font-weight:700;color:#86efac;text-transform:uppercase}
+.sg-val{font-size:22px;font-weight:900;color:white}
+.sg-note{font-size:11px;color:#86efac;margin-top:2px}
+
+.info-note{background:#f8f9fa;border-radius:8px;padding:10px 14px;font-size:11px;color:#666;margin-bottom:14px;line-height:1.6}
+.info-note strong{color:#1a2a3a}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">⚡ WTP Commission Calculator</div>
+  <div class="topbar-right">
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">&#128202; Dashboard</a>
+  <a href="/admin/projects">&#127962; Projects</a>
+  <a href="/admin/create-project" class="nav-btn">&#10010; New Project</a>
+  <a href="/admin/agents">&#128101; Agents</a>
+  <a href="/admin/agent-hierarchy">&#128279; Hierarchy</a>
+  <a href="/admin/payments">&#9993; Payments</a>
+  <a href="/admin/commissions">&#128176; Commissions</a>
+  <a href="/admin/unified-submissions">&#128203; Unified Submissions</a>
+  <a href="/admin/agent-performance">&#128200; Performance</a>
+  <a href="/admin/commission-calculator" class="nav-active">&#9889; Calc</a>
+  <a href="/admin/settings">&#9881; Settings</a>
+  <a href="/admin/export-data">&#128228; Export</a>
+</div>
+
+<div class="wrap">
+
+<div class="formula-banner">
+  ⚡ <strong>WTP Formula:</strong> Sale Price × Dev Rate → Gross ÷ (1 + SST%) → Net → Company + PIC + Agents splits → Rank override chain
+</div>
+
+<!-- Rank reference -->
+<div class="rank-bar">
+  <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.06em">Ranks:</span>
+  <span class="rchip rc-ren">🟣 REN · 70%</span>
+  <span class="rc-arr">→</span>
+  <span class="rchip rc-as">🔵 Assoc · 75%</span>
+  <span class="rc-arr">→</span>
+  <span class="rchip rc-er">⭐ Elite · 80%</span>
+  <span class="rc-arr">→</span>
+  <span class="rchip rc-tl">🏠 TL · 85%</span>
+  <span class="rc-arr">→</span>
+  <span class="rchip rc-atl">👑 ATL · 90%</span>
+</div>
+
+<!-- Project selector -->
+<div class="proj-card">
+  <label>📋 Load from Project:</label>
+  <select id="projectPicker" onchange="loadProjectConfig()">
+    <option value="">— Select project to auto-fill rates —</option>
+    {% for p in projects %}
+    <option value="{{ p.id }}"
+      data-dev="{{ p.comm_dev_rate }}" data-sst="{{ p.comm_sst_rate }}"
+      data-co="{{ p.comm_company_pct }}" data-pic="{{ p.comm_pic_pct }}"
+      data-ag="{{ p.comm_agents_pct }}" data-prank="{{ p.comm_pic_rank }}"
+      data-name="{{ p.name }}">{{ p.name }}</option>
+    {% endfor %}
+  </select>
+  <div class="proj-hint">ℹ Selecting a project auto-fills all commission rates below.</div>
+</div>
+
+<div id="alertBox" class="flash-err"></div>
+
+<!-- STEP 1: Deal & Rates -->
+<div class="card">
+  <div class="card-title"><span class="step-num">1</span> Deal & Commission Rates</div>
+  <div class="grid3" style="gap:14px;margin-bottom:14px">
+    <div class="form-group">
+      <label>Project Name</label>
+      <input type="text" id="projName" value="Project-A"/>
+    </div>
+    <div class="form-group">
+      <label>Sale Price (RM)</label>
+      <div class="ipw"><span class="ipl">RM</span>
+        <input type="number" id="salesPrice" value="1000000" min="0" oninput="updateGross()"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Developer Comm Rate (%)</label>
+      <div class="ipw"><span class="ipl">%</span>
+        <input type="number" id="devCommRate" value="2" min="0" max="100" step="0.1" oninput="updateGross()"/>
+      </div>
+    </div>
+  </div>
+  <div class="grid3" style="gap:14px;margin-bottom:14px">
+    <div class="form-group">
+      <label>Gross Commission (auto)</label>
+      <div class="ipw"><span class="ipl">RM</span>
+        <input type="number" id="grossComm" readonly value="20000"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>SST Rate (%) — 0 if dev absorbs</label>
+      <div class="ipw"><span class="ipl">%</span>
+        <input type="number" id="sstRate" value="8" min="0" max="100" step="0.1" oninput="updateNet()"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Net After SST (auto)</label>
+      <div class="ipw"><span class="ipl">RM</span>
+        <input type="number" id="netComm" readonly/>
+      </div>
+      <div id="sstNote" class="small-note"></div>
+    </div>
+  </div>
+  <div class="grid3" style="gap:14px">
+    <div class="form-group">
+      <label>Company Split %</label>
+      <div class="ipw"><span class="ipl">%</span>
+        <input type="number" id="companyRate" value="15" min="0" max="100" step="0.1" oninput="updateRateCheck()"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>PIC Split %</label>
+      <div class="ipw"><span class="ipl">%</span>
+        <input type="number" id="picRate" value="10" min="0" max="100" step="0.1" oninput="updateRateCheck()"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Agents Split %</label>
+      <div class="ipw"><span class="ipl">%</span>
+        <input type="number" id="agentsRate" value="75" min="0" max="100" step="0.1" oninput="updateRateCheck()"/>
+      </div>
+    </div>
+  </div>
+  <div class="rate-check">
+    Gross: <strong id="rcGross">RM 20,000</strong>
+    &nbsp;SST: <strong id="rcSST">None</strong>
+    &nbsp;Net: <strong id="rcNet">RM 0</strong>
+    &nbsp;|&nbsp;
+    Co: <strong id="rcCo">15%</strong>
+    PIC: <strong id="rcPIC">10%</strong>
+    Agents: <strong id="rcAg">75%</strong>
+    Total: <strong id="rcTot" class="ok">100%</strong>
+    <strong id="rcSt" class="ok">✓ OK</strong>
+  </div>
+</div>
+
+<!-- STEP 2: Company & PIC -->
+<div class="card">
+  <div class="card-title"><span class="step-num">2</span> Company & PIC Details</div>
+  <div class="grid3" style="gap:14px;margin-bottom:14px">
+    <div class="form-group">
+      <label>Company Name</label>
+      <input type="text" id="companyName" value="Worldtree Properties"/>
+    </div>
+    <div class="form-group">
+      <label>Company Commission (auto)</label>
+      <div class="ipw"><span class="ipl">RM</span>
+        <input type="number" id="companyComm" readonly/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Project (ref)</label>
+      <input type="text" id="picProject" readonly style="color:#888"/>
+    </div>
+  </div>
+  <div class="grid3" style="gap:14px">
+    <div class="form-group">
+      <label>PIC Name</label>
+      <input type="text" id="picName" value="Erwin"/>
+    </div>
+    <div class="form-group">
+      <label>PIC Rank</label>
+      <select id="picRank" onchange="updatePicPreview()">
+        <option value="ATL">ATL (90%)</option>
+        <option value="TL">TL (85%)</option>
+        <option value="ELITE">Elite REN (80%)</option>
+        <option value="ASSOC">Assoc REN (75%)</option>
+        <option value="REN" selected>REN (70%)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>PIC Earns (auto)</label>
+      <div class="ipw"><span class="ipl">RM</span>
+        <input type="number" id="picComm" readonly/>
+      </div>
+      <div id="picNote" class="small-note"></div>
+    </div>
+  </div>
+</div>
+
+<!-- STEP 3: Team Hierarchy -->
+<div class="card">
+  <div class="card-title"><span class="step-num">3</span> Team Hierarchy</div>
+
+  <!-- ATL root -->
+  <div class="atl-row">
+    <span class="atl-badge">👑 ATL · 90%</span>
+    <div style="flex:1;min-width:140px">
+      <div class="form-group">
+        <label>Top Leader (ATL) Name</label>
+        <input type="text" id="edmondName" value="Edmond" placeholder="ATL name"/>
+      </div>
+    </div>
+    <div>
+      <div class="form-group">
+        <label>Personal Deal</label>
+        <div class="tw">
+          <label class="tog"><input type="checkbox" id="edmondDeal" onchange="renderBranches()"/><span class="tog-sl"></span></label>
+          <span class="tog-lbl" id="edmondDealLbl">OFF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alertInner" class="flash-err"></div>
+
+  <div class="branches-scroll">
+    <div class="branches-row" id="branchesRow"></div>
+  </div>
+
+  <button class="btn-calc" onclick="runCalc()">⚡ Calculate Commission Split</button>
+</div>
+
+<!-- RESULTS (hidden until calculated) -->
+<div id="results" style="display:none">
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#7a8fa0;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #ddd">📊 Results</div>
+  <div class="result-grid" id="resultCards"></div>
+
+  <div class="bk">
+    <div style="padding:12px 16px;font-weight:800;font-size:14px;color:#1a2a3a;border-bottom:1px solid #eee">Full Calculation Breakdown</div>
+    <div class="bk-head">
+      <div>Agent</div><div>Formula</div><div>Explanation</div><div style="text-align:right">Amount</div>
+    </div>
+    <div id="bkRows"></div>
+  </div>
+
+  <div class="sum-box">
+    <div class="sum-items" id="sumItems"></div>
+    <div class="sum-grand">
+      <div>
+        <div class="sg-lbl">Total Agent Payout</div>
+        <div class="sg-note" id="sgNote"></div>
+      </div>
+      <div class="sg-val" id="sgVal">RM 0</div>
+    </div>
+  </div>
+
+  <div class="info-note">
+    ⚡ <strong>WTP Rule:</strong> Same rank as downline = 0 override. Earn 2% WTP Gen1 on their pool; indirect upline earns 1% WTP Gen2.
+    &nbsp;|&nbsp; <strong>SST:</strong> Reverse method — Net = Gross ÷ (1 + SST%).
+    &nbsp;|&nbsp; <strong>Co-broke WTP</strong> chains flow independently from main hierarchy.
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+var RANKS = {
+    ATL:  {label:'ATL',      pct:90, pill:'rp-atl'},
+    TL:   {label:'TL',       pct:85, pill:'rp-tl'},
+    ELITE:{label:'Elite REN',pct:80, pill:'rp-er'},
+    ASSOC:{label:'Assoc REN',pct:75, pill:'rp-as'},
+    REN:  {label:'REN',      pct:70, pill:'rp-ren'}
+};
+var RANK_KEYS = ['ATL','TL','ELITE','ASSOC','REN'];
+var PROJECTS  = {{ projects_json|safe }};
+var branchCount=0, agentCount=0, branches=[];
+
+function fmtRM(n){ return 'RM '+parseFloat(n||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+window.onload = function(){
+    updateGross(); updateRateCheck();
+    document.getElementById('picProject').value = document.getElementById('projName').value;
+    document.getElementById('projName').oninput = function(){ document.getElementById('picProject').value = this.value; };
+    addBranchData([{rank:'TL',name:'Sarah',hasDeal:true}]);
+    addBranchData([{rank:'TL',name:'Ahmad',hasDeal:true},{rank:'REN',name:'Barry',hasDeal:false}]);
+};
+
+function loadProjectConfig(){
+    var sel = document.getElementById('projectPicker');
+    var opt = sel.options[sel.selectedIndex];
+    if(!opt || !opt.value) return;
+    document.getElementById('projName').value    = opt.dataset.name  || '';
+    document.getElementById('picProject').value  = opt.dataset.name  || '';
+    document.getElementById('devCommRate').value = opt.dataset.dev   || 2;
+    document.getElementById('sstRate').value     = opt.dataset.sst   || 8;
+    document.getElementById('companyRate').value = opt.dataset.co    || 15;
+    document.getElementById('picRate').value     = opt.dataset.pic   || 10;
+    document.getElementById('agentsRate').value  = opt.dataset.ag    || 75;
+    document.getElementById('picRank').value     = opt.dataset.prank || 'REN';
+    updateGross(); updateRateCheck(); updatePicPreview();
+}
+
+function updateGross(){
+    var sp = parseFloat(document.getElementById('salesPrice').value)||0;
+    var dr = parseFloat(document.getElementById('devCommRate').value)||0;
+    document.getElementById('grossComm').value = (sp*dr/100).toFixed(2);
+    updateNet();
+}
+function updateNet(){
+    var g   = parseFloat(document.getElementById('grossComm').value)||0;
+    var sst = parseFloat(document.getElementById('sstRate').value)||0;
+    var net = sst>0 ? g/(1+sst/100) : g;
+    var sa  = g - net;
+    document.getElementById('netComm').value = net.toFixed(2);
+    var nt = document.getElementById('sstNote');
+    if(sst>0){
+        nt.textContent = fmtRM(g)+' \u00f7 1.'+(sst<10?'0':'')+sst+' = '+fmtRM(net)+' (SST: '+fmtRM(sa)+')';
+        nt.style.color = '#0369a1';
+    } else {
+        nt.textContent = 'No SST \u2014 full gross flows through.';
+        nt.style.color = '#28a745';
+    }
+    updateRateCheck(); updatePicPreview();
+}
+function updateRateCheck(){
+    var g   = parseFloat(document.getElementById('grossComm').value)||0;
+    var sst = parseFloat(document.getElementById('sstRate').value)||0;
+    var net = sst>0 ? g/(1+sst/100) : g;
+    var sa  = g - net;
+    var co  = parseFloat(document.getElementById('companyRate').value)||0;
+    var pic = parseFloat(document.getElementById('picRate').value)||0;
+    var ag  = parseFloat(document.getElementById('agentsRate').value)||0;
+    var tot = co+pic+ag;
+    var ok  = Math.abs(tot-100)<0.001;
+    document.getElementById('rcGross').textContent = fmtRM(g);
+    document.getElementById('rcSST').textContent   = sst>0 ? '-'+fmtRM(sa) : 'None';
+    document.getElementById('rcSST').style.color   = sst>0 ? '#dc3545' : '#28a745';
+    document.getElementById('rcNet').textContent   = fmtRM(net);
+    document.getElementById('rcCo').textContent    = co+'%';
+    document.getElementById('rcPIC').textContent   = pic+'%';
+    document.getElementById('rcAg').textContent    = ag+'%';
+    var te = document.getElementById('rcTot');
+    te.textContent = tot.toFixed(2).replace(/\.?0+$/,'')+'%';
+    te.className = ok ? 'ok' : 'bad';
+    var se = document.getElementById('rcSt');
+    if(ok){ se.textContent='\u2713 OK'; se.className='ok'; }
+    else  { se.textContent=(tot>100?'Over':'Under')+' by '+Math.abs(tot-100).toFixed(2)+'%'; se.className='bad'; }
+    updateCompanyPreview();
+}
+function updatePicPreview(){
+    var net  = parseFloat(document.getElementById('netComm').value)||0;
+    var pic  = parseFloat(document.getElementById('picRate').value)||0;
+    var rank = document.getElementById('picRank').value||'REN';
+    var rp   = {ATL:90,TL:85,ELITE:80,ASSOC:75,REN:70}[rank]||70;
+    var pool = net*pic/100; var earn = pool*rp/100; var rem = pool-earn;
+    document.getElementById('picComm').value = earn.toFixed(2);
+    document.getElementById('picNote').textContent = pool>0 ? (fmtRM(pool)+' \u00d7 '+rp+'% = '+fmtRM(earn)+' (rem '+fmtRM(rem)+' \u2192 co)') : '';
+}
+function updateCompanyPreview(){
+    var net = parseFloat(document.getElementById('netComm').value)||0;
+    var co  = parseFloat(document.getElementById('companyRate').value)||0;
+    document.getElementById('companyComm').value = (net*co/100).toFixed(2);
+}
+
+function getAgent(bid,aid){ for(var i=0;i<branches.length;i++){ if(branches[i].id===bid){ for(var j=0;j<branches[i].agents.length;j++){ if(branches[i].agents[j].id===aid) return branches[i].agents[j]; } } } return null; }
+function addBranchData(arr){ branchCount++; var b={id:branchCount,agents:[]}; for(var i=0;i<arr.length;i++){agentCount++;b.agents.push({id:agentCount,rank:arr[i].rank,name:arr[i].name||'',hasDeal:arr[i].hasDeal===true,cobroke:[]});} branches.push(b); renderBranches(); }
+function addBranch(){ branchCount++;agentCount++; branches.push({id:branchCount,agents:[{id:agentCount,rank:'REN',name:'',hasDeal:false,cobroke:[]}]}); renderBranches(); }
+function removeBranch(bid){ branches=branches.filter(function(b){return b.id!==bid;}); renderBranches(); }
+function addAgent(bid){ agentCount++; for(var i=0;i<branches.length;i++){ if(branches[i].id===bid){ branches[i].agents.push({id:agentCount,rank:'REN',name:'',hasDeal:false,cobroke:[]}); break; } } renderBranches(); }
+function removeAgent(bid,aid){ for(var i=0;i<branches.length;i++){ if(branches[i].id===bid){ branches[i].agents=branches[i].agents.filter(function(a){return a.id!==aid;}); if(branches[i].agents.length===0){ branches=branches.filter(function(b){return b.id!==bid;}); } break; } } renderBranches(); }
+function syncAgent(bid,aid,field,val){ var a=getAgent(bid,aid); if(a) a[field]=val; if(field==='rank') renderBranches(); }
+function addCobroke(bid,aid){ var a=getAgent(bid,aid); if(a){ a.cobroke=a.cobroke||[]; a.cobroke.push({name:'',pct:50,isWTP:false}); renderBranches(); } }
+function removeCobroke(bid,aid,ci){ var a=getAgent(bid,aid); if(a&&a.cobroke){ a.cobroke.splice(ci,1); renderBranches(); } }
+function syncCobroke(bid,aid,ci,field,val){ var a=getAgent(bid,aid); if(a&&a.cobroke&&a.cobroke[ci]!=null) a.cobroke[ci][field]=val; }
+
+function renderBranches(){
+    var edDeal=document.getElementById('edmondDeal').checked;
+    document.getElementById('edmondDealLbl').textContent=edDeal?'ON':'OFF';
+    var row=document.getElementById('branchesRow'); row.innerHTML='';
+    for(var bi=0;bi<branches.length;bi++){
+        var b=branches[bi]; var bc=document.createElement('div'); bc.className='branch-col';
+        var bh='<div class="branch-header"><span class="branch-title">Branch '+(bi+1)+'</span><button class="btn-del-branch" onclick="removeBranch('+b.id+')" title="Remove branch">✕</button></div>';
+        for(var ai=0;ai<b.agents.length;ai++){
+            var a=b.agents[ai]; var r=RANKS[a.rank]||RANKS.REN;
+            var rankOpts=''; for(var ri=0;ri<RANK_KEYS.length;ri++){ var rk=RANK_KEYS[ri]; rankOpts+='<option value="'+rk+'"'+(a.rank===rk?' selected':'')+'>'+RANKS[rk].label+' '+RANKS[rk].pct+'%</option>'; }
+            bh+='<div class="agent-row" id="ar-'+b.id+'-'+a.id+'">'
+               +'<select class="agent-rank-sel" onchange="syncAgent('+b.id+','+a.id+',\'rank\',this.value)">'+rankOpts+'</select>'
+               +'<input class="agent-name-inp" type="text" placeholder="Name" value="'+esc(a.name||'')+'" oninput="syncAgent('+b.id+','+a.id+',\'name\',this.value)"/>'
+               +'<label title="Has deal"><input class="agent-deal-chk" type="checkbox"'+(a.hasDeal?' checked':'')+' onchange="syncAgent('+b.id+','+a.id+',\'hasDeal\',this.checked)"/> Deal</label>'
+               +'<span class="agent-pct">'+r.pct+'%</span>'
+               +'<button class="btn-del-agent" onclick="removeAgent('+b.id+','+a.id+')" title="Remove">✕</button>'
+               +'</div>';
+            if(a.cobroke&&a.cobroke.length>0){
+                bh+='<div class="cobroke-section">';
+                for(var ci=0;ci<a.cobroke.length;ci++){
+                    var cb=a.cobroke[ci];
+                    bh+='<div class="cobroke-row">'
+                       +'<span class="cobroke-tag">Co-broke</span>'
+                       +'<input type="text" placeholder="Name" value="'+esc(cb.name||'')+'" oninput="syncCobroke('+b.id+','+a.id+','+ci+',\'name\',this.value)" style="flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px"/>'
+                       +'<input type="number" value="'+esc(String(cb.pct||50))+'" min="0" max="100" step="1" oninput="syncCobroke('+b.id+','+a.id+','+ci+',\'pct\',parseFloat(this.value)||0)" style="width:55px;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:11px"/>%'
+                       +'<label style="font-size:11px;white-space:nowrap"><input class="cobroke-wtpchk" type="checkbox"'+(cb.isWTP?' checked':'')+' onchange="syncCobroke('+b.id+','+a.id+','+ci+',\'isWTP\',this.checked)"/> WTP</label>'
+                       +'<button onclick="removeCobroke('+b.id+','+a.id+','+ci+')" style="background:none;border:none;color:#dc3545;cursor:pointer;font-size:13px">✕</button>'
+                       +'</div>';
+                }
+                bh+='</div>';
+            }
+            bh+='<button class="btn-cobroke" onclick="addCobroke('+b.id+','+a.id+')">+ Add Co-broke</button>';
+        }
+        bh+='<button class="btn-add-agent" onclick="addAgent('+b.id+')">+ Add Agent</button>';
+        bc.innerHTML=bh; row.appendChild(bc);
+    }
+    var addBtn=document.createElement('button'); addBtn.className='btn-add-branch'; addBtn.textContent='+ Add Branch'; addBtn.onclick=addBranch; row.appendChild(addBtn);
+}
+
+function runCalc(){
+    var payload={
+        sales_price:  parseFloat(document.getElementById('salesPrice').value)||0,
+        dev_rate:     parseFloat(document.getElementById('devCommRate').value)||0,
+        sst_rate:     parseFloat(document.getElementById('sstRate').value)||0,
+        company_pct:  parseFloat(document.getElementById('companyRate').value)||0,
+        pic_pct:      parseFloat(document.getElementById('picRate').value)||0,
+        agents_pct:   parseFloat(document.getElementById('agentsRate').value)||0,
+        pic_name:     document.getElementById('picName').value||'PIC',
+        pic_rank:     document.getElementById('picRank').value||'REN',
+        company_name: document.getElementById('companyName').value||'Company',
+        edmond_name:  document.getElementById('edmondName').value||'ATL',
+        edmond_deal:  document.getElementById('edmondDeal').checked,
+        branches:     branches.map(function(b){return {agents:b.agents.map(function(a){return {rank:a.rank,name:a.name,hasDeal:a.hasDeal,cobroke:a.cobroke};});};})
+    };
+    if(payload.sales_price<=0){ showAlert('Sales price must be greater than 0.'); return; }
+    var ab=document.getElementById('alertBox'); ab.style.display='none';
+    fetch('/admin/commission-calculator/calculate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(r){return r.json();})
+    .then(function(d){ if(!d.ok){showAlert(d.error||'Calculation error.');return;} renderResults(d,payload); })
+    .catch(function(e){ showAlert('Network error: '+e.message); });
+}
+function showAlert(msg){
+    var a=document.getElementById('alertBox'); a.textContent=msg; a.style.display='block';
+    var b=document.getElementById('alertInner'); b.textContent=msg; b.style.display='block';
+}
+
+function renderResults(data,payload){
+    var lines=data.lines||[]; var ep=data.edmond_payout||{}; var summ=data.summary||{}; var cobroke=data.cobroke_payouts||{};
+    var edName=payload.edmond_name||'ATL'; var coName=payload.company_name||'Company'; var picName=payload.pic_name||'PIC';
+    var grid=document.getElementById('resultCards'); grid.innerHTML='';
+    var ec=mRC('rc-atl-b');
+    ec.innerHTML='<div class="rc-name">'+esc(edName)+'</div><div class="rc-role">ATL &bull; 90%</div><div>'+(ep.personal?rcL('Personal deal',ep.personal,false):'')+(ep.overrides?rcL('Override income',ep.overrides,false):'')+(ep.wtp1?rcL('WTP Gen1 (2%)',ep.wtp1,true):'')+(ep.wtp2?rcL('WTP Gen2 (1%)',ep.wtp2,true):'')+'</div><div class="rc-total"><span class="rc-total-lbl">Total</span><span class="rc-total-val">'+fmtRM(ep.total||0)+'</span></div>';
+    grid.appendChild(ec);
+    var barMap={ATL:'rc-atl-b',TL:'rc-tl-b',ELITE:'rc-er-b',ASSOC:'rc-as-b',REN:'rc-ren-b'};
+    for(var bi=0;bi<branches.length;bi++){
+        for(var ai=0;ai<branches[bi].agents.length;ai++){
+            var a=branches[bi].agents[ai]; var r=RANKS[a.rank];
+            var ac=mRC(barMap[a.rank]||'rc-ren-b');
+            var p=findP(data.all_payouts,bi,a.name);
+            ac.innerHTML='<div class="rc-name">'+esc(a.name||r.label)+'</div><div class="rc-role">'+r.label+' &bull; '+r.pct+'% &mdash; Branch '+(bi+1)+'</div><div>'+(p&&p.personal?rcL('Personal deal',p.personal,false):'')+(p&&p.overrides?rcL('Override income',p.overrides,false):'')+(p&&p.wtp1?rcL('WTP Gen1',p.wtp1,true):'')+(p&&p.wtp2?rcL('WTP Gen2',p.wtp2,true):'')+(!p||(!p.personal&&!p.overrides&&!p.wtp1&&!p.wtp2)?'<div style="color:#888;font-size:12px;padding:6px 0">No deal / no override</div>':'')+'</div><div class="rc-total"><span class="rc-total-lbl">Total</span><span class="rc-total-val">'+fmtRM(p?p.total:0)+'</span></div>';
+            grid.appendChild(ac);
+        }
+    }
+    for(var cpn in cobroke){
+        var cpd=cobroke[cpn]; var cptot=(cpd.earn||0)+(cpd.overrides||0)+(cpd.wtp1||0);
+        var cc=mRC('rc-co-b');
+        cc.innerHTML='<div class="rc-name">'+esc(cpn)+'</div><div class="rc-role">'+(cpd.isWTP?'WTP Co-broke Agent':'External Co-broke')+'</div><div>'+(cpd.earn?rcL(cpd.isWTP?'Commission':'Referral share',cpd.earn,false):'')+(cpd.overrides?rcL('Override income',cpd.overrides,false):'')+(cpd.wtp1?rcL('WTP Gen1',cpd.wtp1,true):'')+'</div><div class="rc-total" style="background:#fffbeb;border-color:#fde68a"><span class="rc-total-lbl" style="color:#d97706">Total</span><span class="rc-total-val" style="color:#b45309">'+fmtRM(cptot)+'</span></div>';
+        grid.appendChild(cc);
+    }
+    var compc=mRC('rc-comp-b');
+    compc.innerHTML='<div class="rc-name">'+esc(coName)+'</div><div class="rc-role">Company Commission</div><div>'+rcL('Company comm',summ.total_company||0,false)+(summ.total_pic_rem?rcL('PIC remainder \u2192 co.',summ.total_pic_rem,false):'')+'</div><div class="rc-total" style="background:#f5f3ff;border-color:#a78bfa"><span class="rc-total-lbl" style="color:#6d28d9">Total</span><span class="rc-total-val" style="color:#6d28d9">'+fmtRM((summ.total_company||0)+(summ.total_pic_rem||0))+'</span></div>';
+    grid.appendChild(compc);
+    var picc=mRC('rc-pic-b');
+    picc.innerHTML='<div class="rc-name">'+esc(picName)+'</div><div class="rc-role">Project PIC &bull; '+esc(summ.pic_rank_lbl||'REN')+' '+esc(String(summ.pic_rank_pct||70))+'%</div><div>'+rcL('PIC pool ('+payload.pic_pct+'% of net)',summ.total_pic_pool||0,false)+rcL((summ.pic_rank_lbl||'REN')+' '+(summ.pic_rank_pct||70)+'% of pool',summ.total_pic_earn||0,false)+'<div class="rc-line"><span class="rc-lbl">Remainder \u2192 company</span><span class="rc-val" style="color:#888">('+fmtRM(summ.total_pic_rem||0)+')</span></div></div><div class="rc-total" style="background:#fff5f7;border-color:#fda4af"><span class="rc-total-lbl" style="color:#e11d48">PIC Receives</span><span class="rc-total-val" style="color:#be185d">'+fmtRM(summ.total_pic_earn||0)+'</span></div>';
+    grid.appendChild(picc);
+    var bkR=document.getElementById('bkRows'); bkR.innerHTML='';
+    var curB='';
+    for(var li=0;li<lines.length;li++){
+        var l=lines[li];
+        if(l.branch!==curB){
+            curB=l.branch;
+            var sh=document.createElement('div'); sh.className='bk-sec';
+            sh.innerHTML='<div>'+esc(l.branch)+'</div><div></div><div></div><div></div>';
+            bkR.appendChild(sh);
+        }
+        var rw=document.createElement('div');
+        rw.className='bk-row'+(l.isWTP?' is-wtp':'');
+        var ac2='bk-amt'+(l.isWTP?' wtp':l.isPIC&&!l.isPICpool?' pic':l.isCompany?' company':'');
+        rw.innerHTML='<div class="bk-agent">'+esc(l.label)+'</div><div class="bk-formula">'+esc(l.formula)+'</div><div class="bk-exp">'+esc(l.exp)+'</div><div class="'+ac2+'">'+fmtRM(l.amount)+'</div>';
+        bkR.appendChild(rw);
+    }
+    var si=document.getElementById('sumItems'); si.innerHTML='';
+    var items=[
+        {lbl:'Total Deals',   val:String(summ.total_deals||0)},
+        {lbl:'Gross/deal',    val:fmtRM(summ.gross_per_deal||0)},
+        {lbl:'SST/deal',      val:(summ.sst_per_deal>0?'-'+fmtRM(summ.sst_per_deal):'None'), style:'color:#dc3545'},
+        {lbl:'Net/deal',      val:fmtRM(summ.net_per_deal||0), style:'color:#17a2b8'},
+        {lbl:coName+' total', val:fmtRM(summ.total_company||0), style:'color:#a78bfa'},
+        {lbl:'PIC receives',  val:fmtRM(summ.total_pic_earn||0), style:'color:#fb7185'},
+        {lbl:'PIC remainder', val:fmtRM(summ.total_pic_rem||0), style:'color:#aaa'}
+    ];
+    for(var i=0;i<items.length;i++){
+        var d=document.createElement('div'); d.className='sum-item';
+        d.innerHTML='<span class="sum-lbl">'+esc(items[i].lbl)+'</span><span class="sum-val"'+(items[i].style?' style="'+items[i].style+'"':'')+'>'+items[i].val+'</span>';
+        si.appendChild(d);
+    }
+    var tap=(ep.total||0);
+    for(var bpk in (data.all_payouts||{})){ tap+=(data.all_payouts[bpk].total||0); }
+    for(var cpk in cobroke){ tap+=((cobroke[cpk].earn||0)+(cobroke[cpk].overrides||0)+(cobroke[cpk].wtp1||0)); }
+    document.getElementById('sgVal').textContent = fmtRM(tap);
+    document.getElementById('sgNote').textContent = 'Total across '+summ.total_deals+' deal(s) | Net cap: '+fmtRM(summ.total_net||0);
+    document.getElementById('results').style.display='block';
+    setTimeout(function(){document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'});},80);
+}
+function mRC(cls){ var c=document.createElement('div'); c.className='rc '+cls; return c; }
+function rcL(lbl,val,wtp){ return '<div class="rc-line"><span class="rc-lbl">'+esc(lbl)+'</span><span class="rc-val'+(wtp?' wtp':'')+'">'+fmtRM(val)+'</span></div>'; }
+function findP(all,bi,name){
+    var k='('+bi+', '+JSON.stringify(name)+')';
+    if(all&&all[k]) return all[k];
+    if(all){ for(var key in all){ if(key.indexOf('"'+name+'"')!==-1) return all[key]; } }
+    return null;
+}
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+    document.querySelectorAll('#mainNav a').forEach(function(a){
+        a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+    });
+});
+</script>
+</body>
+</html>
+"""
 @app.route("/admin/check-db-structure")
 def check_db_structure():
     if "user_id" not in session or session["user_role"] != "admin":
@@ -13166,8 +14249,2921 @@ def check_db_structure():
     conn.close()
     return result
 
+# ============================================================
+# WTP UNIFIED SUBMISSION SYSTEM
+# Paste this entire block into app.py
+# Place it BEFORE the  
+
+# ── ADMIN MAINTENANCE ROUTES ────────────────────────────────
+
+@app.route("/admin/clear-notifications")
+def admin_clear_notifications():
+    """Clear expired/old notifications (older than 30 days)"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+    conn = get_db_connection()
+    try:
+        result = conn.execute(
+            "DELETE FROM notifications WHERE created_at < datetime('now', '-30 days')"
+        )
+        conn.commit()
+        deleted = result.rowcount
+        flash(f"✅ Cleared {deleted} expired notification(s).", "success")
+    except Exception as e:
+        flash(f"Error: {str(e)}", "error")
+    finally:
+        conn.close()
+    return redirect("/admin/settings")
+
+
+@app.route("/admin/recalculate-ranks")
+def admin_recalculate_ranks():
+    """Recalculate all agent ranks based on cumulative gross commission."""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    RANK_THRESHOLDS = [
+        (450000, 'ATL',       90.0),
+        (210000, 'TL',        85.0),
+        (90000,  'Elite REN', 80.0),
+        (30000,  'Assoc REN', 75.0),
+        (0,      'REN',       70.0),
+    ]
+
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        agents = conn.execute(
+            "SELECT id FROM users WHERE role = 'agent'"
+        ).fetchall()
+
+        updated = 0
+        for ag in agents:
+            # Get live gross (submitted + approved commission)
+            gross_row = conn.execute(
+                """SELECT COALESCE(SUM(commission_amount), 0)
+                   FROM property_listings
+                   WHERE agent_id = ? AND status IN ('submitted', 'approved')""",
+                (ag['id'],)
+            ).fetchone()
+            gross = float(gross_row[0] or 0)
+
+            # Determine rank
+            new_rank, new_rate = 'REN', 70.0
+            for threshold, rank, rate in RANK_THRESHOLDS:
+                if gross >= threshold:
+                    new_rank, new_rate = rank, rate
+                    break
+
+            conn.execute(
+                "UPDATE users SET agent_rank=?, commission_rate=?, cumulative_gross=? WHERE id=?",
+                (new_rank, new_rate, gross, ag['id'])
+            )
+            updated += 1
+
+        conn.commit()
+        flash(f"✅ Recalculated ranks for {updated} agent(s).", "success")
+    except Exception as e:
+        flash(f"Error recalculating ranks: {str(e)}", "error")
+    finally:
+        conn.close()
+    return redirect("/admin/settings")
+
+import uuid
+
+# ── HTML TEMPLATES ──────────────────────────────────────────
+
+UNIFIED_SUBMIT_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>New Submission – WTP</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-btn:hover{background:#15803d}
+.nav-bar a.nav-active{background:#f0fdf4;color:#15803d}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}.nav-bar a:last-child{border-bottom:none}}
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+.flash-ok{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.flash-err{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.flash-warn{background:#fef9c3;color:#854d0e;border:1px solid #fde68a}
+
+/* ── TYPE SELECTOR ── */
+.type-bar{background:white;border-radius:10px;padding:16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.type-bar h3{margin:0 0 10px;font-size:13px;font-weight:700;color:#444}
+.type-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tc{border:2px solid #e5e7eb;border-radius:10px;padding:14px 12px;text-align:center;cursor:pointer;transition:all .18s;background:#fff}
+.tc:hover{border-color:#16a34a;background:#f0fdf4}
+.tc.selected{border-color:#16a34a;background:#f0fdf4}
+.tc-icon{font-size:26px;margin-bottom:5px}
+.tc-name{font-weight:700;font-size:13px;color:#1a2a3a}
+.tc-desc{font-size:10px;color:#888;margin-top:2px}
+.tc-ref{font-size:9px;font-weight:700;color:#16a34a;background:#dcfce7;padding:2px 8px;border-radius:8px;display:inline-block;margin-top:5px}
+@media(max-width:540px){.type-cards{grid-template-columns:1fr}}
+
+/* ── STEP CARDS ── */
+.step-card{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:12px}
+.step-title{font-size:13px;font-weight:700;color:#1a2a3a;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.step-num{background:#16a34a;color:white;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.step-card.sec-np{border-top:3px solid #1a4a6a}
+.step-card.sec-ss{border-top:3px solid #3a2a6a}
+.step-card.sec-rn{border-top:3px solid #6a2a1a}
+.smart-sec{display:none}
+
+/* ── FORM ELEMENTS ── */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;margin-bottom:4px;font-weight:600;color:#444;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;font-size:14px;background:#fafafa;transition:border-color .15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#16a34a;background:white}
+.form-group input.readonly-field{background:#f5f5f5;color:#555;cursor:not-allowed;border-color:#e0e0e0}
+.form-group .field-note{font-size:11px;color:#888;margin-top:3px}
+.form-group textarea{resize:vertical;min-height:60px}
+.span2{grid-column:span 2}
+.span3{grid-column:span 3}
+@media(max-width:600px){.form-row,.form-row.three{grid-template-columns:1fr}.span2,.span3{grid-column:span 1}}
+
+/* ── REF NUMBER ── */
+.ref-row{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:10px 14px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px}
+.ref-label{font-size:12px;font-weight:700;color:#166534}
+.ref-value{font-family:monospace;font-size:16px;font-weight:800;color:#15803d;flex:1}
+.ref-edit-btn{background:none;border:1px solid #86efac;color:#16a34a;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;transition:all .13s}
+.ref-edit-btn:hover{background:#dcfce7}
+.ref-locked{font-size:10px;color:#888;font-style:italic}
+
+/* ── SIG BLOCKS ── */
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.sig-block{border:1.5px dashed #d1d5db;border-radius:8px;padding:12px;background:white;position:relative}
+.sig-block.sig-active{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.12);animation:pulse 2s infinite}
+.sig-block.sig-signed{border:1.5px solid #16a34a;background:#f0fdf4}
+.sig-block.sig-locked{background:#f9fafb;border-color:#e5e7eb}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(22,163,74,.12)}50%{box-shadow:0 0 0 7px rgba(22,163,74,.04)}}
+.sig-role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1a3a2a;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.sig-canvas{width:100%;height:68px;border:1px solid #e5e7eb;border-radius:4px;background:#fff;cursor:crosshair;display:block;touch-action:none}
+.sig-locked .sig-canvas{cursor:default;background:#f9fafb}
+.sig-hint{font-size:9px;color:#16a34a;text-align:center;margin:4px 0;font-style:italic}
+.sig-locked .sig-hint,.sig-signed .sig-hint{display:none}
+.sig-flds{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.sig-fr{display:flex;align-items:baseline;gap:4px;font-size:10px}
+.sig-fl{color:#888;min-width:36px}
+.sig-fv{flex:1;border-bottom:1px solid #e5e7eb;padding:0 3px 1px;font-size:10px;color:#1a2a3a;cursor:pointer}
+.sig-fv:empty::before{content:attr(data-ph);color:#9ca3af;font-style:italic;font-size:9px}
+.sig-locked .sig-fv{cursor:default;border-bottom-color:#e5e7eb}
+.sig-stamp{display:none;position:absolute;top:6px;right:8px;background:#dcfce7;color:#166534;font-size:7px;padding:1px 6px;border-radius:8px;border:1px solid #86efac;font-weight:700}
+.sig-signed .sig-stamp{display:block}
+.sig-clr{background:none;border:1px solid #e5e7eb;color:#9ca3af;font-size:8px;padding:1px 6px;border-radius:8px;cursor:pointer;float:right;margin-top:-3px}
+.sig-locked .sig-clr,.sig-signed .sig-clr{display:none}
+@media(max-width:540px){.sig-grid{grid-template-columns:1fr}}
+
+/* ── WF STRIP ── */
+.wf-strip{background:#1a3a2a;padding:8px 16px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;overflow-x:auto}
+.wf-step{display:flex;align-items:center;gap:4px;font-size:9px;color:rgba(255,255,255,.4);white-space:nowrap}
+.wf-step.wf-done{color:#d4b04a}
+.wf-step.wf-now{color:white;font-weight:700}
+.wf-dot{width:17px;height:17px;border-radius:50%;border:1.5px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;flex-shrink:0}
+.wf-step.wf-done .wf-dot{background:#d4b04a;border-color:#d4b04a;color:#1a3a2a}
+.wf-step.wf-now  .wf-dot{background:#b8952a;border-color:#b8952a;color:white}
+.wf-arr{color:rgba(255,255,255,.15);font-size:8px;margin:0 1px}
+.wf-tag{margin-left:auto;background:rgba(255,255,255,.1);color:rgba(255,255,255,.85);font-size:8px;padding:2px 9px;border-radius:8px;letter-spacing:.4px;white-space:nowrap}
+
+/* ── NOTICE BANNER ── */
+.nb{border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:11.5px;line-height:1.55;display:flex;gap:7px;align-items:flex-start}
+.nb-info{background:#e8f4fd;border:1px solid #b3d4f0;color:#1a4a6a}
+.nb-ok{background:#dcfce7;border:1px solid #86efac;color:#166534}
+.nb-warn{background:#fef9c3;border:1px solid #fde68a;color:#854d0e}
+
+/* ── ACTION BAR ── */
+.act-bar{display:flex;gap:8px;justify-content:flex-end;padding-top:12px;flex-wrap:wrap}
+.btn-submit{background:#16a34a;color:white;padding:11px 26px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+.btn-draft{background:#6c757d;color:white;padding:11px 20px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:600}
+.btn-send{background:#b8952a;color:white;padding:11px 22px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+.btn-done{background:#1a3a2a;color:white;padding:11px 22px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+@media(max-width:540px){.act-bar{flex-direction:column}.btn-submit,.btn-draft,.btn-send,.btn-done{width:100%;text-align:center}}
+
+/* ── SEND MODAL ── */
+.mo{position:fixed;inset:0;background:rgba(26,58,42,.52);backdrop-filter:blur(3px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;pointer-events:none;transition:opacity .2s}
+.mo.open{opacity:1;pointer-events:all}
+.mb{background:#faf8f3;border-radius:10px;box-shadow:0 16px 50px rgba(0,0,0,.22);width:100%;max-width:400px;padding:20px;transform:translateY(14px);transition:transform .2s;border-top:4px solid #1a3a2a}
+.mo.open .mb{transform:translateY(0)}
+.mb h3{font-size:14px;font-weight:700;color:#1a3a2a;margin:0 0 4px}
+.mb p{font-size:10.5px;color:#6a6a6a;margin:0 0 14px}
+.ch-card{border:1.5px solid #e5e7eb;border-radius:7px;padding:10px 12px;cursor:pointer;transition:all .13s;display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ch-card:hover{border-color:#16a34a;background:#f0fdf4}
+.ch-ico{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.ch-wa-bg{background:#dcf8e7}.ch-tg-bg{background:#daf0fb}
+.ch-name{font-size:11.5px;font-weight:700;color:#1a2a3a}
+.ch-desc{font-size:9px;color:#888}
+.ph-step{display:none}.ph-step.open{display:block}
+.back-lk{font-size:10px;color:#16a34a;cursor:pointer;margin-bottom:10px;display:inline-flex;align-items:center;gap:3px}
+.back-lk:hover{text-decoration:underline}
+.msg-prev{background:#f0fdf4;border:1px solid #86efac;border-radius:5px;padding:8px 10px;font-size:9.5px;color:#444;line-height:1.6;font-style:italic;max-height:72px;overflow:auto;margin-bottom:10px}
+.m-grp{margin-bottom:10px}
+.m-lbl{display:block;font-size:9px;font-weight:700;color:#555;margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
+.m-inp{width:100%;border:1.5px solid #e5e7eb;border-radius:5px;padding:7px 9px;font-size:12px;outline:none;font-family:Arial}
+.m-inp:focus{border-color:#16a34a}
+.mo-acts{display:flex;gap:7px;justify-content:flex-end;margin-top:12px}
+.btn-sm{font-size:10.5px;padding:6px 14px;border-radius:5px;border:none;cursor:pointer;font-weight:600;font-family:Arial}
+.btn-sm-gh{background:transparent;border:1.5px solid #16a34a;color:#16a34a}
+.btn-sm-wa{background:#25D366;color:white}
+.btn-sm-tg{background:#2AABEE;color:white}
+
+/* ── SIG MODAL ── */
+.sig-mo-cv{width:100%;height:110px;border:1.5px solid #e5e7eb;border-radius:5px;background:white;display:block;cursor:crosshair;touch-action:none;margin-bottom:4px}
+.sig-mo-hint{font-size:9px;color:#888;text-align:center;margin-bottom:9px}
+.sig-mo-clr{background:none;border:1px solid #e5e7eb;color:#9ca3af;font-size:8.5px;padding:2px 7px;border-radius:8px;cursor:pointer;float:right;margin-bottom:5px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:2px}
+@media(max-width:400px){.two-col{grid-template-columns:1fr}}
+
+/* ── RETURN LINK ── */
+.ret-lnk-box{background:white;border:1.5px solid #e5e7eb;border-radius:5px;padding:7px 10px;font-size:9.5px;color:#555;word-break:break-all;line-height:1.5;margin:8px 0}
+.ret-btn{display:block;width:100%;padding:8px;border:none;border-radius:4px;cursor:pointer;font-size:10.5px;text-align:center;margin-bottom:5px;font-family:Arial;font-weight:600;text-decoration:none}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">📋 New Submission</div>
+  <div class="topbar-right">
+    <a href="/agent/unified-submissions">📄 My Submissions</a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/agent/unified-submit" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/unified-submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/forms-library">&#128193; Forms</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/agent/profile">&#128100; Profile</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<!-- WF STRIP -->
+<div class="wf-strip" id="wfStrip">
+  <div class="wf-step wf-now" id="ws0"><div class="wf-dot">1</div><span>Agent Fills</span></div>
+  <div class="wf-arr">›</div>
+  <div class="wf-step" id="ws1"><div class="wf-dot">2</div><span id="ws1lbl">Party A Signs</span></div>
+  <div class="wf-arr">›</div>
+  <div class="wf-step" id="ws2"><div class="wf-dot">3</div><span id="ws2lbl">Party B Signs</span></div>
+  <div class="wf-arr">›</div>
+  <div class="wf-step" id="ws3"><div class="wf-dot">4</div><span>Complete</span></div>
+  <div class="wf-tag" id="wfTag">Draft</div>
+</div>
+
+<div class="wrap">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for cat,msg in messages %}
+<div class="flash flash-{{ 'ok' if cat=='success' else 'err' if cat=='error' else 'warn' }}">{{ msg }}</div>
+{% endfor %}{% endif %}{% endwith %}
+
+<div id="banner"></div>
+
+<!-- ── TYPE SELECTOR ── -->
+<div class="type-bar" id="typeBar">
+  <h3>Select Submission Type</h3>
+  <div class="type-cards">
+    <div class="tc np-tc" id="tc-np" onclick="setType('np')">
+      <div class="tc-icon">🏢</div>
+      <div class="tc-name">New Project</div>
+      <div class="tc-desc">Developer booking form</div>
+      <div class="tc-ref">NP-XXXX</div>
+    </div>
+    <div class="tc ss-tc selected" id="tc-ss" onclick="setType('ss')">
+      <div class="tc-icon">🏠</div>
+      <div class="tc-name">Sub Sales</div>
+      <div class="tc-desc">Offer to Purchase (OTP)</div>
+      <div class="tc-ref">SC-XXXX</div>
+    </div>
+    <div class="tc rn-tc" id="tc-rn" onclick="setType('rn')">
+      <div class="tc-icon">🔑</div>
+      <div class="tc-name">Rental</div>
+      <div class="tc-desc">Tenancy Agreement</div>
+      <div class="tc-ref">RN-XXXX</div>
+    </div>
+  </div>
+</div>
+
+<form method="POST" action="/agent/unified-submit" id="uForm">
+  <input type="hidden" name="sub_type"  id="h_type"  value="ss">
+  <input type="hidden" name="sub_ref"   id="h_ref"   value="">
+  <input type="hidden" name="sub_id"    id="h_id"    value="{{ sub_id or '' }}">
+  <input type="hidden" name="sub_stage" id="h_stage" value="{{ sub_stage or 0 }}">
+  <input type="hidden" name="sig_data"  id="h_sigs"  value="{{ sig_data or '{}' }}">
+  <input type="hidden" name="action"    id="h_action" value="save">
+
+  <!-- REF NUMBER -->
+  <div class="ref-row" id="refRow">
+    <span class="ref-label">Ref No.</span>
+    <span class="ref-value" id="refDisplay">SC0001</span>
+    <button type="button" class="ref-edit-btn" id="refEditBtn" onclick="openRefEdit()">✏ Edit</button>
+    <span class="ref-locked" id="refAutoTag">auto-generated</span>
+  </div>
+
+  <!-- ── STEP 1: AGENT INFO (read-only from login) ── -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">1</span> Agent Information</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Agent Name</label>
+        <input type="text" class="readonly-field" value="{{ agent_name }}" readonly>
+        <input type="hidden" name="agent_name" value="{{ agent_name }}">
+        <div class="field-note">Auto-filled from your login</div>
+      </div>
+      <div class="form-group">
+        <label>Agent Rank</label>
+        <input type="text" class="readonly-field" value="{{ agent_rank }}" readonly>
+        <input type="hidden" name="agent_rank" value="{{ agent_rank }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP 2: PROPERTY ── -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">2</span> Property Information</div>
+    <div class="form-group span2">
+      <label>Property Address *</label>
+      <input type="text" name="prop_address" id="f_prop_address" placeholder="Full property address" required value="{{ form.prop_address or '' }}">
+    </div>
+    <div class="form-row" style="margin-top:0">
+      <div class="form-group">
+        <label>Property Type</label>
+        <select name="prop_type" id="f_prop_type">
+          <option value="">— Select —</option>
+          {% for pt in ['Condominium / Apartment','Terrace House','Semi-Detached','Bungalow','SOHO / Studio','Shop Office','Industrial','Land'] %}
+          <option value="{{ pt }}" {{ 'selected' if form.prop_type==pt else '' }}>{{ pt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>State</label>
+        <select name="prop_state" id="f_prop_state">
+          <option value="">— Select —</option>
+          {% for st in ['Selangor','Kuala Lumpur','Putrajaya','Johor','Penang','Perak','Sabah','Sarawak','Negeri Sembilan','Melaka','Pahang','Terengganu','Kelantan','Kedah','Perlis','Labuan'] %}
+          <option value="{{ st }}" {{ 'selected' if form.prop_state==st else '' }}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP 3: PARTY A ── -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">3</span> <span id="partyATitle">Vendor / Seller</span></div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label><span id="partyALbl">Vendor</span> Full Name *</label>
+        <input type="text" name="partyA_name" placeholder="Full legal name" required value="{{ form.partyA_name or '' }}">
+      </div>
+      <div class="form-group">
+        <label>NRIC / Passport No.</label>
+        <input type="text" name="partyA_ic" placeholder="XXXXXX-XX-XXXX" value="{{ form.partyA_ic or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input type="tel" name="partyA_phone" placeholder="e.g. 60112345678" value="{{ form.partyA_phone or '' }}">
+      </div>
+      <div class="form-group span3">
+        <label>Address</label>
+        <input type="text" name="partyA_addr" placeholder="Full correspondence address" value="{{ form.partyA_addr or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP 4: PARTY B ── -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">4</span> <span id="partyBTitle">Purchaser / Buyer</span></div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label><span id="partyBLbl">Purchaser</span> Full Name *</label>
+        <input type="text" name="partyB_name" placeholder="Full legal name" required value="{{ form.partyB_name or '' }}">
+      </div>
+      <div class="form-group">
+        <label>NRIC / Passport No.</label>
+        <input type="text" name="partyB_ic" placeholder="XXXXXX-XX-XXXX" value="{{ form.partyB_ic or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input type="tel" name="partyB_phone" placeholder="e.g. 60129876543" value="{{ form.partyB_phone or '' }}">
+      </div>
+      <div class="form-group span3">
+        <label>Address</label>
+        <input type="text" name="partyB_addr" placeholder="Full correspondence address" value="{{ form.partyB_addr or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP 5: TYPE-SPECIFIC ── -->
+
+  <!-- NEW PROJECT -->
+  <div class="step-card sec-np smart-sec" id="sec-np">
+    <div class="step-title"><span class="step-num">5</span> 🏢 New Project Details</div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Project Name</label>
+        <input type="text" name="np_project" placeholder="e.g. Nadi Bangsar" value="{{ form.np_project or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Developer Name</label>
+        <input type="text" name="np_developer" placeholder="Developer company" value="{{ form.np_developer or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Unit / Lot No.</label>
+        <input type="text" name="np_unit" placeholder="e.g. B-12-3A" value="{{ form.np_unit or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Selling Price (RM)</label>
+        <input type="text" name="np_price" placeholder="e.g. 680,000.00" value="{{ form.np_price or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Booking Fee (RM)</label>
+        <input type="text" name="np_booking" placeholder="e.g. 5,000.00" value="{{ form.np_booking or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Bumiputera Lot</label>
+        <select name="np_bumi">
+          <option value="">— Select —</option>
+          <option {{ 'selected' if form.np_bumi=='Yes' else '' }}>Yes – Bumi Lot</option>
+          <option {{ 'selected' if form.np_bumi=='No' else '' }}>No – Open Market</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Expected Handover</label>
+        <input type="month" name="np_handover" value="{{ form.np_handover or '' }}">
+      </div>
+      <div class="form-group span2">
+        <label>Special Packages / Remarks</label>
+        <input type="text" name="np_remarks" placeholder="Furniture package, rebate, etc." value="{{ form.np_remarks or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- SUB SALES -->
+  <div class="step-card sec-ss smart-sec" id="sec-ss">
+    <div class="step-title"><span class="step-num">5</span> 🏠 Sub Sales – OTP Details</div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Purchase Price (RM) *</label>
+        <input type="text" name="ss_price" placeholder="e.g. 550,000.00" value="{{ form.ss_price or '' }}">
+      </div>
+      <div class="form-group span2">
+        <label>Price in Words</label>
+        <input type="text" name="ss_price_words" placeholder="e.g. Five Hundred Fifty Thousand Only" value="{{ form.ss_price_words or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Earnest Deposit (%)</label>
+        <input type="text" name="ss_dep_pct" placeholder="e.g. 1" value="{{ form.ss_dep_pct or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Earnest Deposit (RM)</label>
+        <input type="text" name="ss_dep_amt" placeholder="e.g. 5,500.00" value="{{ form.ss_dep_amt or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Cheque / Transfer Ref</label>
+        <input type="text" name="ss_cheque" placeholder="e.g. TXN-2024-001" value="{{ form.ss_cheque or '' }}">
+      </div>
+      <div class="form-group">
+        <label>SPA Target Date</label>
+        <input type="date" name="ss_spa_date" value="{{ form.ss_spa_date or '' }}">
+      </div>
+      <div class="form-group span2">
+        <label>Special Conditions (if any)</label>
+        <input type="text" name="ss_special" placeholder="Leave blank if none" value="{{ form.ss_special or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- RENTAL -->
+  <div class="step-card sec-rn smart-sec" id="sec-rn">
+    <div class="step-title"><span class="step-num">5</span> 🔑 Tenancy Agreement Details</div>
+    <div class="form-row three">
+      <div class="form-group">
+        <label>Monthly Rent (RM) *</label>
+        <input type="text" name="rn_rent" placeholder="e.g. 2,500.00" value="{{ form.rn_rent or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Security Deposit (RM)</label>
+        <input type="text" name="rn_sec_dep" placeholder="e.g. 5,000.00 (2 mths)" value="{{ form.rn_sec_dep or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Utility Deposit (RM)</label>
+        <input type="text" name="rn_util_dep" placeholder="e.g. 500.00" value="{{ form.rn_util_dep or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Tenancy Period</label>
+        <select name="rn_period">
+          <option value="">— Select —</option>
+          {% for p in ['1 Year','2 Years','3 Years'] %}
+          <option {{ 'selected' if form.rn_period==p else '' }}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Commencement Date</label>
+        <input type="date" name="rn_start" value="{{ form.rn_start or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Expiry Date</label>
+        <input type="date" name="rn_end" value="{{ form.rn_end or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Furnished Status</label>
+        <select name="rn_furnished">
+          <option value="">— Select —</option>
+          {% for f in ['Fully Furnished','Partially Furnished','Unfurnished'] %}
+          <option {{ 'selected' if form.rn_furnished==f else '' }}>{{ f }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Stamping Duty By</label>
+        <select name="rn_stamp">
+          <option value="">— Select —</option>
+          {% for s in ['Tenant','Landlord','Split equally'] %}
+          <option {{ 'selected' if form.rn_stamp==s else '' }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Access Card / Key Deposit</label>
+        <input type="text" name="rn_key_dep" placeholder="e.g. 200.00" value="{{ form.rn_key_dep or '' }}">
+      </div>
+      <div class="form-group span3">
+        <label>Special Conditions / Inclusions</label>
+        <input type="text" name="rn_special" placeholder="e.g. Air-con servicing by landlord, no pets" value="{{ form.rn_special or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP 6: SIGNATURES ── -->
+  <div class="step-card">
+    <div class="step-title"><span class="step-num">6</span> ✍ Signatures</div>
+    <div class="sig-grid" id="sigGrid"></div>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div class="act-bar" id="actBar">
+    <button type="button" class="btn-draft" id="defaultDraftBtn">💾 Save Draft</button>
+    <button type="button" class="btn-send" id="defaultSendBtn">📤 Send for Signing →</button>
+  </div>
+
+</form>
+</div><!-- /wrap -->
+
+<!-- ══ MODAL: SEND ══ -->
+<div class="mo" id="moSend">
+  <div class="mb">
+    <h3 id="sendTitle">Send for Signing</h3>
+    <p id="sendSub">Choose delivery method</p>
+    <div id="sendBody"></div>
+    <div class="mo-acts"><button class="btn-sm btn-sm-gh" onclick="closeMo('moSend')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- ══ MODAL: SIG ══ -->
+<div class="mo" id="moSig">
+  <div class="mb" style="max-width:460px">
+    <h3 id="sigMoTitle">Signature</h3>
+    <p>Sign within the box using your finger or mouse</p>
+    <canvas class="sig-mo-cv" id="sigMoCv"></canvas>
+    <button class="sig-mo-clr" onclick="clearSigMo()">✕ Clear</button>
+    <div class="sig-mo-hint">Draw your signature above</div>
+    <div class="two-col">
+      <div class="m-grp"><label class="m-lbl">Full Name *</label><input class="m-inp" id="sigMoName" type="text" placeholder="Legal name"></div>
+      <div class="m-grp"><label class="m-lbl">NRIC No.</label><input class="m-inp" id="sigMoIc" type="text" placeholder="XXXXXX-XX-XXXX"></div>
+    </div>
+    <div class="m-grp"><label class="m-lbl">Date</label><input class="m-inp" id="sigMoDate" type="date"></div>
+    <div class="mo-acts">
+      <button class="btn-sm btn-sm-gh" onclick="closeMo('moSig')">Cancel</button>
+      <button class="btn-sm" style="background:#16a34a;color:white" onclick="confirmSig()">✓ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: REF EDIT ══ -->
+<div class="mo" id="moRef">
+  <div class="mb">
+    <h3>Edit Reference Number</h3>
+    <p>System auto-generated this. Change to match your physical file if needed.</p>
+    <div class="m-grp"><label class="m-lbl">Reference Number</label><input class="m-inp" id="refInput" type="text" placeholder="e.g. SC0249"></div>
+    <div class="mo-acts">
+      <button class="btn-sm btn-sm-gh" onclick="closeMo('moRef')">Cancel</button>
+      <button class="btn-sm" style="background:#1a3a2a;color:white" onclick="confirmRef()">✓ Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: RETURN LINK ══ -->
+<div class="mo" id="moReturn">
+  <div class="mb">
+    <h3>✅ Signature Complete!</h3>
+    <p id="retSub">Send the return link back to your agent.</p>
+    <div class="ret-lnk-box" id="retLnk"></div>
+    <button class="ret-btn" onclick="copyRet()" style="background:#1a3a2a;color:white">📋 Copy Return Link</button>
+    <a class="ret-btn" id="retWa" href="#" target="_blank" style="background:#25D366;color:white">💬 Send Back via WhatsApp</a>
+    <a class="ret-btn" id="retTg" href="#" target="_blank" style="background:#2AABEE;color:white">✈️ Send Back via Telegram</a>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════
+const TYPE_CFG = {
+  np: { label:'New Project', docTitle:'Booking Form', refPfx:'NP',
+        partyA:'Developer', partyB:'Purchaser / Buyer',
+        ws1:'Developer Confirms', ws2:'Buyer Signs' },
+  ss: { label:'Sub Sales', docTitle:'Offer to Purchase', refPfx:'SC',
+        partyA:'Vendor / Seller', partyB:'Purchaser / Buyer',
+        ws1:'Vendor Signs', ws2:'Purchaser Signs' },
+  rn: { label:'Rental', docTitle:'Tenancy Agreement', refPfx:'RN',
+        partyA:'Landlord / Owner', partyB:'Tenant',
+        ws1:'Landlord Signs', ws2:'Tenant Signs' }
+};
+const ALLOWED = { 0:[], 1:['pA','pAw'], 2:[], 3:['pB','pBw'], 4:[] };
+const STAGE_TAGS = ['Draft','Awaiting Party A','Party A Signed','Awaiting Party B','✓ Complete'];
+
+// ── Server data injected safely as one JSON block ──
+var WTP_DATA = {
+  stage:    {{ sub_stage | int }},
+  type:     {{ sub_type  | tojson }},
+  ref:      {{ sub_ref   | tojson }},
+  sigs:     {{ sig_data  | safe }},
+  nextRefs: {{ next_refs | tojson | safe }}
+};
+
+let curType   = 'ss';
+let curStage  = 0;
+let curRef    = '';
+let refLocked = false;
+let sigStore  = {};
+let sendCh    = '';
+let sendTgt   = '';
+
+// ════════════════════════════════════════
+// INIT — runs after all functions defined
+// ════════════════════════════════════════
+window.addEventListener('load', function(){
+  // Pull from safe server block
+  curStage  = WTP_DATA.stage || 0;
+  refLocked = curStage > 0;
+  curType   = (TYPE_CFG[WTP_DATA.type] ? WTP_DATA.type : 'ss');
+  curRef    = WTP_DATA.ref || autoRef(curType);
+
+  try {
+    var s = WTP_DATA.sigs;
+    sigStore = (s && typeof s === 'object') ? s : JSON.parse(s || '{}');
+  } catch(e){ sigStore = {}; }
+
+  // Init canvases
+  document.querySelectorAll('.sig-canvas').forEach(function(c){
+    c.width = c.offsetWidth || 240;
+    c.height = 68;
+  });
+
+  setType(curType, true);
+  setRef(curRef);
+  if (refLocked) lockRef();
+  applyStage();
+  restoreAllSigs();
+
+  // Wire default static buttons (avoids quote issues in HTML onclick)
+  var db = document.getElementById('defaultDraftBtn');
+  var sb = document.getElementById('defaultSendBtn');
+  if (db) db.addEventListener('click', function(){ doSave('draft'); });
+  if (sb) sb.addEventListener('click', function(){ openSendModal('pA'); });
+});
+
+// ════════════════════════════════════════
+// TYPE SWITCHING
+// ════════════════════════════════════════
+function setType(t, init){
+  curType = t;
+  ['np','ss','rn'].forEach(function(x){
+    document.getElementById('tc-'+x).classList.toggle('selected', x===t);
+    var s = document.getElementById('sec-'+x);
+    if(s) s.style.display = x===t ? 'block' : 'none';
+  });
+  var cfg = TYPE_CFG[t];
+  document.getElementById('partyATitle').textContent = cfg.partyA;
+  document.getElementById('partyALbl').textContent   = cfg.partyA.split('/')[0].trim();
+  document.getElementById('partyBTitle').textContent = cfg.partyB;
+  document.getElementById('partyBLbl').textContent   = cfg.partyB.split('/')[0].trim();
+  document.getElementById('ws1lbl').textContent = cfg.ws1;
+  document.getElementById('ws2lbl').textContent = cfg.ws2;
+  document.getElementById('h_type').value = t;
+  if(!init){ setRef(autoRef(t)); }
+  renderSigGrid();
+  updateActBar();
+  updateBanner();
+  updateWF();
+}
+
+function autoRef(t){
+  var pfx = TYPE_CFG[t] ? TYPE_CFG[t].refPfx : 'SC';
+  var nextRefsMap = (WTP_DATA && WTP_DATA.nextRefs) ? WTP_DATA.nextRefs : {};
+  var next = parseInt(nextRefsMap[t] || 1);
+  return pfx + String(next).padStart(4,'0');
+}
+
+// ════════════════════════════════════════
+// REF NUMBER
+// ════════════════════════════════════════
+function setRef(r){
+  curRef = r;
+  document.getElementById('refDisplay').textContent = r;
+  document.getElementById('h_ref').value = r;
+}
+function openRefEdit(){ if(refLocked)return; document.getElementById('refInput').value=curRef; openMo('moRef'); setTimeout(function(){document.getElementById('refInput').select();},80); }
+function confirmRef(){
+  var v = document.getElementById('refInput').value.trim().toUpperCase();
+  if(!v){ alert('Please enter a reference number.'); return; }
+  setRef(v);
+  document.getElementById('refAutoTag').textContent='edited';
+  closeMo('moRef');
+}
+function lockRef(){
+  refLocked=true;
+  document.getElementById('refEditBtn').style.display='none';
+  document.getElementById('refAutoTag').textContent='locked';
+}
+
+// ════════════════════════════════════════
+// STAGE ENGINE
+// ════════════════════════════════════════
+function applyStage(){
+  updateWF(); updateBanner(); updateActBar();
+  lockFormFields(curStage > 0);
+  renderSigGrid();
+  if(curStage>0) lockRef();
+}
+
+function updateWF(){
+  [0,1,2,3].forEach(function(i){
+    var el=document.getElementById('ws'+i);
+    el.classList.remove('wf-done','wf-now');
+    if(curStage>i) el.classList.add('wf-done');
+    else if(curStage===i) el.classList.add('wf-now');
+  });
+  if(curStage===2){ document.getElementById('ws1').classList.remove('wf-now'); document.getElementById('ws1').classList.add('wf-done'); }
+  document.getElementById('wfTag').textContent = STAGE_TAGS[curStage]||'';
+}
+
+function updateBanner(){
+  var cfg=TYPE_CFG[curType];
+  var a=cfg.partyA.split('/')[0].trim(), b=cfg.partyB.split('/')[0].trim();
+  var msgs = {
+    0:'<div class="nb nb-info">ℹ️ &nbsp;<strong>Agent Mode.</strong> Fill in all details above, then tap <em>"Send to '+a+' for Signing →"</em>.</div>',
+    1:'<div class="nb nb-warn">✏️ &nbsp;<strong>'+a+' Signing Mode.</strong> Form is locked. Please sign in your boxes below, then tap <em>"Done – Return to Agent"</em>.</div>',
+    2:'<div class="nb nb-ok">✅ &nbsp;<strong>'+a+' has signed.</strong> Sections locked permanently. Review then send to '+b+'.</div>',
+    3:'<div class="nb nb-warn">✏️ &nbsp;<strong>'+b+' Signing Mode.</strong> Sign in your boxes below, then tap <em>"Done – Return to Agent"</em>.</div>',
+    4:'<div class="nb nb-ok">🎉 &nbsp;<strong>All parties have signed!</strong> Submission fully executed. Save or print.</div>'
+  };
+  document.getElementById('banner').innerHTML = msgs[curStage]||'';
+}
+
+function updateActBar(){
+  var cfg=TYPE_CFG[curType];
+  var a=cfg.partyA.split('/')[0].trim(), b=cfg.partyB.split('/')[0].trim();
+  var h = {
+    0: '<button type="button" class="btn-draft" onclick="doSave(\'draft\')">💾 Save Draft</button>'
+      +'<button type="button" class="btn-send" onclick="openSendModal(\'pA\')">📤 Send to '+a+' →</button>',
+    1: '<button type="button" class="btn-done" onclick="partyDone(\'pA\')">✓ Done – Return to Agent</button>',
+    2: '<button type="button" class="btn-draft" onclick="doSave(\'save\')">💾 Save</button>'
+      +'<button type="button" class="btn-send" onclick="openSendModal(\'pB\')">📤 Send to '+b+' →</button>',
+    3: '<button type="button" class="btn-done" onclick="partyDone(\'pB\')">✓ Done – Return to Agent</button>',
+    4: '<button type="button" class="btn-draft" onclick="window.print()">🖨 Print</button>'
+      +'<button type="button" class="btn-submit" onclick="doSave(\'complete\')">⬇ Save Complete</button>'
+  };
+  document.getElementById('actBar').innerHTML = h[curStage]||'';
+}
+
+function lockFormFields(locked){
+  document.querySelectorAll('#uForm input:not([type=hidden]), #uForm select, #uForm textarea').forEach(function(el){
+    if(el.classList.contains('readonly-field')) return;
+    el.disabled = locked;
+    el.style.background = locked ? '#f5f5f5' : '';
+  });
+  document.querySelectorAll('.tc').forEach(function(el){ el.style.pointerEvents = locked ? 'none' : ''; });
+}
+
+// ════════════════════════════════════════
+// SIG GRID
+// ════════════════════════════════════════
+function renderSigGrid(){
+  var cfg = TYPE_CFG[curType];
+  var sigs = [
+    {id:'pA',  role: cfg.partyA},
+    {id:'pAw', role:'Witnessed by ('+cfg.partyA.split('/')[0].trim()+')'},
+    {id:'pB',  role: cfg.partyB},
+    {id:'pBw', role:'Witnessed by ('+cfg.partyB.split('/')[0].trim()+')'},
+  ];
+  var allowed = ALLOWED[curStage]||[];
+  var html = sigs.map(function(s){
+    var signed  = !!sigStore[s.id];
+    var active  = !signed && allowed.indexOf(s.id)>=0;
+    var locked2 = !signed && !active;
+    var cls = 'sig-block'+(signed?' sig-signed':active?' sig-active':' sig-locked');
+    var icon = signed?'✅':active?'✍':'🔒';
+    var hint = active ? '<div class="sig-hint">👆 Tap here to sign</div>' : '';
+    var sd = sigStore[s.id]||{};
+    return '<div class="'+cls+'" id="sb-'+s.id+'">'
+      +'<div class="sig-stamp">✓ Signed</div>'
+      +'<div class="sig-role"><span>'+s.role+'</span><span>'+icon+'</span></div>'
+      +hint
+      +'<canvas class="sig-canvas" id="cv-'+s.id+'" onclick="sigClick(\''+s.id+'\',\''+s.role+'\')"></canvas>'
+      +'<button type="button" class="sig-clr" onclick="clearSig(\''+s.id+'\')">Clear</button>'
+      +'<div class="sig-flds">'
+      +'<div class="sig-fr"><span class="sig-fl">Name</span><span class="sig-fv" data-ph="Full Name">'+esc(sd.name||'')+'</span></div>'
+      +'<div class="sig-fr"><span class="sig-fl">NRIC</span><span class="sig-fv" data-ph="XXXXXX-XX-XXXX">'+esc(sd.ic||'')+'</span></div>'
+      +'<div class="sig-fr"><span class="sig-fl">Date</span><span class="sig-fv" data-ph="DD/MM/YYYY">'+esc(sd.date||'')+'</span></div>'
+      +'</div></div>';
+  }).join('');
+  document.getElementById('sigGrid').innerHTML = html;
+  setTimeout(function(){
+    document.querySelectorAll('.sig-canvas').forEach(function(c){ c.width=c.offsetWidth||240; c.height=68; });
+    restoreAllSigs();
+  }, 60);
+}
+
+function restoreAllSigs(){
+  Object.keys(sigStore).forEach(function(id){
+    var s=sigStore[id];
+    if(!s||!s.img) return;
+    var fc=document.getElementById('cv-'+id);
+    if(!fc) return;
+    fc.width=fc.offsetWidth||240; fc.height=68;
+    var img=new Image();
+    img.onload=function(){ fc.getContext('2d').drawImage(img,0,0,fc.width,fc.height); };
+    img.src=s.img;
+  });
+}
+
+function esc(s){ var d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+// ════════════════════════════════════════
+// SIGNATURE MODAL
+// ════════════════════════════════════════
+var smCtx=null, smDrw=false, curSigId=null;
+function gpos(cv,e){ var r=cv.getBoundingClientRect(),sx=cv.width/r.width,sy=cv.height/r.height,src=e.touches?e.touches[0]:e; return{x:(src.clientX-r.left)*sx,y:(src.clientY-r.top)*sy}; }
+
+function sigClick(id,title){
+  var allowed=ALLOWED[curStage]||[];
+  if(allowed.indexOf(id)<0||sigStore[id]) return;
+  curSigId=id;
+  document.getElementById('sigMoTitle').textContent=title+' – Signature';
+  var s=sigStore[id]||{};
+  document.getElementById('sigMoName').value=s.name||'';
+  document.getElementById('sigMoIc').value=s.ic||'';
+  document.getElementById('sigMoDate').value=s.date||new Date().toISOString().split('T')[0];
+  var cv=document.getElementById('sigMoCv');
+  cv.width=cv.offsetWidth||420; cv.height=110;
+  smCtx=cv.getContext('2d'); smCtx.clearRect(0,0,cv.width,cv.height);
+  smCtx.strokeStyle='#1a3a2a'; smCtx.lineWidth=2.2; smCtx.lineCap='round'; smCtx.lineJoin='round';
+  if(s.img){ var img=new Image(); img.onload=function(){smCtx.drawImage(img,0,0);}; img.src=s.img; }
+  cv.onmousedown=function(e){smDrw=true;var p=gpos(cv,e);smCtx.beginPath();smCtx.moveTo(p.x,p.y);};
+  cv.onmousemove=function(e){if(!smDrw)return;var p=gpos(cv,e);smCtx.lineTo(p.x,p.y);smCtx.stroke();};
+  cv.onmouseup=cv.onmouseleave=function(){smDrw=false;};
+  cv.ontouchstart=function(e){e.preventDefault();smDrw=true;var p=gpos(cv,e);smCtx.beginPath();smCtx.moveTo(p.x,p.y);};
+  cv.ontouchmove=function(e){e.preventDefault();if(!smDrw)return;var p=gpos(cv,e);smCtx.lineTo(p.x,p.y);smCtx.stroke();};
+  cv.ontouchend=function(){smDrw=false;};
+  openMo('moSig');
+}
+
+function clearSigMo(){ smCtx&&smCtx.clearRect(0,0,document.getElementById('sigMoCv').width,110); }
+
+function confirmSig(){
+  var name=document.getElementById('sigMoName').value.trim();
+  if(!name){ alert('Please enter your full name.'); return; }
+  var cv=document.getElementById('sigMoCv');
+  var img=cv.toDataURL('image/png');
+  var ic=document.getElementById('sigMoIc').value.trim();
+  var dt=document.getElementById('sigMoDate').value;
+  var dFmt=dt?new Date(dt).toLocaleDateString('en-MY'):'';
+  sigStore[curSigId]={name:name,ic:ic,date:dFmt,img:img};
+  // draw onto mini canvas
+  var fc=document.getElementById('cv-'+curSigId);
+  if(fc){ fc.width=fc.offsetWidth||240; fc.height=68; var im2=new Image(); im2.onload=function(){fc.getContext('2d').drawImage(im2,0,0,fc.width,fc.height);}; im2.src=img; }
+  // update sub-fields
+  var bl=document.getElementById('sb-'+curSigId);
+  if(bl){ var fvs=bl.querySelectorAll('.sig-fv'); if(fvs[0])fvs[0].textContent=name; if(fvs[1])fvs[1].textContent=ic; if(fvs[2])fvs[2].textContent=dFmt; }
+  document.getElementById('h_sigs').value=JSON.stringify(sigStore);
+  closeMo('moSig');
+  renderSigGrid();
+}
+
+function clearSig(id){
+  var c=document.getElementById('cv-'+id); if(c) c.getContext('2d').clearRect(0,0,c.width,c.height);
+  delete sigStore[id];
+  document.getElementById('h_sigs').value=JSON.stringify(sigStore);
+  renderSigGrid();
+}
+
+// ════════════════════════════════════════
+// SEND MODAL
+// ════════════════════════════════════════
+function openSendModal(tgt){
+  sendTgt=tgt;
+  if(!TYPE_CFG[curType]){ alert('Please select a submission type first (New Project, Sub Sales or Rental).'); return; }
+  var cfg=TYPE_CFG[curType];
+  var who=tgt==='pA'?cfg.partyA.split('/')[0].trim():cfg.partyB.split('/')[0].trim();
+  document.getElementById('sendTitle').textContent='📤 Send to '+who+' for Signing';
+  document.getElementById('sendSub').textContent=who+' will receive a link to open and sign.';
+  document.getElementById('sendBody').innerHTML=
+    '<div onclick="showPhone(\'wa\')" class="ch-card"><div class="ch-ico ch-wa-bg">💬</div><div><div class="ch-name">WhatsApp</div><div class="ch-desc">Pre-filled message + signing link</div></div><span>›</span></div>'
+   +'<div onclick="showPhone(\'tg\')" class="ch-card"><div class="ch-ico ch-tg-bg">✈️</div><div><div class="ch-name">Telegram</div><div class="ch-desc">Pre-filled message + signing link</div></div><span>›</span></div>'
+   +'<div id="phStep" class="ph-step">'
+   +'<span class="back-lk" onclick="backCh()">← Back</span>'
+   +'<div class="m-grp"><label class="m-lbl" id="phLbl">Phone Number</label><input class="m-inp" id="phNum" type="tel" placeholder="e.g. 601112345678"></div>'
+   +'<div class="msg-prev" id="msgPrev"></div>'
+   +'<button id="phGo" class="btn-sm btn-sm-wa" onclick="doSend()" style="width:100%;padding:9px;margin-top:2px">Send Now ›</button>'
+   +'</div>';
+  openMo('moSend');
+}
+
+function showPhone(ch){
+  sendCh=ch;
+  var cfg=TYPE_CFG[curType];
+  var who=sendTgt==='pA'?cfg.partyA.split('/')[0].trim():cfg.partyB.split('/')[0].trim();
+  var toStage=sendTgt==='pA'?1:3;
+  var link=buildLink(toStage);
+  var msg='Hi '+who+', please open the link to review and sign the '+cfg.docTitle+' (Ref: '+curRef+'):\n\n'+link;
+  document.getElementById('phStep').classList.add('open');
+  document.getElementById('sendBody').querySelectorAll('.ch-card').forEach(function(c){c.style.display='none';});
+  document.getElementById('phLbl').textContent=ch==='wa'?'WhatsApp Number':'Telegram Phone / Username';
+  document.getElementById('msgPrev').textContent=msg;
+  var go=document.getElementById('phGo');
+  go.className='btn-sm '+(ch==='wa'?'btn-sm-wa':'btn-sm-tg');
+  go.textContent=ch==='wa'?'💬 Open WhatsApp':'✈️ Open Telegram';
+}
+
+function backCh(){
+  document.getElementById('phStep').classList.remove('open');
+  document.getElementById('sendBody').querySelectorAll('.ch-card').forEach(function(c){c.style.display='flex';});
+}
+
+function doSend(){
+  var cfg=TYPE_CFG[curType];
+  var who=sendTgt==='pA'?cfg.partyA.split('/')[0].trim():cfg.partyB.split('/')[0].trim();
+  var toStage=sendTgt==='pA'?1:3;
+  var link=buildLink(toStage);
+  var msg=encodeURIComponent('Hi '+who+', please open the link to review and sign the '+cfg.docTitle+' (Ref: '+curRef+'):\n\n'+link);
+  var ph=document.getElementById('phNum').value.replace(/\\D/g,'');
+  var url=sendCh==='wa'?(ph?'https://wa.me/'+ph+'?text='+msg:'https://wa.me/?text='+msg)
+                       :(ph?'https://t.me/'+ph+'?text='+msg:'https://t.me/share/url?url='+encodeURIComponent(link)+'&text='+msg);
+  window.open(url,'_blank');
+  if(sendTgt==='pA' && curStage===0){
+    curStage=1; refLocked=true;
+    document.getElementById('h_stage').value=1;
+    lockRef();
+    doSave('stage');
+  }
+  closeMo('moSend');
+}
+
+// ════════════════════════════════════════
+// PARTY DONE
+// ════════════════════════════════════════
+var retLinkVal='';
+function partyDone(party){
+  var mainSig=party==='pA'?'pA':'pB';
+  if(!sigStore[mainSig]){ var cfg=TYPE_CFG[curType]; alert('Please sign the '+(party==='pA'?cfg.partyA:cfg.partyB).split('/')[0].trim()+' signature box first.'); return; }
+  curStage=party==='pA'?2:4;
+  document.getElementById('h_stage').value=curStage;
+  doSave('stage');
+  retLinkVal=buildLink(curStage);
+  var retMsg=encodeURIComponent('Hi Agent, I have signed (Ref: '+curRef+'). Updated form:\n\n'+retLinkVal);
+  document.getElementById('retSub').textContent=party==='pA'?'Send back to agent to forward to the other party.':'Send back to agent to complete the process.';
+  document.getElementById('retLnk').textContent=retLinkVal;
+  document.getElementById('retWa').href='https://wa.me/?text='+retMsg;
+  document.getElementById('retTg').href='https://t.me/share/url?url='+encodeURIComponent(retLinkVal)+'&text='+retMsg;
+  openMo('moReturn');
+  applyStage();
+}
+
+function copyRet(){
+  navigator.clipboard.writeText(retLinkVal).catch(function(){
+    var t=document.createElement('textarea');t.value=retLinkVal;document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);
+  });
+  var btn=document.querySelector('#moReturn .ret-btn');
+  if(btn){btn.textContent='✓ Copied!';setTimeout(function(){btn.textContent='📋 Copy Return Link';},2000);}
+}
+
+// ════════════════════════════════════════
+// URL STATE ENCODING
+// ════════════════════════════════════════
+function buildLink(toStage){
+  var fd={};
+  document.querySelectorAll('#uForm input:not([type=hidden]), #uForm select, #uForm textarea').forEach(function(el){ if(el.name && el.value) fd[el.name]=el.value; });
+  var payload={stage:toStage, type:curType, ref:curRef, fd:fd, sigs:sigStore};
+  try{
+    var b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    return window.location.origin+'/agent/unified-submit?wtp='+b64;
+  }catch(e){ return window.location.origin+'/agent/unified-submit'; }
+}
+
+// ════════════════════════════════════════
+// SAVE (AJAX POST)
+// ════════════════════════════════════════
+function doSave(action){
+  document.getElementById('h_action').value=action;
+  document.getElementById('h_sigs').value=JSON.stringify(sigStore);
+  document.getElementById('h_type').value=curType;
+  document.getElementById('h_ref').value=curRef;
+  document.getElementById('h_stage').value=curStage;
+  document.getElementById('uForm').submit();
+}
+
+// ════════════════════════════════════════
+// MODALS
+// ════════════════════════════════════════
+function openMo(id){ var el=document.getElementById(id); if(el) el.classList.add('open'); else console.error('Modal not found:',id); }
+function closeMo(id){ document.getElementById(id).classList.remove('open'); }
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.mo').forEach(function(mo){
+    mo.addEventListener('click', function(e){ if(e.target===mo) mo.classList.remove('open'); });
+  });
+});
+
+// ════════════════════════════════════════
+// NAV
+// ════════════════════════════════════════
+function toggleNav(){ document.getElementById('mainNav').classList.toggle('open'); }
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){ document.getElementById('mainNav').classList.remove('open'); });
+  });
+});
+</script>
+</body>
+</html>"""
+
+
+# ── Agent Unified Submissions List ─────────────────────────
+UNIFIED_SUBMISSIONS_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>My Unified Submissions – WTP</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-active{background:#f0fdf4;color:#15803d}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+.flash-ok{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.flash-err{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
+.scard{background:white;border-radius:10px;padding:13px 15px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
+.scard h3{margin:0 0 5px;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.scard-val{font-size:1.35rem;font-weight:800}
+.filter-wrap{background:white;border-radius:10px;padding:13px 15px;margin-bottom:13px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.filter-wrap h3{margin:0 0 9px;font-size:13px;color:#444;font-weight:700}
+.filter-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.filter-row select,.filter-row input{padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;flex:1;min-width:110px}
+.btn-go{padding:7px 14px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
+.btn-clr{padding:7px 12px;background:#6c757d;color:white;border:none;border-radius:6px;font-size:13px;text-decoration:none}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.sec-hdr h2{margin:0;font-size:15px}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+table{width:100%;border-collapse:collapse;background:white;min-width:540px}
+th{background:#1a3a2a;color:white;padding:10px 12px;text-align:left;font-size:12px;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f9fafb}
+.badge{padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.t-np{background:#dbeafe;color:#1e40af}
+.t-ss{background:#f3e8ff;color:#6b21a8}
+.t-rn{background:#ffedd5;color:#9a3412}
+.s-draft{background:#fef9c3;color:#854d0e}
+.s-1{background:#dbeafe;color:#1e40af}
+.s-2{background:#dcfce7;color:#166534}
+.s-3{background:#dbeafe;color:#1e40af}
+.s-4{background:#dcfce7;color:#166534}
+.act-btn{display:inline-block;padding:5px 10px;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;margin:2px 0}
+.act-green{background:#16a34a;color:white}
+.act-teal{background:#0891b2;color:white}
+.act-red{background:#dc3545;color:white}
+.empty{padding:36px;text-align:center;background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.empty h3{color:#666;margin-bottom:7px}.empty p{color:#888;margin:0 0 14px}
+@media(max-width:640px){.wrap{padding:10px}.filter-row{flex-direction:column;align-items:stretch}.filter-row select,.filter-row input,.btn-go,.btn-clr{width:100%}td,th{padding:8px 10px!important;font-size:12px}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">&#128203; Submissions</div>
+  <div class="topbar-right"><button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button></div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/agent/unified-submit" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/unified-submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/forms-library">&#128193; Forms</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/agent/profile">&#128100; Profile</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+<div class="wrap">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for cat,msg in messages %}
+<div class="flash flash-{{ 'ok' if cat=='success' else 'err' }}">{{ msg }}</div>
+{% endfor %}{% endif %}{% endwith %}
+
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#16a34a"><h3>Total</h3><div class="scard-val" style="color:#16a34a">{{ stats.total }}</div></div>
+  <div class="scard" style="border-top-color:#1e40af"><h3>New Project</h3><div class="scard-val" style="color:#1e40af">{{ stats.np }}</div></div>
+  <div class="scard" style="border-top-color:#6b21a8"><h3>Sub Sales</h3><div class="scard-val" style="color:#6b21a8">{{ stats.ss }}</div></div>
+  <div class="scard" style="border-top-color:#9a3412"><h3>Rental</h3><div class="scard-val" style="color:#9a3412">{{ stats.rn }}</div></div>
+  <div class="scard" style="border-top-color:#16a34a"><h3>Complete</h3><div class="scard-val" style="color:#16a34a">{{ stats.done }}</div></div>
+  <div class="scard" style="border-top-color:#854d0e"><h3>In Progress</h3><div class="scard-val" style="color:#854d0e">{{ stats.prog }}</div></div>
+</div>
+
+<div class="filter-wrap">
+  <h3>🔍 Filter</h3>
+  <form method="GET" class="filter-row">
+    <select name="type">
+      <option value="all" {{ 'selected' if type_filter=='all' }}>All Types</option>
+      <option value="np"  {{ 'selected' if type_filter=='np' }}>🏢 New Project</option>
+      <option value="ss"  {{ 'selected' if type_filter=='ss' }}>🏠 Sub Sales</option>
+      <option value="rn"  {{ 'selected' if type_filter=='rn' }}>🔑 Rental</option>
+    </select>
+    <select name="stage">
+      <option value="all" {{ 'selected' if stage_filter=='all' }}>All Stages</option>
+      <option value="0"   {{ 'selected' if stage_filter=='0' }}>Draft</option>
+      <option value="1"   {{ 'selected' if stage_filter=='1' }}>Awaiting Party A</option>
+      <option value="2"   {{ 'selected' if stage_filter=='2' }}>Party A Signed</option>
+      <option value="3"   {{ 'selected' if stage_filter=='3' }}>Awaiting Party B</option>
+      <option value="4"   {{ 'selected' if stage_filter=='4' }}>Complete</option>
+    </select>
+    <input type="text" name="search" placeholder="Search ref, address, name..." value="{{ search }}">
+    <button type="submit" class="btn-go">🔍 Filter</button>
+    <a href="/agent/unified-submissions" class="btn-clr">Clear</a>
+  </form>
+</div>
+
+<div class="sec-hdr">
+  <h2>📋 Submissions ({{ submissions|length }})</h2>
+  <a href="/agent/unified-submit" class="act-btn act-green">&#10010; New Sale</a>
+</div>
+
+{% if submissions %}
+<div class="tbl-wrap"><table>
+  <thead><tr><th>Ref</th><th>Type</th><th>Property</th><th>Party A</th><th>Party B</th><th>Stage</th><th>Updated</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for s in submissions %}
+  {% set type_labels = {'np':'🏢 New Project','ss':'🏠 Sub Sales','rn':'🔑 Rental'} %}
+  {% set stage_labels = {0:'Draft',1:'Awaiting Party A',2:'Party A Signed',3:'Awaiting Party B',4:'✓ Complete'} %}
+  <tr>
+    <td><strong>{{ s.ref or '—' }}</strong></td>
+    <td><span class="badge t-{{ s.sub_type }}">{{ type_labels.get(s.sub_type,'—') }}</span></td>
+    <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.prop_address or '—' }}</td>
+    <td>{{ s.partyA_name or '—' }}</td>
+    <td>{{ s.partyB_name or '—' }}</td>
+    <td><span class="badge s-{{ s.stage }}">{{ stage_labels.get(s.stage,'—') }}</span></td>
+    <td>{{ s.updated_at[:10] if s.updated_at else '—' }}</td>
+    <td>
+      <a href="/agent/unified-submit/{{ s.id }}" class="act-btn act-teal">📂 Open</a>
+      {% if s.stage == 0 %}
+      <a href="/agent/unified-submit/{{ s.id }}/delete" class="act-btn act-red" onclick="return confirm('Delete this submission?')">🗑</a>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty">
+  <h3>No submissions found</h3>
+  <p>{% if type_filter!='all' or stage_filter!='all' or search %}Try clearing the filters.{% else %}Start your first unified submission.{% endif %}</p>
+  <a href="/agent/unified-submit" class="act-btn act-green" style="padding:9px 18px;font-size:13px">&#10010; New Sale</a>
+</div>
+{% endif %}
+</div>
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});});
+</script>
+</body>
+</html>"""
+
+
+# ── Admin Unified Submissions View ──────────────────────────
+ADMIN_UNIFIED_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Unified Submissions – Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:1400px;margin:0 auto;padding:16px}
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+.flash-ok{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
+.flash-err{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.scard{background:white;border-radius:10px;padding:13px 15px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
+.scard h3{margin:0 0 5px;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.scard-val{font-size:1.35rem;font-weight:800}
+.filter-wrap{background:white;border-radius:10px;padding:13px 15px;margin-bottom:13px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.filter-wrap h3{margin:0 0 9px;font-size:13px;color:#444;font-weight:700}
+.filter-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.filter-row select,.filter-row input{padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;flex:1;min-width:110px}
+.btn-filter{padding:7px 14px;background:#007bff;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
+.btn-clear{padding:7px 12px;background:#6c757d;color:white;border:none;border-radius:6px;font-size:13px;text-decoration:none}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+table{width:100%;border-collapse:collapse;background:white;min-width:700px}
+th{background:#2c3e50;color:white;padding:10px 12px;text-align:left;font-size:12px;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f9fafb}
+.badge{padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.t-np{background:#dbeafe;color:#1e40af}
+.t-ss{background:#f3e8ff;color:#6b21a8}
+.t-rn{background:#ffedd5;color:#9a3412}
+.s-0{background:#e2e3e5;color:#383d41}
+.s-1{background:#cce5ff;color:#004085}
+.s-2{background:#d4edda;color:#155724}
+.s-3{background:#cce5ff;color:#004085}
+.s-4{background:#d4edda;color:#155724}
+.act-btn{display:inline-block;padding:4px 9px;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;margin:2px 0}
+.act-blue{background:#007bff;color:white}
+.empty{padding:36px;text-align:center;background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.empty h3{color:#666;margin-bottom:7px}.empty p{color:#888;margin:0}
+@media(max-width:640px){.wrap{padding:10px}.filter-row{flex-direction:column;align-items:stretch}.filter-row select,.filter-row input,.btn-filter,.btn-clear{width:100%}td,th{padding:8px 10px!important;font-size:12px}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">📋 Unified Submissions – Admin</div>
+  <div class="topbar-right">
+    <span style="font-size:13px">{{ admin_name }}</span>
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">&#128202; Dashboard</a>
+  <a href="/admin/projects">&#127962; Projects</a>
+  <a href="/admin/create-project" class="nav-btn">&#10010; New Project</a>
+  <a href="/admin/agents">&#128101; Agents</a>
+  <a href="/admin/agent-hierarchy">&#128279; Hierarchy</a>
+  <a href="/admin/payments">&#9993; Payments</a>
+  <a href="/admin/commissions">&#128176; Commissions</a>
+  <a href="/admin/unified-submissions" class="nav-active">&#128203; Unified Submissions</a>
+  <a href="/admin/agent-performance">&#128200; Performance</a>
+  <a href="/admin/commission-calculator">&#9889; Calc</a>
+  <a href="/admin/settings">&#9881; Settings</a>
+  <a href="/admin/export-data">&#128228; Export</a>
+</div>
+<div class="wrap">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}{% for cat,msg in messages %}
+<div class="flash flash-{{ 'ok' if cat=='success' else 'err' }}">{{ msg }}</div>
+{% endfor %}{% endif %}{% endwith %}
+
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#007bff"><h3>Total</h3><div class="scard-val" style="color:#007bff">{{ stats.total }}</div></div>
+  <div class="scard" style="border-top-color:#1e40af"><h3>New Project</h3><div class="scard-val" style="color:#1e40af">{{ stats.np }}</div></div>
+  <div class="scard" style="border-top-color:#6b21a8"><h3>Sub Sales</h3><div class="scard-val" style="color:#6b21a8">{{ stats.ss }}</div></div>
+  <div class="scard" style="border-top-color:#9a3412"><h3>Rental</h3><div class="scard-val" style="color:#9a3412">{{ stats.rn }}</div></div>
+  <div class="scard" style="border-top-color:#28a745"><h3>Complete</h3><div class="scard-val" style="color:#28a745">{{ stats.done }}</div></div>
+  <div class="scard" style="border-top-color:#ffc107"><h3>In Progress</h3><div class="scard-val" style="color:#ffc107">{{ stats.prog }}</div></div>
+</div>
+
+<div class="filter-wrap">
+  <h3>🔍 Filter Submissions</h3>
+  <form method="GET" class="filter-row">
+    <select name="type">
+      <option value="all" {{ 'selected' if type_filter=='all' }}>All Types</option>
+      <option value="np"  {{ 'selected' if type_filter=='np' }}>🏢 New Project</option>
+      <option value="ss"  {{ 'selected' if type_filter=='ss' }}>🏠 Sub Sales</option>
+      <option value="rn"  {{ 'selected' if type_filter=='rn' }}>🔑 Rental</option>
+    </select>
+    <select name="stage">
+      <option value="all" {{ 'selected' if stage_filter=='all' }}>All Stages</option>
+      <option value="0"   {{ 'selected' if stage_filter=='0' }}>Draft</option>
+      <option value="4"   {{ 'selected' if stage_filter=='4' }}>Complete</option>
+    </select>
+    <input type="text" name="agent" placeholder="Filter by agent name..." value="{{ agent_filter }}">
+    <input type="text" name="search" placeholder="Search ref, property, party..." value="{{ search }}">
+    <button type="submit" class="btn-filter">🔍 Filter</button>
+    <a href="/admin/unified-submissions" class="btn-clear">Clear</a>
+  </form>
+</div>
+
+{% if submissions %}
+<div class="tbl-wrap"><table>
+  <thead><tr><th>Ref</th><th>Type</th><th>Agent</th><th>Rank</th><th>Property</th><th>Party A</th><th>Party B</th><th>Stage</th><th>Updated</th><th>Action</th></tr></thead>
+  <tbody>
+  {% for s in submissions %}
+  {% set type_labels = {'np':'🏢 New Project','ss':'🏠 Sub Sales','rn':'🔑 Rental'} %}
+  {% set stage_labels = {0:'Draft',1:'Awaiting Party A',2:'Party A Signed',3:'Awaiting Party B',4:'✓ Complete'} %}
+  <tr>
+    <td><strong>{{ s.ref or '—' }}</strong></td>
+    <td><span class="badge t-{{ s.sub_type }}">{{ type_labels.get(s.sub_type,'—') }}</span></td>
+    <td>{{ s.agent_name or '—' }}</td>
+    <td><small style="color:#888">{{ s.agent_rank or '—' }}</small></td>
+    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.prop_address or '—' }}</td>
+    <td>{{ s.partyA_name or '—' }}</td>
+    <td>{{ s.partyB_name or '—' }}</td>
+    <td><span class="badge s-{{ s.stage }}">{{ stage_labels.get(s.stage,'—') }}</span></td>
+    <td>{{ s.updated_at[:10] if s.updated_at else '—' }}</td>
+    <td><a href="/admin/unified-submission/{{ s.id }}" class="act-btn act-blue">👁 View</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty"><h3>No submissions found</h3><p>Try adjusting your filters.</p></div>
+{% endif %}
+</div>
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});});
+</script>
+</body>
+</html>"""
+
+
+# ════════════════════════════════════════════════════════════
+# DATABASE — add this call inside your init_database() function
+# at the end, just before conn.commit()
+# ════════════════════════════════════════════════════════════
+
+def init_submissions_table():
+    """
+    Call this inside init_database() to create the unified submissions table.
+    Add this line near the end of init_database(), before conn.commit():
+
+        init_submissions_table()
+    """
+    conn = get_db_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS unified_documents (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            sub_id      TEXT NOT NULL REFERENCES unified_submissions(id) ON DELETE CASCADE,
+            filename    TEXT NOT NULL,
+            filepath    TEXT NOT NULL,
+            file_type   TEXT,
+            file_size   INTEGER,
+            doc_label   TEXT DEFAULT 'Supporting Document',
+            uploaded_by INTEGER,
+            uploaded_at TIMESTAMP DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS unified_submissions (
+            id           TEXT PRIMARY KEY,
+            ref          TEXT,
+            sub_type     TEXT NOT NULL DEFAULT 'ss',
+            stage        INTEGER DEFAULT 0,
+            agent_id     INTEGER REFERENCES users(id),
+            agent_name   TEXT,
+            agent_rank   TEXT,
+            prop_address TEXT,
+            prop_type    TEXT,
+            prop_state   TEXT,
+            partyA_name  TEXT,
+            partyA_ic    TEXT,
+            partyA_phone TEXT,
+            partyA_addr  TEXT,
+            partyB_name  TEXT,
+            partyB_ic    TEXT,
+            partyB_phone TEXT,
+            partyB_addr  TEXT,
+            price        TEXT,
+            extra_data   TEXT DEFAULT '{}',
+            signatures   TEXT DEFAULT '{}',
+            created_at   DATETIME DEFAULT (datetime('now')),
+            updated_at   DATETIME DEFAULT (datetime('now'))
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_next_ref(sub_type):
+    """Auto-generate next reference number for a given type."""
+    prefixes = {'np': 'NP', 'ss': 'SC', 'rn': 'RN'}
+    pfx = prefixes.get(sub_type, 'SC')
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT ref FROM unified_submissions WHERE sub_type=? AND ref IS NOT NULL",
+        (sub_type,)
+    ).fetchall()
+    conn.close()
+    max_n = 0
+    for row in rows:
+        try:
+            n = int(row[0].replace(pfx, ''))
+            max_n = max(max_n, n)
+        except Exception:
+            pass
+    return "{}{}".format(pfx, str(max_n + 1).zfill(4))
+
+
+def get_submissions_for_user(user_id, agent_rank, role,
+                              sub_type='all', stage_filter='all',
+                              search='', agent_filter=''):
+    """
+    Fetch unified submissions filtered by the user's rank/role.
+    Returns list of Row objects.
+    """
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+
+    base = "SELECT * FROM unified_submissions"
+    conditions = []
+    params = []
+
+    # ── Visibility by role/rank ──
+    if role == 'admin':
+        pass  # sees everything
+    elif agent_rank == 'ATL':
+        # Full downline (recursive)
+        downline = conn.execute("""
+            WITH RECURSIVE dl(id) AS (
+                SELECT id FROM users WHERE upline_id=?
+                UNION ALL
+                SELECT u.id FROM users u JOIN dl ON u.upline_id=dl.id
+            )
+            SELECT id FROM dl
+        """, (user_id,)).fetchall()
+        ids = [user_id] + [r[0] for r in downline]
+        conditions.append("agent_id IN ({})".format(','.join('?' * len(ids))))
+        params.extend(ids)
+    elif agent_rank in ('TL', 'Elite REN'):
+        # Direct team + self
+        direct = conn.execute(
+            "SELECT id FROM users WHERE upline_id=?", (user_id,)
+        ).fetchall()
+        ids = [user_id] + [r[0] for r in direct]
+        conditions.append("agent_id IN ({})".format(','.join('?' * len(ids))))
+        params.extend(ids)
+    else:
+        conditions.append("agent_id=?")
+        params.append(user_id)
+
+    # ── Type filter ──
+    if sub_type and sub_type != 'all':
+        conditions.append("sub_type=?")
+        params.append(sub_type)
+
+    # ── Stage filter ──
+    if stage_filter and stage_filter != 'all':
+        conditions.append("stage=?")
+        params.append(int(stage_filter))
+
+    # ── Search ──
+    if search:
+        conditions.append("(ref LIKE ? OR prop_address LIKE ? OR partyA_name LIKE ? OR partyB_name LIKE ?)")
+        like = '%' + search + '%'
+        params.extend([like, like, like, like])
+
+    # ── Agent name filter (admin only) ──
+    if agent_filter and role == 'admin':
+        conditions.append("agent_name LIKE ?")
+        params.append('%' + agent_filter + '%')
+
+    if conditions:
+        base += " WHERE " + " AND ".join(conditions)
+    base += " ORDER BY updated_at DESC"
+
+    rows = conn.execute(base, params).fetchall()
+    conn.close()
+    return rows
+
+
+def get_submission_stats(user_id, agent_rank, role):
+    rows = get_submissions_for_user(user_id, agent_rank, role)
+    return {
+        'total': len(rows),
+        'np':    sum(1 for r in rows if r['sub_type'] == 'np'),
+        'ss':    sum(1 for r in rows if r['sub_type'] == 'ss'),
+        'rn':    sum(1 for r in rows if r['sub_type'] == 'rn'),
+        'done':  sum(1 for r in rows if r['stage'] == 4),
+        'prog':  sum(1 for r in rows if 0 < r['stage'] < 4),
+    }
+
+
+# ════════════════════════════════════════════════════════════
+# FLASK ROUTES
+# ════════════════════════════════════════════════════════════
+
+@app.route("/agent/unified-submit", methods=["GET", "POST"])
+@app.route("/agent/unified-submit/<sub_id>", methods=["GET", "POST"])
+def unified_submit(sub_id=None):
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    user = conn.execute(
+        "SELECT id, name, agent_rank FROM users WHERE id=?",
+        (session["user_id"],)
+    ).fetchone()
+    conn.close()
+
+    agent_name = user["name"] if user else session.get("user_name", "")
+    agent_rank = user["agent_rank"] if user else "REN"
+
+    # ── Build next_refs for JS auto-ref (pass next number per type) ──
+    def _next_num(t):
+        ref_str = get_next_ref(t)
+        pfx = {'np':'NP','ss':'SC','rn':'RN'}.get(t,'SC')
+        try: return int(ref_str.replace(pfx,''))
+        except: return 1
+    next_refs = {t: _next_num(t) for t in ['np', 'ss', 'rn']}
+
+    # ── Default empty form values ──
+    empty_form  = {}
+    sub_id_val  = None
+    sub_stage   = 0
+    sub_ref     = get_next_ref('ss')
+    sub_type    = 'ss'
+    sig_data    = {}   # pass as dict, Jinja tojson renders it as {}
+
+    # ── Load from URL payload (shared signing link) ──
+    wtp_payload = request.args.get("wtp")
+    if wtp_payload:
+        try:
+            import base64
+            raw = base64.b64decode(wtp_payload).decode("utf-8")
+            payload = json.loads(raw)
+            sub_stage  = payload.get("stage", 0)
+            sub_type   = payload.get("type", "ss")
+            sub_ref    = payload.get("ref", next_refs.get(sub_type, "SC0001"))
+            empty_form = payload.get("fd", {})
+            sig_data   = payload.get("sigs", {})
+
+            # If there is also a sub_id, load the DB record for the id/ref
+            # but KEEP the wtp payload's stage and signatures (they are more up to date)
+            if sub_id:
+                conn = get_db_connection()
+                conn.row_factory = sqlite3.Row
+                rec = conn.execute(
+                    "SELECT * FROM unified_submissions WHERE id=?", (sub_id,)
+                ).fetchone()
+                conn.close()
+                if rec:
+                    sub_id_val = rec["id"]
+                    # Update DB with the returned stage + signatures
+                    conn2 = get_db_connection()
+                    conn2.execute(
+                        "UPDATE unified_submissions SET stage=?, signatures=?, updated_at=datetime('now') WHERE id=?",
+                        (sub_stage, json.dumps(sig_data), sub_id)
+                    )
+                    conn2.commit()
+                    conn2.close()
+                    # Redirect to clean URL — loads full DB record with all fields
+                    from flask import redirect as _redir
+                    return _redir("/agent/unified-submit/" + sub_id)
+        except Exception as e:
+            flash("Could not load form from link. Please try again.", "error")
+
+    # ── Load existing record by ID (no wtp payload) ──
+    elif sub_id:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        rec = conn.execute(
+            "SELECT * FROM unified_submissions WHERE id=? AND agent_id=?",
+            (sub_id, session["user_id"])
+        ).fetchone()
+        conn.close()
+        if rec:
+            sub_id_val  = rec["id"]
+            sub_stage   = rec["stage"]
+            sub_ref     = rec["ref"] or next_refs.get(rec["sub_type"], "SC0001")
+            sub_type    = rec["sub_type"]
+            try:
+                sig_data = json.loads(rec["signatures"] or "{}")
+            except Exception:
+                sig_data = {}
+            extra       = json.loads(rec["extra_data"] or "{}")
+            empty_form  = {
+                "prop_address": rec["prop_address"] or "",
+                "prop_type":    rec["prop_type"]    or "",
+                "prop_state":   rec["prop_state"]   or "",
+                "partyA_name":  rec["partyA_name"]  or "",
+                "partyA_ic":    rec["partyA_ic"]    or "",
+                "partyA_phone": rec["partyA_phone"] or "",
+                "partyA_addr":  rec["partyA_addr"]  or "",
+                "partyB_name":  rec["partyB_name"]  or "",
+                "partyB_ic":    rec["partyB_ic"]    or "",
+                "partyB_phone": rec["partyB_phone"] or "",
+                "partyB_addr":  rec["partyB_addr"]  or "",
+            }
+            empty_form.update(extra)
+        else:
+            flash("Submission not found.", "error")
+            return redirect("/agent/unified-submissions")
+
+    # ── Handle POST (save) ──
+    if request.method == "POST":
+        action    = request.form.get("action", "save")
+        f_type    = request.form.get("sub_type", "ss")
+        f_ref     = request.form.get("sub_ref", "").strip().upper() or get_next_ref(f_type)
+        f_stage   = int(request.form.get("sub_stage", 0))
+        f_id      = request.form.get("sub_id", "").strip() or str(uuid.uuid4())
+        f_sigs    = request.form.get("sig_data", "{}")
+
+        # Common fields
+        prop_address = request.form.get("prop_address", "")
+        prop_type    = request.form.get("prop_type", "")
+        prop_state   = request.form.get("prop_state", "")
+        partyA_name  = request.form.get("partyA_name", "")
+        partyA_ic    = request.form.get("partyA_ic", "")
+        partyA_phone = request.form.get("partyA_phone", "")
+        partyA_addr  = request.form.get("partyA_addr", "")
+        partyB_name  = request.form.get("partyB_name", "")
+        partyB_ic    = request.form.get("partyB_ic", "")
+        partyB_phone = request.form.get("partyB_phone", "")
+        partyB_addr  = request.form.get("partyB_addr", "")
+
+        # Type-specific fields → extra_data
+        extra_keys = [
+            "np_project","np_developer","np_unit","np_price","np_booking",
+            "np_bumi","np_handover","np_remarks",
+            "ss_price","ss_price_words","ss_dep_pct","ss_dep_amt",
+            "ss_cheque","ss_spa_date","ss_special",
+            "rn_rent","rn_sec_dep","rn_util_dep","rn_period",
+            "rn_start","rn_end","rn_furnished","rn_stamp","rn_key_dep","rn_special",
+        ]
+        extra_data = {k: request.form.get(k, "") for k in extra_keys if request.form.get(k)}
+
+        # Derive display price
+        price = (extra_data.get("ss_price")
+                 or extra_data.get("np_price")
+                 or extra_data.get("rn_rent") or "")
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = get_db_connection()
+        existing = conn.execute(
+            "SELECT id FROM unified_submissions WHERE id=?", (f_id,)
+        ).fetchone()
+
+        if existing:
+            conn.execute("""
+                UPDATE unified_submissions SET
+                  ref=?, sub_type=?, stage=?,
+                  prop_address=?, prop_type=?, prop_state=?,
+                  partyA_name=?, partyA_ic=?, partyA_phone=?, partyA_addr=?,
+                  partyB_name=?, partyB_ic=?, partyB_phone=?, partyB_addr=?,
+                  price=?, extra_data=?, signatures=?, updated_at=?
+                WHERE id=?
+            """, (
+                f_ref, f_type, f_stage,
+                prop_address, prop_type, prop_state,
+                partyA_name, partyA_ic, partyA_phone, partyA_addr,
+                partyB_name, partyB_ic, partyB_phone, partyB_addr,
+                price, json.dumps(extra_data), f_sigs, now,
+                f_id
+            ))
+        else:
+            conn.execute("""
+                INSERT INTO unified_submissions
+                  (id, ref, sub_type, stage, agent_id, agent_name, agent_rank,
+                   prop_address, prop_type, prop_state,
+                   partyA_name, partyA_ic, partyA_phone, partyA_addr,
+                   partyB_name, partyB_ic, partyB_phone, partyB_addr,
+                   price, extra_data, signatures, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                f_id, f_ref, f_type, f_stage,
+                session["user_id"], agent_name, agent_rank,
+                prop_address, prop_type, prop_state,
+                partyA_name, partyA_ic, partyA_phone, partyA_addr,
+                partyB_name, partyB_ic, partyB_phone, partyB_addr,
+                price, json.dumps(extra_data), f_sigs, now, now
+            ))
+        conn.commit()
+        conn.close()
+
+        if action == "draft":
+            flash("Draft saved successfully.", "success")
+        elif action == "complete":
+            flash("Submission saved as complete! 🎉", "success")
+        elif action == "stage":
+            pass  # silent save during stage transitions
+
+        return redirect("/agent/unified-submit/" + f_id)
+
+    # ── Load active projects for selector ──
+    try:
+        conn_p = get_db_connection()
+        conn_p.row_factory = sqlite3.Row
+        projects_list = conn_p.execute(            "SELECT p.id, p.project_name, p.category, p.project_type, p.project_sale_type, p.location, p.commission_rate, pu.unit_type, pu.base_price, pu.rental_price, pu.square_feet FROM projects p LEFT JOIN project_units pu ON pu.project_id = p.id AND pu.status = 'available' WHERE p.status = 'active' ORDER BY p.project_name, pu.unit_type"
+        ).fetchall()
+        conn_p.close()
+        # Group units under each project
+        projects_map = {}
+        for row in projects_list:
+            pid = row['id']
+            if pid not in projects_map:
+                projects_map[pid] = {
+                    'id':            row['id'],
+                    'project_name':  row['project_name'],
+                    'category':      row['category'],
+                    'project_type':  row['project_type'],
+                    'sale_type':     row['project_sale_type'] or 'sales',
+                    'location':      row['location'] or '',
+                    'commission_rate': row['commission_rate'] or '',
+                    'units': []
+                }
+            if row['unit_type']:
+                projects_map[pid]['units'].append({
+                    'unit_type':   row['unit_type'],
+                    'base_price':  row['base_price'] or '',
+                    'rental_price':row['rental_price'] or '',
+                    'sqft':        row['square_feet'] or '',
+                })
+        projects_for_template = list(projects_map.values())
+    except Exception:
+        projects_for_template = []
+
+    # Load existing documents for this submission
+    existing_docs = []
+    if sub_id_val:
+        try:
+            conn_d = get_db_connection()
+            conn_d.row_factory = sqlite3.Row
+            existing_docs = conn_d.execute(
+                "SELECT id, filename, file_type, file_size, doc_label, uploaded_at FROM unified_documents WHERE sub_id=? ORDER BY uploaded_at",
+                (sub_id_val,)
+            ).fetchall()
+            conn_d.close()
+        except Exception:
+            existing_docs = []
+
+    return render_template(
+        'agent/unified_submit.html',
+        agent_name  = agent_name,
+        agent_rank  = agent_rank,
+        next_refs   = next_refs,
+        sub_id      = sub_id_val,
+        sub_stage   = sub_stage,
+        sub_ref     = sub_ref,
+        sub_type    = sub_type,
+        sig_data    = sig_data,
+        form        = empty_form,
+        projects    = projects_for_template,
+        docs        = existing_docs,
+    )
+
+
+
+
+@app.route("/agent/unified-submit/<sub_id>/submit-approval", methods=["POST"])
+def unified_submit_for_approval(sub_id):
+    """Convert a completed unified submission into a property_listings record for admin approval."""
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    rec = conn.execute(
+        "SELECT * FROM unified_submissions WHERE id=? AND agent_id=?",
+        (sub_id, session["user_id"])
+    ).fetchone()
+    conn.close()
+
+    if not rec:
+        flash("Submission not found.", "error")
+        return redirect("/agent/unified-submissions")
+
+    if rec["stage"] < 2:
+        flash("Submission must be at least at stage 2 (Party A signed) before submitting for approval.", "error")
+        return redirect("/agent/unified-submit/" + sub_id)
+
+    # Check if already submitted
+    conn = get_db_connection()
+    existing = conn.execute(
+        "SELECT id FROM property_listings WHERE notes LIKE ?",
+        ('%unified:' + sub_id + '%',)
+    ).fetchone()
+    conn.close()
+
+    if existing:
+        flash("This submission has already been submitted for approval (Listing #{}).".format(existing[0]), "warning")
+        return redirect("/agent/unified-submit/" + sub_id)
+
+    # Parse extra data
+    try:
+        extra = json.loads(rec["extra_data"] or "{}")
+    except Exception:
+        extra = {}
+
+    # Determine sale type and price
+    sub_type   = rec["sub_type"] or "ss"
+    sale_type  = "rental" if sub_type == "rn" else "sales"
+    price_raw  = (extra.get("ss_price") or extra.get("np_price") or
+                  extra.get("rn_rent")  or rec["price"] or "0")
+    try:
+        sale_price = float(str(price_raw).replace(",", "").replace("RM", "").strip())
+    except Exception:
+        sale_price = 0.0
+
+    # Commission rate — default 2%
+    commission_rate = 0.02
+    commission_amount = max(1000.0, min(sale_price * commission_rate, 50000.0)) if sale_price else 0.0
+
+    # Customer = Party B (Purchaser/Tenant/Buyer)
+    customer_name  = rec["partyB_name"]  or ""
+    customer_phone = rec["partyB_phone"] or ""
+
+    # Build notes with unified submission ref so we can link back
+    notes = "Ref: {} | Type: {} | unified:{}".format(
+        rec["ref"] or "", sub_type.upper(), sub_id
+    )
+    if extra.get("ss_special"):  notes += " | " + extra["ss_special"]
+    if extra.get("rn_special"):  notes += " | " + extra["rn_special"]
+    if extra.get("np_remarks"):  notes += " | " + extra["np_remarks"]
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db_connection()
+    try:
+        # Only use columns guaranteed to exist in original schema
+        conn.execute("""
+            INSERT INTO property_listings
+              (agent_id, customer_name, customer_email, customer_phone,
+               property_address, sale_price,
+               commission_amount, status, submitted_at, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            session["user_id"],
+            customer_name,
+            "",
+            customer_phone,
+            rec["prop_address"] or "",
+            sale_price,
+            round(commission_amount, 2),
+            "submitted",
+            now,
+            notes,
+        ))
+        listing_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit()
+
+        # Also mark unified submission as submitted
+        conn.execute(
+            "UPDATE unified_submissions SET stage=4, updated_at=? WHERE id=?",
+            (now, sub_id)
+        )
+        conn.commit()
+
+        # Notify agent
+        try:
+            conn.execute("""
+                INSERT INTO notifications (user_id, type, title, message, is_read, created_at)
+                VALUES (?, 'submission_success', '📋 Submission Sent for Approval',
+                        ?, 0, ?)
+            """, (
+                session["user_id"],
+                "Your submission {} (Ref: {}) has been sent to admin for approval as Listing #{}.".format(
+                    sub_type.upper(), rec["ref"] or "", listing_id),
+                now
+            ))
+            conn.commit()
+        except Exception:
+            pass
+
+        flash("✅ Submission sent for admin approval! Listing #{} created.".format(listing_id), "success")
+    except Exception as e:
+        conn.rollback()
+        flash("Error submitting for approval: {}".format(str(e)), "error")
+    finally:
+        conn.close()
+
+    return redirect("/agent/unified-submit/" + sub_id)
+
+
+
+# ── UNIFIED SUBMISSION DOCUMENT UPLOAD ──────────────────────
+
+@app.route("/agent/unified-submit/<sub_id>/upload", methods=["POST"])
+def unified_upload_doc(sub_id):
+    """Upload a document to a unified submission."""
+    if "user_id" not in session or session["user_role"] != "agent":
+        return jsonify({"ok": False, "error": "Unauthorised"}), 403
+
+    conn = get_db_connection()
+    rec = conn.execute(
+        "SELECT id FROM unified_submissions WHERE id=? AND agent_id=?",
+        (sub_id, session["user_id"])
+    ).fetchone()
+    conn.close()
+
+    if not rec:
+        return jsonify({"ok": False, "error": "Submission not found"}), 404
+
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "No file"}), 400
+
+    f = request.files["file"]
+    if not f or f.filename == "":
+        return jsonify({"ok": False, "error": "Empty file"}), 400
+
+    if not allowed_file(f.filename):
+        return jsonify({"ok": False, "error": "File type not allowed. Use PDF, JPG, PNG, DOC."}), 400
+
+    label    = request.form.get("label", "Supporting Document")
+    filename = secure_filename(f.filename)
+    ext      = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+
+    # Save with unique name
+    import uuid as _uuid
+    unique_name = "{}_{}_{}.{}".format(sub_id[:8], session["user_id"], _uuid.uuid4().hex[:6], ext)
+    upload_dir  = os.path.join(app.config["UPLOAD_FOLDER"], "unified")
+    os.makedirs(upload_dir, exist_ok=True)
+    filepath = os.path.join(upload_dir, unique_name)
+    f.save(filepath)
+
+    conn = get_db_connection()
+    conn.execute("""
+        INSERT INTO unified_documents
+          (sub_id, filename, filepath, file_type, file_size, doc_label, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        sub_id, f.filename, filepath, ext,
+        os.path.getsize(filepath), label, session["user_id"]
+    ))
+    conn.commit()
+    doc_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+
+    return jsonify({"ok": True, "doc_id": doc_id, "filename": f.filename, "label": label})
+
+
+@app.route("/agent/unified-submit/<sub_id>/delete-doc/<int:doc_id>", methods=["POST"])
+def unified_delete_doc(sub_id, doc_id):
+    """Delete a document from a unified submission."""
+    if "user_id" not in session or session["user_role"] != "agent":
+        return jsonify({"ok": False, "error": "Unauthorised"}), 403
+
+    conn = get_db_connection()
+    doc = conn.execute(
+        """SELECT d.filepath FROM unified_documents d
+           JOIN unified_submissions s ON s.id = d.sub_id
+           WHERE d.id=? AND s.id=? AND s.agent_id=?""",
+        (doc_id, sub_id, session["user_id"])
+    ).fetchone()
+
+    if not doc:
+        conn.close()
+        return jsonify({"ok": False, "error": "Not found"}), 404
+
+    # Delete file
+    try:
+        if os.path.exists(doc[0]):
+            os.remove(doc[0])
+    except Exception:
+        pass
+
+    conn.execute("DELETE FROM unified_documents WHERE id=?", (doc_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/agent/unified-submit/<sub_id>/docs")
+def unified_get_docs(sub_id):
+    """Get list of documents for a unified submission (JSON)."""
+    if "user_id" not in session:
+        return jsonify({"ok": False}), 403
+
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    docs = conn.execute(
+        """SELECT d.id, d.filename, d.file_type, d.file_size, d.doc_label, d.uploaded_at
+           FROM unified_documents d
+           JOIN unified_submissions s ON s.id = d.sub_id
+           WHERE d.sub_id=?
+           ORDER BY d.uploaded_at""",
+        (sub_id,)
+    ).fetchall()
+    conn.close()
+
+    return jsonify({"ok": True, "docs": [dict(d) for d in docs]})
+
+@app.route("/agent/unified-submissions")
+def unified_submissions():
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    user = conn.execute(
+        "SELECT agent_rank FROM users WHERE id=?", (session["user_id"],)
+    ).fetchone()
+    conn.close()
+
+    agent_rank  = user["agent_rank"] if user else "REN"
+    type_filter  = request.args.get("type",  "all")
+    stage_filter = request.args.get("stage", "all")
+    search       = request.args.get("search","").strip()
+
+    submissions = get_submissions_for_user(
+        session["user_id"], agent_rank, "agent",
+        type_filter, stage_filter, search
+    )
+    stats = get_submission_stats(session["user_id"], agent_rank, "agent")
+
+    return render_template_string(
+        UNIFIED_SUBMISSIONS_TEMPLATE,
+        submissions  = submissions,
+        stats        = stats,
+        type_filter  = type_filter,
+        stage_filter = stage_filter,
+        search       = search,
+    )
+
+
+@app.route("/agent/unified-submit/<sub_id>/delete")
+def unified_submit_delete(sub_id):
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+    conn = get_db_connection()
+    rec = conn.execute(
+        "SELECT stage FROM unified_submissions WHERE id=? AND agent_id=?",
+        (sub_id, session["user_id"])
+    ).fetchone()
+    if rec and rec[0] == 0:
+        conn.execute("DELETE FROM unified_submissions WHERE id=?", (sub_id,))
+        conn.commit()
+        flash("Draft deleted.", "success")
+    else:
+        flash("Only draft submissions can be deleted.", "error")
+    conn.close()
+    return redirect("/agent/unified-submissions")
+
+
+@app.route("/admin/unified-submissions")
+def admin_unified_submissions():
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    type_filter  = request.args.get("type",  "all")
+    stage_filter = request.args.get("stage", "all")
+    search       = request.args.get("search","").strip()
+    agent_filter = request.args.get("agent", "").strip()
+
+    submissions = get_submissions_for_user(
+        session["user_id"], "ATL", "admin",
+        type_filter, stage_filter, search, agent_filter
+    )
+    stats = get_submission_stats(session["user_id"], "ATL", "admin")
+
+    return render_template_string(
+        ADMIN_UNIFIED_TEMPLATE,
+        admin_name   = session.get("user_name", "Admin"),
+        submissions  = submissions,
+        stats        = stats,
+        type_filter  = type_filter,
+        stage_filter = stage_filter,
+        search       = search,
+        agent_filter = agent_filter,
+    )
+
+
+@app.route("/admin/unified-submission/<sub_id>")
+def admin_unified_submission_view(sub_id):
+    """Admin view of a unified submission with approve/reject actions."""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    rec = conn.execute(
+        "SELECT * FROM unified_submissions WHERE id=?", (sub_id,)
+    ).fetchone()
+    conn.close()
+    if not rec:
+        flash("Submission not found.", "error")
+        return redirect("/admin/unified-submissions")
+
+    extra = json.loads(rec["extra_data"] or "{}")
+    sigs  = {}
+    try: sigs = json.loads(rec["signatures"] or "{}")
+    except Exception: pass
+
+    # Find linked property_listing if submitted for approval
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    linked = conn.execute(
+        "SELECT id, status, sale_price, commission_amount FROM property_listings WHERE notes LIKE ?",
+        ('%unified:' + sub_id + '%',)
+    ).fetchone()
+
+    # Load docs
+    docs = conn.execute(
+        "SELECT id, filename, file_type, file_size, doc_label, uploaded_at FROM unified_documents WHERE sub_id=? ORDER BY uploaded_at",
+        (sub_id,)
+    ).fetchall()
+    conn.close()
+
+    form_data = {
+        "prop_address": rec["prop_address"] or "",
+        "prop_type":    rec["prop_type"]    or "",
+        "prop_state":   rec["prop_state"]   or "",
+        "partyA_name":  rec["partyA_name"]  or "",
+        "partyA_ic":    rec["partyA_ic"]    or "",
+        "partyA_phone": rec["partyA_phone"] or "",
+        "partyA_addr":  rec["partyA_addr"]  or "",
+        "partyB_name":  rec["partyB_name"]  or "",
+        "partyB_ic":    rec["partyB_ic"]    or "",
+        "partyB_phone": rec["partyB_phone"] or "",
+        "partyB_addr":  rec["partyB_addr"]  or "",
+    }
+    form_data.update(extra)
+
+    return render_template(
+        'admin/unified_view.html',
+        agent_name = rec["agent_name"] or "",
+        agent_rank = rec["agent_rank"] or "REN",
+        sub_id     = rec["id"],
+        sub_stage  = rec["stage"],
+        sub_ref    = rec["ref"] or "",
+        sub_type   = rec["sub_type"] or "ss",
+        sig_data   = sigs,
+        form       = form_data,
+        docs       = docs,
+        linked     = linked,
+    )
+
+# ════════════════════════════════════════════════════════════
+# END OF WTP UNIFIED SUBMISSION SYSTEM
+# ════════════════════════════════════════════════════════════
 
 # ============ RUN APPLICATION ============
+
+# ── AGENT PROFILE & CHANGE PASSWORD ─────────────────────────────
+
+@app.route("/agent/profile")
+def agent_profile():
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    agent = conn.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
+    total_listings = conn.execute(
+        "SELECT COUNT(*) FROM property_listings WHERE agent_id=?",
+        (session["user_id"],)
+    ).fetchone()[0]
+    conn.close()
+    if not agent:
+        return redirect("/login")
+    agent = dict(agent)
+    agent["total_listings"] = total_listings
+    return render_template("agent/profile.html", agent=agent)
+
+
+@app.route("/agent/profile/change-password", methods=["POST"])
+def agent_change_password():
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+    current_pw  = request.form.get("current_password", "")
+    new_pw      = request.form.get("new_password", "")
+    confirm_pw  = request.form.get("confirm_password", "")
+    if len(new_pw) < 8:
+        flash("New password must be at least 8 characters.", "error")
+        return redirect("/agent/profile")
+    if new_pw != confirm_pw:
+        flash("New passwords do not match.", "error")
+        return redirect("/agent/profile")
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    agent = conn.execute(
+        "SELECT password_hash FROM users WHERE id=?", (session["user_id"],)
+    ).fetchone()
+    if not agent or not check_password_hash(agent["password_hash"], current_pw):
+        conn.close()
+        flash("Current password is incorrect.", "error")
+        return redirect("/agent/profile")
+    new_hash = generate_password_hash(new_pw)
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?",
+                 (new_hash, session["user_id"]))
+    conn.commit()
+    conn.close()
+    flash("✅ Password updated successfully.", "success")
+    return redirect("/agent/profile")
+
+
+# ══════════════════════════════════════════════════════════════════
+# FORMS LIBRARY  –  Admin uploads, Agents view / download / share
+# ══════════════════════════════════════════════════════════════════
+
+def init_forms_library_table():
+    """Create the forms_library table."""
+    conn = get_db_connection()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forms_library (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT NOT NULL,
+            description TEXT,
+            category    TEXT DEFAULT 'General',
+            filename    TEXT NOT NULL,
+            filepath    TEXT NOT NULL,
+            file_type   TEXT,
+            file_size   INTEGER DEFAULT 0,
+            uploaded_by INTEGER REFERENCES users(id),
+            is_active   INTEGER DEFAULT 1,
+            created_at  DATETIME DEFAULT (datetime('now')),
+            updated_at  DATETIME DEFAULT (datetime('now'))
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+# ── ADMIN: Manage Forms Library ──────────────────────────────────
+
+ADMIN_FORMS_LIBRARY_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Forms Library - Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}
+.flash-ok{background:#d4edda;color:#155724;padding:10px 14px;border-radius:7px;margin-bottom:14px;border-left:4px solid #28a745;font-size:13px}
+.flash-err{background:#f8d7da;color:#721c24;padding:10px 14px;border-radius:7px;margin-bottom:14px;border-left:4px solid #dc3545;font-size:13px}
+.upload-card{background:white;border-radius:10px;padding:22px 24px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px;border-top:3px solid #2563eb}
+.upload-card h2{margin:0 0 16px;font-size:15px;font-weight:700;color:#1a2a3a}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:600px){.grid2,.grid3{grid-template-columns:1fr}}
+.form-group{margin-bottom:0}
+.form-group label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#666;margin-bottom:5px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 11px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:14px;background:#fafafa}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#2563eb;background:white}
+.form-group textarea{resize:vertical;min-height:60px}
+.drop-zone{border:2px dashed #2563eb;border-radius:10px;padding:28px;text-align:center;cursor:pointer;background:#f8faff;transition:all .2s;margin-top:8px}
+.drop-zone:hover,.drop-zone.drag-over{background:#eff6ff;border-color:#1d4ed8}
+.drop-zone-icon{font-size:36px;margin-bottom:8px}
+.drop-zone p{margin:4px 0;font-size:13px;color:#666}
+.drop-zone strong{color:#2563eb}
+.drop-zone input[type=file]{display:none}
+.btn-upload{background:#2563eb;color:white;border:none;border-radius:7px;padding:11px 24px;font-size:14px;font-weight:700;cursor:pointer;margin-top:14px;width:100%}
+.btn-upload:hover{background:#1d4ed8}
+.tbl-wrap{overflow-x:auto;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+table{width:100%;border-collapse:collapse;background:white;min-width:600px}
+th{background:#2c3e50;color:white;padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafbfc}
+.badge{padding:3px 8px;border-radius:8px;font-size:11px;font-weight:700}
+.cat-general{background:#e0f2fe;color:#0369a1}
+.cat-sales{background:#f3e8ff;color:#6b21a8}
+.cat-rental{background:#ffedd5;color:#9a3412}
+.cat-legal{background:#dcfce7;color:#166534}
+.cat-finance{background:#fef9c3;color:#854d0e}
+.cat-other{background:#f1f5f9;color:#475569}
+.btn-sm{display:inline-block;padding:4px 10px;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap;margin:1px}
+.btn-red{background:#dc3545;color:white}
+.btn-grey{background:#6c757d;color:white}
+.btn-blue{background:#007bff;color:white}
+.file-size{font-size:11px;color:#888}
+.empty{text-align:center;padding:40px;background:white;border-radius:10px;color:#888}
+.selected-file{background:#eff6ff;border:1.5px solid #93c5fd;border-radius:7px;padding:10px 14px;margin-top:8px;font-size:12px;color:#1e40af;display:none}
+.selected-file span{font-weight:700}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">📁 Forms Library</div>
+  <div class="topbar-right">
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+  <a href="/admin/forms-library" class="nav-active">📁 Forms</a>
+</div>
+
+<div class="wrap">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% for cat, msg in messages %}
+<div class="flash-{{ 'ok' if cat=='success' else 'err' }}">{{ msg }}</div>
+{% endfor %}
+{% endwith %}
+
+<!-- Upload Card -->
+<div class="upload-card">
+  <h2>📤 Upload New Form</h2>
+  <form method="POST" action="/admin/forms-library/upload" enctype="multipart/form-data" id="uploadForm">
+    <div class="grid3" style="margin-bottom:14px">
+      <div class="form-group">
+        <label>Form Title *</label>
+        <input type="text" name="title" placeholder="e.g. Offer to Purchase (OTP)" required>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select name="category">
+          <option value="General">General</option>
+          <option value="Sales">Sales</option>
+          <option value="Rental">Rental</option>
+          <option value="Legal">Legal</option>
+          <option value="Finance">Finance</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <input type="text" name="description" placeholder="Short description (optional)">
+      </div>
+    </div>
+
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" name="form_file" accept=".pdf,.doc,.docx,.xlsx,.xls,.png,.jpg,.jpeg" onchange="showSelected(this)">
+      <div class="drop-zone-icon">📄</div>
+      <p><strong>Click to browse</strong> or drag & drop file here</p>
+      <p>Supports PDF, Word, Excel, Images · Max 10MB</p>
+    </div>
+    <div class="selected-file" id="selectedFile">
+      Selected: <span id="selectedName"></span> (<span id="selectedSize"></span>)
+    </div>
+
+    <button type="submit" class="btn-upload">📤 Upload Form</button>
+  </form>
+</div>
+
+<!-- Forms Table -->
+{% if forms %}
+<div class="tbl-wrap">
+<table>
+  <thead>
+    <tr><th>#</th><th>Title</th><th>Category</th><th>Description</th><th>File</th><th>Size</th><th>Uploaded</th><th>Status</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+  {% set cat_cls = {'General':'cat-general','Sales':'cat-sales','Rental':'cat-rental','Legal':'cat-legal','Finance':'cat-finance','Other':'cat-other'} %}
+  {% for f in forms %}
+  <tr>
+    <td style="color:#888;font-size:11px">{{ loop.index }}</td>
+    <td><strong>{{ f.title }}</strong></td>
+    <td><span class="badge {{ cat_cls.get(f.category,'cat-other') }}">{{ f.category }}</span></td>
+    <td style="color:#888;font-size:12px">{{ f.description or '—' }}</td>
+    <td style="font-size:12px;font-family:monospace">{{ f.filename }}</td>
+    <td class="file-size">{{ (f.file_size / 1024)|round(1) }} KB</td>
+    <td style="font-size:11px;color:#888">{{ (f.created_at or '')[:10] }}</td>
+    <td>
+      {% if f.is_active %}
+      <span class="badge" style="background:#dcfce7;color:#166534">Active</span>
+      {% else %}
+      <span class="badge" style="background:#f1f5f9;color:#64748b">Hidden</span>
+      {% endif %}
+    </td>
+    <td>
+      <a href="/admin/forms-library/download/{{ f.id }}" class="btn-sm btn-blue">⬇ View</a>
+      <a href="/admin/forms-library/toggle/{{ f.id }}" class="btn-sm btn-grey"
+         onclick="return confirm('Toggle visibility for this form?')">
+        {{ '👁 Hide' if f.is_active else '👁 Show' }}
+      </a>
+      <a href="/admin/forms-library/delete/{{ f.id }}" class="btn-sm btn-red"
+         onclick="return confirm('Delete this form permanently?')">🗑 Delete</a>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty">
+  <div style="font-size:40px;margin-bottom:10px">📁</div>
+  <p style="font-weight:600;margin-bottom:6px">No forms uploaded yet</p>
+  <p style="font-size:12px">Upload your first form above — agents will see it on their dashboard.</p>
+</div>
+{% endif %}
+
+</div>
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+var dz = document.getElementById('dropZone');
+dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',function(){dz.classList.remove('drag-over');});
+dz.addEventListener('drop',function(e){
+  e.preventDefault(); dz.classList.remove('drag-over');
+  var files = e.dataTransfer.files;
+  if(files.length){ document.getElementById('fileInput').files = files; showSelected(document.getElementById('fileInput')); }
+});
+function showSelected(inp){
+  if(!inp.files||!inp.files[0]) return;
+  var f=inp.files[0];
+  document.getElementById('selectedName').textContent=f.name;
+  document.getElementById('selectedSize').textContent=(f.size/1024).toFixed(1)+' KB';
+  document.getElementById('selectedFile').style.display='block';
+  document.getElementById('dropZone').querySelector('p').innerHTML='<strong>'+f.name+'</strong> ready to upload';
+}
+</script>
+</body>
+</html>
+"""
+
+AGENT_FORMS_LIBRARY_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Forms & Resources - WTP</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-active{background:#f0fdf4;color:#15803d}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:960px;margin:0 auto;padding:16px}
+.page-hdr{margin-bottom:16px}
+.page-hdr h1{margin:0 0 4px;font-size:18px;font-weight:800;color:#1a2a3a}
+.page-hdr p{margin:0;font-size:13px;color:#888}
+.filter-bar{background:white;border-radius:10px;padding:12px 16px;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-bar select{padding:7px 11px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;flex:1;min-width:140px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.form-card{background:white;border-radius:10px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:4px solid #ddd;transition:box-shadow .2s}
+.form-card:hover{box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.form-card.cat-General{border-top-color:#0369a1}
+.form-card.cat-Sales{border-top-color:#7c3aed}
+.form-card.cat-Rental{border-top-color:#ea580c}
+.form-card.cat-Legal{border-top-color:#16a34a}
+.form-card.cat-Finance{border-top-color:#ca8a04}
+.form-card.cat-Other{border-top-color:#64748b}
+.form-icon{font-size:28px;margin-bottom:8px}
+.form-title{font-size:14px;font-weight:700;color:#1a2a3a;margin-bottom:4px}
+.form-desc{font-size:12px;color:#888;margin-bottom:10px;min-height:32px;line-height:1.5}
+.form-meta{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.badge{padding:3px 8px;border-radius:8px;font-size:10px;font-weight:700}
+.cat-General{background:#e0f2fe;color:#0369a1}
+.cat-Sales{background:#f3e8ff;color:#6b21a8}
+.cat-Rental{background:#ffedd5;color:#9a3412}
+.cat-Legal{background:#dcfce7;color:#166534}
+.cat-Finance{background:#fef9c3;color:#854d0e}
+.cat-Other{background:#f1f5f9;color:#475569}
+.file-info{font-size:10px;color:#aaa}
+.action-row{display:flex;gap:6px;flex-wrap:wrap}
+.btn-action{display:inline-flex;align-items:center;gap:5px;padding:8px 13px;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:opacity .15s;white-space:nowrap}
+.btn-action:hover{opacity:.85}
+.btn-view{background:#1a3a2a;color:white}
+.btn-dl{background:#16a34a;color:white}
+.btn-wa{background:#25D366;color:white}
+.btn-tg{background:#2AABEE;color:white}
+.empty{text-align:center;padding:50px 20px;background:white;border-radius:10px;color:#888}
+
+/* Share modal */
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;pointer-events:none;transition:opacity .2s}
+.mo.open{opacity:1;pointer-events:all}
+.mb{background:white;border-radius:12px;box-shadow:0 16px 50px rgba(0,0,0,.2);width:100%;max-width:400px;padding:22px;transform:translateY(12px);transition:transform .2s;border-top:4px solid #1a3a2a}
+.mo.open .mb{transform:translateY(0)}
+.mb h3{margin:0 0 4px;font-size:15px;font-weight:700;color:#1a3a2a}
+.mb p{font-size:12px;color:#888;margin:0 0 16px}
+.share-btn{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1.5px solid #e5e7eb;border-radius:8px;cursor:pointer;margin-bottom:8px;transition:all .15s;text-decoration:none;color:#1a2a3a}
+.share-btn:hover{border-color:#16a34a;background:#f0fdf4}
+.share-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.share-wa-bg{background:#dcf8e7}
+.share-tg-bg{background:#daf0fb}
+.share-name{font-weight:700;font-size:13px}
+.share-desc{font-size:11px;color:#888}
+.m-grp{margin-bottom:12px}
+.m-lbl{display:block;font-size:10px;font-weight:700;color:#555;margin-bottom:4px;text-transform:uppercase}
+.m-inp{width:100%;border:1.5px solid #e5e7eb;border-radius:6px;padding:8px 10px;font-size:13px;outline:none}
+.m-inp:focus{border-color:#16a34a}
+.ph-step{display:none}
+.ph-step.open{display:block}
+.mo-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.btn-sm2{font-size:12px;padding:7px 16px;border-radius:6px;border:none;cursor:pointer;font-weight:600}
+.btn-cancel{background:#f1f5f9;color:#475569}
+.btn-send-wa{background:#25D366;color:white}
+.btn-send-tg{background:#2AABEE;color:white}
+.back-lk{font-size:11px;color:#16a34a;cursor:pointer;margin-bottom:12px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">📁 Forms & Resources</div>
+  <div class="topbar-right">
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/agent/unified-submit" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/unified-submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/forms-library" class="nav-active">&#128193; Forms</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/agent/profile">&#128100; Profile</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<div class="wrap">
+  <div class="page-hdr">
+    <h1>📁 Forms & Resources</h1>
+    <p>Download and share forms with your clients via WhatsApp or Telegram</p>
+  </div>
+
+  <div class="filter-bar">
+    <select id="catFilter" onchange="filterForms()">
+      <option value="">All Categories</option>
+      <option value="General">General</option>
+      <option value="Sales">Sales</option>
+      <option value="Rental">Rental</option>
+      <option value="Legal">Legal</option>
+      <option value="Finance">Finance</option>
+      <option value="Other">Other</option>
+    </select>
+    <input type="text" id="searchInput" placeholder="🔍 Search forms..." onkeyup="filterForms()"
+      style="flex:2;padding:7px 11px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;min-width:160px">
+  </div>
+
+  {% if forms %}
+  <div class="form-grid" id="formGrid">
+    {% set icons = {'General':'📄','Sales':'🏠','Rental':'🔑','Legal':'⚖️','Finance':'💰','Other':'📎'} %}
+    {% for f in forms %}
+    <div class="form-card cat-{{ f.category }}" data-cat="{{ f.category }}" data-title="{{ f.title|lower }}">
+      <div class="form-icon">{{ icons.get(f.category, '📄') }}</div>
+      <div class="form-title">{{ f.title }}</div>
+      <div class="form-desc">{{ f.description or '' }}</div>
+      <div class="form-meta">
+        <span class="badge cat-{{ f.category }}">{{ f.category }}</span>
+        <span class="file-info">{{ f.filename.rsplit('.',1)[-1]|upper if '.' in f.filename else 'FILE' }} · {{ (f.file_size/1024)|round(1) }} KB</span>
+      </div>
+      <div class="action-row">
+        <a href="/agent/forms-library/view/{{ f.id }}" class="btn-action btn-view" target="_blank">👁 View</a>
+        <a href="/agent/forms-library/download/{{ f.id }}" class="btn-action btn-dl">⬇ Save</a>
+        <button class="btn-action btn-wa" onclick="openShare({{ f.id }}, '{{ f.title|replace("'","\\\\'")|e }}', 'wa')">💬 WhatsApp</button>
+        <button class="btn-action btn-tg" onclick="openShare({{ f.id }}, '{{ f.title|replace("'","\\\\'")|e }}', 'tg')">✈ Telegram</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <div style="font-size:44px;margin-bottom:12px">📭</div>
+    <p style="font-weight:600;font-size:15px;margin-bottom:6px">No forms available yet</p>
+    <p style="font-size:12px">Your admin will upload forms here for you to use.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Share Modal -->
+<div class="mo" id="moShare">
+  <div class="mb">
+    <h3>Share Form</h3>
+    <p id="shareFormTitle"></p>
+    <div id="shareStep1">
+      <a class="share-btn" onclick="pickChannel('wa')">
+        <div class="share-icon share-wa-bg">💬</div>
+        <div><div class="share-name">WhatsApp</div><div class="share-desc">Send download link via WhatsApp</div></div>
+      </a>
+      <a class="share-btn" onclick="pickChannel('tg')">
+        <div class="share-icon share-tg-bg">✈️</div>
+        <div><div class="share-name">Telegram</div><div class="share-desc">Send download link via Telegram</div></div>
+      </a>
+    </div>
+    <div class="ph-step" id="shareStep2">
+      <span class="back-lk" onclick="backToChannels()">← Back</span>
+      <div class="m-grp">
+        <label class="m-lbl" id="phLabel">Phone Number</label>
+        <input class="m-inp" id="phInput" type="tel" placeholder="e.g. 60112345678">
+      </div>
+      <div class="m-grp">
+        <label class="m-lbl">Message Preview</label>
+        <div id="msgPreview" style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px;font-size:11px;color:#555;line-height:1.6;max-height:80px;overflow:auto"></div>
+      </div>
+      <div class="mo-acts">
+        <button class="btn-sm2 btn-cancel" onclick="closeMo()">Cancel</button>
+        <button class="btn-sm2 btn-send-wa" id="sendBtn" onclick="doShare()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+  document.getElementById('moShare').addEventListener('click',function(e){if(e.target===this)closeMo();});
+});
+
+function filterForms(){
+  var cat = document.getElementById('catFilter').value.toLowerCase();
+  var q   = document.getElementById('searchInput').value.toLowerCase();
+  document.querySelectorAll('.form-card').forEach(function(c){
+    var matchCat = !cat || c.dataset.cat.toLowerCase() === cat;
+    var matchQ   = !q || c.dataset.title.includes(q) || c.textContent.toLowerCase().includes(q);
+    c.style.display = (matchCat && matchQ) ? '' : 'none';
+  });
+}
+
+var _shareId = null, _shareTitle = '', _shareChannel = '';
+var BASE_URL = window.location.origin;
+
+function openShare(id, title, channel){
+  _shareId = id; _shareTitle = title;
+  document.getElementById('shareFormTitle').textContent = title;
+  document.getElementById('shareStep1').style.display = 'block';
+  document.getElementById('shareStep2').classList.remove('open');
+  document.getElementById('phInput').value = '';
+  document.getElementById('moShare').classList.add('open');
+  if(channel) pickChannel(channel);
+}
+function pickChannel(ch){
+  _shareChannel = ch;
+  var link = BASE_URL + '/agent/forms-library/view/' + _shareId;
+  var msg  = 'Hi, please find the form "' + _shareTitle + '" at the link below. You can view or download it directly.\\n\\n' + link;
+  document.getElementById('phLabel').textContent = ch==='wa' ? 'WhatsApp Number' : 'Telegram Phone / Username';
+  document.getElementById('msgPreview').textContent = msg;
+  var btn = document.getElementById('sendBtn');
+  btn.className = 'btn-sm2 ' + (ch==='wa' ? 'btn-send-wa' : 'btn-send-tg');
+  btn.textContent = ch==='wa' ? '💬 Open WhatsApp' : '✈ Open Telegram';
+  document.getElementById('shareStep1').style.display = 'none';
+  document.getElementById('shareStep2').classList.add('open');
+}
+function backToChannels(){
+  document.getElementById('shareStep1').style.display = 'block';
+  document.getElementById('shareStep2').classList.remove('open');
+}
+function doShare(){
+  var link = BASE_URL + '/agent/forms-library/view/' + _shareId;
+  var msg  = encodeURIComponent('Hi, please find the form "' + _shareTitle + '" at the link below.\\n\\n' + link);
+  var ph   = document.getElementById('phInput').value.replace(/\\D/g,'');
+  var url;
+  if(_shareChannel === 'wa'){
+    url = ph ? 'https://wa.me/' + ph + '?text=' + msg : 'https://wa.me/?text=' + msg;
+  } else {
+    url = ph ? 'https://t.me/' + ph + '?text=' + msg : 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + msg;
+  }
+  window.open(url, '_blank');
+  closeMo();
+}
+function closeMo(){ document.getElementById('moShare').classList.remove('open'); }
+</script>
+</body>
+</html>
+"""
+
+
+# ── FLASK ROUTES ────────────────────────────────────────────────
+
+@app.route("/admin/forms-library")
+def admin_forms_library():
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+    init_forms_library_table()
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    forms = conn.execute(
+        "SELECT * FROM forms_library ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return render_template_string(
+        ADMIN_FORMS_LIBRARY_TEMPLATE,
+        forms=forms,
+    )
+
+
+@app.route("/admin/forms-library/upload", methods=["POST"])
+def admin_forms_library_upload():
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+    title       = request.form.get("title", "").strip()
+    category    = request.form.get("category", "General")
+    description = request.form.get("description", "").strip()
+    file        = request.files.get("form_file")
+
+    if not title:
+        flash("Please enter a title for the form.", "error")
+        return redirect("/admin/forms-library")
+    if not file or not file.filename:
+        flash("Please select a file to upload.", "error")
+        return redirect("/admin/forms-library")
+
+    ALLOWED = {"pdf","doc","docx","xlsx","xls","png","jpg","jpeg"}
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ALLOWED:
+        flash(f"File type .{ext} not allowed. Use PDF, Word, Excel or image.", "error")
+        return redirect("/admin/forms-library")
+
+    filename    = secure_filename(file.filename)
+    import uuid as _uuid
+    unique_name = f"{_uuid.uuid4().hex[:8]}_{filename}"
+    upload_dir  = os.path.join(app.config["UPLOAD_FOLDER"], "forms")
+    os.makedirs(upload_dir, exist_ok=True)
+    filepath    = os.path.join(upload_dir, unique_name)
+    file.save(filepath)
+    file_size   = os.path.getsize(filepath)
+
+    init_forms_library_table()
+    conn = get_db_connection()
+    conn.execute(
+        """INSERT INTO forms_library (title, description, category, filename, filepath, file_type, file_size, uploaded_by)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (title, description, category, unique_name, filepath, ext, file_size, session["user_id"])
+    )
+    conn.commit()
+    conn.close()
+    flash(f"✅ '{title}' uploaded successfully.", "success")
+    return redirect("/admin/forms-library")
+
+
+@app.route("/admin/forms-library/download/<int:form_id>")
+def admin_forms_library_download(form_id):
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    form = conn.execute("SELECT * FROM forms_library WHERE id=?", (form_id,)).fetchone()
+    conn.close()
+    if not form or not os.path.exists(form["filepath"]):
+        flash("File not found.", "error")
+        return redirect("/admin/forms-library")
+    return send_file(form["filepath"], as_attachment=True, download_name=form["filename"])
+
+
+@app.route("/admin/forms-library/toggle/<int:form_id>")
+def admin_forms_library_toggle(form_id):
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE forms_library SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
+        (form_id,)
+    )
+    conn.commit()
+    conn.close()
+    flash("Form visibility updated.", "success")
+    return redirect("/admin/forms-library")
+
+
+@app.route("/admin/forms-library/delete/<int:form_id>")
+def admin_forms_library_delete(form_id):
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    form = conn.execute("SELECT * FROM forms_library WHERE id=?", (form_id,)).fetchone()
+    if form:
+        try:
+            if os.path.exists(form["filepath"]):
+                os.remove(form["filepath"])
+        except Exception:
+            pass
+        conn.execute("DELETE FROM forms_library WHERE id=?", (form_id,))
+        conn.commit()
+        flash(f"Form '{form['title']}' deleted.", "success")
+    conn.close()
+    return redirect("/admin/forms-library")
+
+
+# ── AGENT: View Forms Library ────────────────────────────────────
+
+@app.route("/agent/forms-library")
+def agent_forms_library():
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+    init_forms_library_table()
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    forms = conn.execute(
+        "SELECT * FROM forms_library WHERE is_active=1 ORDER BY category, title"
+    ).fetchall()
+    conn.close()
+    return render_template_string(
+        AGENT_FORMS_LIBRARY_TEMPLATE,
+        forms=forms,
+    )
+
+
+@app.route("/agent/forms-library/view/<int:form_id>")
+def agent_forms_library_view(form_id):
+    """View/open file inline (for PDFs, images) — no login required so sharing link works."""
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    form = conn.execute(
+        "SELECT * FROM forms_library WHERE id=? AND is_active=1", (form_id,)
+    ).fetchone()
+    conn.close()
+    if not form or not os.path.exists(form["filepath"]):
+        return "Form not found or no longer available.", 404
+    mime_map = {
+        "pdf": "application/pdf",
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "doc": "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xls": "application/vnd.ms-excel",
+    }
+    mime = mime_map.get(form["file_type"], "application/octet-stream")
+    return send_file(form["filepath"], mimetype=mime, as_attachment=False,
+                     download_name=form["filename"])
+
+
+@app.route("/agent/forms-library/download/<int:form_id>")
+def agent_forms_library_download(form_id):
+    """Force-download file."""
+    if "user_id" not in session or session["user_role"] != "agent":
+        return redirect("/login")
+    conn = get_db_connection()
+    conn.row_factory = sqlite3.Row
+    form = conn.execute(
+        "SELECT * FROM forms_library WHERE id=? AND is_active=1", (form_id,)
+    ).fetchone()
+    conn.close()
+    if not form or not os.path.exists(form["filepath"]):
+        flash("File not found.", "error")
+        return redirect("/agent/forms-library")
+    return send_file(form["filepath"], as_attachment=True, download_name=form["filename"])
+
+# ══════════════════════════════════════════════════════════════════
+# END FORMS LIBRARY
+# ══════════════════════════════════════════════════════════════════
+
+
 if __name__ == "__main__":
     print("🚀 Starting Real Estate Sales System...")
     print("Initializing database...")

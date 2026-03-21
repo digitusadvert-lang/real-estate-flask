@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Submission Rejected</title>
+<style>
+*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.box{background:white;border-radius:12px;padding:40px;max-width:480px;width:90%;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+.icon{font-size:48px;margin-bottom:16px}
+h1{font-size:20px;color:#dc3545;margin:0 0 10px}
+p{font-size:14px;color:#666;margin:0 0 20px;line-height:1.6}
+.reason{background:#f8d7da;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;font-size:13px;color:#721c24;text-align:left;margin-bottom:20px}
+.btn{display:inline-block;padding:10px 24px;background:#2563eb;color:white;border-radius:7px;text-decoration:none;font-weight:700;font-size:14px}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="icon">❌</div>
+  <h1>Submission Rejected</h1>
+  <p>Your listing submission has been reviewed and rejected by the admin.</p>
+  {% if rejection_reason %}
+  <div class="reason"><strong>Reason:</strong> {{ rejection_reason }}</div>
+  {% endif %}
+  <a href="/agent/unified-submissions" class="btn">← Back to Submissions</a>
+</div>
+</body>
+</html>

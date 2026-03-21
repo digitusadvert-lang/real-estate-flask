@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Documents – Listing #{{ listing_id }}</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+.flash-ok{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
+.flash-err{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
+.card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.card-title{font-size:14px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.badge{padding:4px 10px;border-radius:10px;font-size:11px;font-weight:700}
+.st-draft{background:#e2e3e5;color:#383d41}
+.st-submitted{background:#cce5ff;color:#004085}
+.st-approved{background:#d4edda;color:#155724}
+.st-rejected{background:#f8d7da;color:#721c24}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:4px}
+.info-item label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:3px}
+.info-item span{font-size:13px;font-weight:600;color:#1a2a3a}
+.act-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #f0f0f0}
+.btn{display:inline-block;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:none;cursor:pointer;white-space:nowrap}
+.btn-back{background:#6c757d;color:white}
+.btn-approve{background:#28a745;color:white}
+.btn-reject{background:#dc3545;color:white}
+.btn-draft{background:#ffc107;color:#333}
+.status-notice{border-radius:6px;padding:10px 14px;font-size:12px;line-height:1.6;margin-bottom:14px}
+.notice-info{background:#e8f4fd;border:1px solid #b3d4f0;color:#1a4a6a}
+.notice-warn{background:#fef9c3;border:1px solid #fde68a;color:#854d0e}
+.doc-grid{display:flex;flex-direction:column;gap:8px}
+.doc-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f8f9fa;border-radius:8px;border:1px solid #e5e7eb}
+.doc-icon{font-size:24px;flex-shrink:0}
+.doc-info{flex:1;min-width:0}
+.doc-name{font-weight:700;font-size:13px;color:#1a2a3a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-meta{font-size:11px;color:#888;margin-top:2px}
+.doc-actions{display:flex;gap:6px;flex-shrink:0}
+.btn-sm{display:inline-block;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap}
+.btn-view{background:#007bff;color:white}
+.empty-docs{text-align:center;padding:40px;color:#888}
+.empty-docs .empty-icon{font-size:40px;margin-bottom:10px}
+@media(max-width:640px){.act-row{flex-direction:column}.btn{width:100%;text-align:center}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">📎 Documents – Listing #{{ listing_id }}</div>
+  <div class="topbar-right">
+    <span style="font-size:13px">Admin</span>
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+</div>
+
+<div class="wrap">
+
+{% if success_msg %}
+<div class="flash flash-ok">✅ {{ success_msg }}</div>
+{% endif %}
+{% if error_msg %}
+<div class="flash flash-err">❌ {{ error_msg }}</div>
+{% endif %}
+
+<!-- Listing Info -->
+<div class="card">
+  <div class="card-title">
+    📋 Listing #{{ listing_id }}
+    <span class="badge st-{{ status }}">{{ status|upper }}</span>
+  </div>
+  <div class="info-grid">
+    <div class="info-item"><label>Agent</label><span>{{ agent_name }} <small style="color:#888">({{ agent_email }})</small></span></div>
+    <div class="info-item"><label>Customer</label><span>{{ customer_name }}{% if customer_phone %} · {{ customer_phone }}{% endif %}</span></div>
+    <div class="info-item"><label>Property</label><span>{{ property_address }}</span></div>
+    <div class="info-item"><label>Sale Price</label><span style="color:#16a34a;font-weight:800">RM{{ "{:,.2f}".format(sale_price|float) }}</span></div>
+    <div class="info-item"><label>Commission</label><span style="color:#7c3aed;font-weight:800">RM{{ "{:,.2f}".format(commission_amount|float) }}</span></div>
+    <div class="info-item"><label>Submitted</label><span>{{ submitted_at[:10] if submitted_at else '—' }}</span></div>
+  </div>
+
+  <!-- Action buttons -->
+  <div class="act-row">
+    <a href="/admin/dashboard" class="btn btn-back">← Back to Dashboard</a>
+    {% if status == 'submitted' %}
+    <a href="/admin/approve/{{ listing_id }}" class="btn btn-approve">✅ Approve</a>
+    <a href="/admin/reject/{{ listing_id }}" class="btn btn-reject"
+       onclick="return confirm('Reject this submission?')">✕ Reject</a>
+    {% elif status == 'draft' or status == 'rejected' %}
+    <a href="/admin/approve/{{ listing_id }}" class="btn btn-approve">✅ Approve</a>
+    {% elif status == 'approved' %}
+    <span style="color:#155724;font-weight:700;font-size:13px;padding:8px">✅ Already Approved</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Document Reupload Status -->
+<div class="card">
+  <div class="card-title">📤 Document Status</div>
+
+  {% if status == 'submitted' %}
+  <div class="status-notice notice-info">
+    <strong>Under Review</strong> — Submission is pending approval. Agent cannot modify documents at this stage.<br>
+    To allow the agent to reupload documents, move the listing back to Draft.
+  </div>
+  <form method="POST" action="/admin/move-to-draft/{{ listing_id }}" style="margin-top:8px">
+    <button type="submit" class="btn btn-draft"
+      onclick="return confirm('Move to draft? Agent will be notified they can reupload documents.')">
+      📝 Move to Draft (Allow Reupload)
+    </button>
+  </form>
+  {% elif status == 'draft' or status == 'rejected' %}
+  <div class="status-notice notice-warn">
+    Agent can currently add or replace documents for this listing.
+  </div>
+  {% elif status == 'approved' %}
+  <div class="status-notice flash-ok" style="border-radius:6px;padding:10px 14px;font-size:12px">
+    ✅ Approved — document modifications are closed.
+  </div>
+  {% endif %}
+</div>
+
+<!-- Uploaded Documents -->
+<div class="card">
+  <div class="card-title">📁 Uploaded Documents ({{ document_count }})</div>
+
+  {% if documents %}
+  <div class="doc-grid">
+    {% for doc in documents %}
+    {% set icons = {'pdf':'📄','jpg':'🖼️','jpeg':'🖼️','png':'🖼️','doc':'📝','docx':'📝'} %}
+    <div class="doc-item">
+      <div class="doc-icon">{{ icons.get(doc.file_type or '', '📎') }}</div>
+      <div class="doc-info">
+        <div class="doc-name">{{ doc.filename }}</div>
+        <div class="doc-meta">
+          {{ doc.file_type|upper if doc.file_type else 'FILE' }}
+          {% if doc.file_size %} · {{ "%.1f"|format(doc.file_size/1024) }} KB{% endif %}
+          {% if doc.notes %} · {{ doc.notes }}{% endif %}
+          {% if doc.uploaded_at %} · {{ doc.uploaded_at[:10] }}{% endif %}
+        </div>
+      </div>
+      <div class="doc-actions">
+        <a href="/view-document/{{ doc.id }}" class="btn-sm btn-view" target="_blank">👁 View</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-docs">
+    <div class="empty-icon">📂</div>
+    <p style="font-weight:600;color:#555">No documents uploaded</p>
+    <p style="font-size:12px">The agent has not uploaded any supporting documents yet.</p>
+  </div>
+  {% endif %}
+</div>
+
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Export Data – Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:960px;margin:0 auto;padding:16px}
+
+/* export cards grid */
+.export-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:20px}
+.export-card{background:white;border-radius:10px;padding:22px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);text-align:center;border-top:4px solid #ddd;transition:box-shadow .2s}
+.export-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.12)}
+.export-card.comm{border-top-color:#7c3aed}
+.export-card.agents{border-top-color:#2563eb}
+.export-card.payments{border-top-color:#16a34a}
+.export-card.listings{border-top-color:#ea580c}
+.export-card.full{border-top-color:#dc3545}
+.export-icon{font-size:32px;margin-bottom:10px}
+.export-card h3{font-size:14px;font-weight:700;margin:0 0 6px;color:#1a2a3a}
+.export-card p{font-size:12px;color:#888;margin:0 0 14px;line-height:1.5}
+.btn-export{display:inline-block;padding:8px 20px;border-radius:7px;font-size:13px;font-weight:700;text-decoration:none;color:white;background:#2563eb;transition:background .15s}
+.btn-export:hover{background:#1d4ed8}
+.btn-export.red{background:#dc3545}.btn-export.red:hover{background:#b91c1c}
+.btn-export.green{background:#16a34a}.btn-export.green:hover{background:#15803d}
+.btn-export.orange{background:#ea580c}.btn-export.orange:hover{background:#c2410c}
+.btn-export.purple{background:#7c3aed}.btn-export.purple:hover{background:#6d28d9}
+.btn-export.grey{background:#6c757d}
+
+/* stats section */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
+.scard h3{margin:0 0 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888}
+.scard-val{font-size:1.4rem;font-weight:800}
+
+/* notes box */
+.notes-card{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.notes-card h3{font-size:13px;font-weight:700;margin:0 0 10px;color:#1a2a3a}
+.notes-card ul{margin:0;padding-left:18px}
+.notes-card li{font-size:12px;color:#666;margin-bottom:5px;line-height:1.5}
+
+/* performance section */
+.perf-card{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.perf-title{font-size:13px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0}
+.rank-summary{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.rank-chip{padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700}
+.tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid #f0f0f0}
+table{width:100%;border-collapse:collapse;background:white;min-width:500px}
+th{background:#2c3e50;color:white;padding:9px 12px;text-align:left;font-size:11px;white-space:nowrap;font-weight:700;text-transform:uppercase}
+td{padding:9px 12px;border-bottom:1px solid #f5f5f5;font-size:13px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafbfc}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">📤 Export Data</div>
+  <div class="topbar-right">
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data" class="nav-active">📤 Export</a>
+</div>
+
+<div class="wrap">
+
+<!-- Quick Stats -->
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#2563eb">
+    <h3>Total Agents</h3>
+    <div class="scard-val" style="color:#2563eb">{{ stats.total_agents or 0 }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#7c3aed">
+    <h3>Commissions</h3>
+    <div class="scard-val" style="color:#7c3aed">RM{{ "{:,.0f}".format((stats.total_commissions or 0)|float) }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#16a34a">
+    <h3>Total Sales</h3>
+    <div class="scard-val" style="color:#16a34a">RM{{ "{:,.0f}".format((stats.total_sales or 0)|float) }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#ea580c">
+    <h3>Approved Listings</h3>
+    <div class="scard-val" style="color:#ea580c">{{ stats.approved or 0 }}</div>
+  </div>
+</div>
+
+<!-- Export Cards -->
+<h2 style="font-size:15px;font-weight:700;margin:0 0 12px">📥 Download Reports</h2>
+<div class="export-grid">
+  <div class="export-card comm">
+    <div class="export-icon">💰</div>
+    <h3>Commissions</h3>
+    <p>All commission records — approved, pending, rejected</p>
+    <a href="/admin/export-data?type=commissions" class="btn-export purple">⬇ Download CSV</a>
+  </div>
+  <div class="export-card agents">
+    <div class="export-icon">👥</div>
+    <h3>Agents</h3>
+    <p>Agent info, ranks, commission rates and performance</p>
+    <a href="/admin/export-data?type=agents" class="btn-export">⬇ Download CSV</a>
+  </div>
+  <div class="export-card payments">
+    <div class="export-icon">💳</div>
+    <h3>Payments</h3>
+    <p>All payment transaction history and vouchers</p>
+    <a href="/admin/export-data?type=payments" class="btn-export green">⬇ Download CSV</a>
+  </div>
+  <div class="export-card listings">
+    <div class="export-icon">🏠</div>
+    <h3>Listings</h3>
+    <p>All property submissions and their statuses</p>
+    <a href="/admin/export-data?type=listings" class="btn-export orange">⬇ Download CSV</a>
+  </div>
+  <div class="export-card full">
+    <div class="export-icon">💾</div>
+    <h3>Full Database</h3>
+    <p>Complete backup — all tables in SQL + CSV format</p>
+    <a href="/admin/export-full-db" class="btn-export red" onclick="return confirm('Export full database? This may take a moment.')">⬇ Full Export</a>
+  </div>
+</div>
+
+<!-- Notes -->
+<div class="notes-card">
+  <h3>📋 Export Notes</h3>
+  <ul>
+    <li>All CSV files are encoded in UTF-8 and can be opened with Excel or Google Sheets</li>
+    <li>Commission amounts shown are gross — agent payout is calculated at approval time using TAIKO formula</li>
+    <li>Full database export includes all tables: users, property_listings, unified_submissions, documents and more</li>
+    <li>Exports reflect current data at the time of download</li>
+  </ul>
+</div>
+
+<!-- Agent Performance Summary -->
+<div class="perf-card">
+  <div class="perf-title">🏆 Agent Rank Summary</div>
+  <div class="rank-summary">
+    {% for rank, color in [('REN','#6c757d'),('Assoc REN','#28a745'),('Elite REN','#007bff'),('TL','#ffc107'),('ATL','#dc3545')] %}
+    <span class="rank-chip" style="background:{{ color }}1a;color:{{ color }};border:1px solid {{ color }}40">
+      {{ rank }}: {{ agents | selectattr('agent_rank','equalto',rank) | list | length }}
+    </span>
+    {% endfor %}
+  </div>
+  {% if agents %}
+  <div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Agent</th><th>Rank</th><th>Cumulative Gross</th><th>Approved Comm</th><th>Total Listings</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in agents %}
+    <tr>
+      <td style="color:#888;font-size:11px">{{ loop.index }}</td>
+      <td><strong>{{ a.name }}</strong><br><span style="font-size:11px;color:#888">{{ a.email }}</span></td>
+      <td><span style="background:#f0f0f0;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">{{ a.agent_rank or 'REN' }}</span></td>
+      <td style="font-weight:700;color:#1a3a2a">RM{{ "{:,.0f}".format((a.cumulative_gross or 0)|float) }}</td>
+      <td style="color:#7c3aed">RM{{ "{:,.0f}".format((a.total_commission or 0)|float) }}</td>
+      <td style="text-align:center">{{ a.total_listings or 0 }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:20px;color:#888;font-size:13px">No agents yet</div>
+  {% endif %}
+</div>
+
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+</script>
+</body>
+</html>

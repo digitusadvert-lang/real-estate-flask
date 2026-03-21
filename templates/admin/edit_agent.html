@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Edit Agent — {{ agent.name }}</title>
+    <style>
+    *,*::before,*::after{box-sizing:border-box}
+    html{-webkit-text-size-adjust:100%}
+    body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+    .topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+    .topbar-title{font-size:1rem;font-weight:700}
+    .hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+    .nav-bar{background:white;padding:8px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+    .nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap}
+    .nav-bar a:hover{background:#f0f7ff}
+    .nav-bar a.nav-logout{color:#dc3545}
+    .wrap{max-width:860px;margin:0 auto;padding:16px}
+    .card{background:white;border-radius:10px;padding:22px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+    .card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#7a8fa0;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #eee}
+    .info-box{background:#e8f4ff;padding:14px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;line-height:1.8;border-left:4px solid #007bff}
+    .info-box p{margin:0 0 4px}
+    .form-group{margin-bottom:16px}
+    label{display:block;margin-bottom:5px;font-weight:600;color:#444;font-size:13px}
+    input[type=text],input[type=email],input[type=password],input[type=number],select,textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;background:#fafafa}
+    input:focus,select:focus{outline:none;border-color:#007bff;box-shadow:0 0 0 2px rgba(0,123,255,.12);background:white}
+    small{color:#777;font-size:12px;display:block;margin-top:4px}
+    .btn-primary{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600}
+    .btn-secondary{background:#6c757d;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;text-decoration:none;display:inline-block}
+    .flash-success{background:#d4edda;color:#155724;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;border-left:4px solid #28a745}
+    .flash-error{background:#f8d7da;color:#721c24;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;border-left:4px solid #dc3545}
+    /* Rank section */
+    .rank-pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+    .rank-pill{padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid transparent;transition:all .2s}
+    .rank-pill.active{border-color:#0c2340;box-shadow:0 0 0 3px rgba(12,35,64,.15)}
+    .rp-REN{background:#ede8ff;color:#4a1ea8}
+    .rp-AssocREN{background:#dbeeff;color:#0055b3}
+    .rp-EliteREN{background:#fff4cc;color:#7a4f00}
+    .rp-TL{background:#d6f5e3;color:#0a5c30}
+    .rp-ATL{background:#fff0e0;color:#7a3300}
+    .rank-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .rank-field{background:#f8f9fa;padding:14px;border-radius:7px;border-left:4px solid #007bff}
+    .rank-field:nth-child(2){border-left-color:#28a745}
+    .rank-field:nth-child(3){border-left-color:#6f42c1;grid-column:1/-1}
+    .pct-display{display:inline-block;font-family:monospace;font-size:18px;font-weight:800;color:#0c2340;background:#e8f4ff;padding:2px 10px;border-radius:6px;margin-top:4px}
+    .prog-bg{background:#e9ecef;border-radius:999px;height:8px;margin-top:6px}
+    .prog-fg{height:8px;border-radius:999px;background:linear-gradient(90deg,#007bff,#6f42c1);transition:width .4s}
+    .demotion-warn{display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:7px;padding:10px 14px;font-size:13px;color:#856404;margin-top:12px}
+    .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .rh-table{width:100%;border-collapse:collapse;font-size:12px;min-width:400px}
+    .rh-table th{background:#0c2340;color:white;padding:7px 10px;text-align:left}
+    .rh-table td{padding:6px 10px;border-bottom:1px solid #eee}
+    .badge-system{background:#e9ecef;color:#333;padding:1px 7px;border-radius:4px;font-size:10px}
+    .badge-admin{background:#fff3cd;color:#856404;padding:1px 7px;border-radius:4px;font-size:10px}
+    .rh-toggle{font-size:13px;color:#007bff;cursor:pointer;background:none;border:none;padding:0;margin-top:14px}
+    .rh-table-wrap{display:none;margin-top:10px}
+    @media(max-width:640px){
+        .hamburger{display:block}
+        .nav-bar{display:none;flex-direction:column;align-items:stretch;padding:6px 12px}
+        .nav-bar.open{display:flex}
+        .nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}
+        .wrap{padding:10px}
+        .rank-grid{grid-template-columns:1fr}
+        .rank-field:nth-child(3){grid-column:1}
+    }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <div class="topbar-title">&#9999; Edit Agent</div>
+    <button class="hamburger" onclick="toggleNav()">&#9776;</button>
+</div>
+<div class="nav-bar" id="mainNav">
+    <a href="/admin/dashboard">&#128202; Dashboard</a>
+    <a href="/admin/agents">&#128101; Agents</a>
+    <a href="/admin/agent-hierarchy">&#127963; Hierarchy</a>
+    <a href="/admin/agent-performance">&#128200; Performance</a>
+    <a href="/admin/commission-calculator">&#9889; Calc</a>
+    <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<div class="wrap">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+            <div class="flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <!-- Agent snapshot -->
+    <div class="info-box">
+        <p><strong>Agent ID:</strong> #{{ agent.id }} &nbsp;|&nbsp; <strong>Email:</strong> {{ agent.email }} &nbsp;|&nbsp; <strong>Joined:</strong> {{ agent.created_at[:10] if agent.created_at else 'N/A' }}</p>
+        <p><strong>Current Rank:</strong>
+            {% set r = agent.agent_rank or 'REN' %}
+            {% if r=='ATL' %}&#128081;{% elif r=='TL' %}&#127973;{% elif r=='Elite REN' %}&#11088;{% elif r=='Assoc REN' %}&#128309;{% else %}&#128995;{% endif %}
+            <strong>{{ r }}</strong> &nbsp;·&nbsp; <strong>Payout:</strong> {{ agent.commission_rate|int if agent.commission_rate else 70 }}% &nbsp;·&nbsp;
+            <strong>Cumulative Gross:</strong> RM{{ "{:,.2f}".format(agent.cumulative_gross or 0) }}
+        </p>
+        <p><strong>Upline:</strong> {% if agent.upline_name %}{{ agent.upline_name }}{% else %}<em>None (top level)</em>{% endif %}</p>
+    </div>
+
+    <!-- Basic Info -->
+    <div class="card">
+        <div class="card-title">&#128100; Basic Information</div>
+        <form method="POST">
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" name="name" value="{{ agent.name }}" required>
+            </div>
+            <div class="form-group">
+                <label>Email Address</label>
+                <input type="email" name="email" value="{{ agent.email }}" required>
+            </div>
+            <div class="form-group">
+                <label>Direct Upline</label>
+                <select name="upline_id">
+                    <option value="">-- No Direct Upline (Top Level) --</option>
+                    {% for a in all_agents %}
+                        {% if a.id != agent.id %}
+                        <option value="{{ a.id }}" {% if a.id == agent.upline_id %}selected{% endif %}>
+                            {{ a.name }} ({{ a.email }}) — {{ a.agent_rank or 'REN' }}
+                        </option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <small>Upline&#39;s rank determines the override gap they earn on this agent&#39;s team gross.</small>
+            </div>
+            <div class="form-group">
+                <label>Password <span style="font-weight:400;color:#aaa">(leave blank to keep current)</span></label>
+                <input type="password" name="password" placeholder="Enter new password to change">
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+                <button type="submit" class="btn-primary">&#128190; Save Basic Info</button>
+                <a href="/admin/agents" class="btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Rank Override -->
+    <div class="card" id="rank-section">
+        <div class="card-title">&#127973; TAIKO EA Rank Override</div>
+        <div class="rank-pills">
+            <span class="rank-pill rp-REN {% if (agent.agent_rank or 'REN')=='REN' %}active{% endif %}" onclick="selectRank('REN',70,0,this)">&#128995; REN 70%</span>
+            <span class="rank-pill rp-AssocREN {% if agent.agent_rank=='Assoc REN' %}active{% endif %}" onclick="selectRank('Assoc REN',75,30000,this)">&#128309; Assoc REN 75%</span>
+            <span class="rank-pill rp-EliteREN {% if agent.agent_rank=='Elite REN' %}active{% endif %}" onclick="selectRank('Elite REN',80,90000,this)">&#11088; Elite REN 80%</span>
+            <span class="rank-pill rp-TL {% if agent.agent_rank=='TL' %}active{% endif %}" onclick="selectRank('TL',85,210000,this)">&#127973; TL 85%</span>
+            <span class="rank-pill rp-ATL {% if agent.agent_rank=='ATL' %}active{% endif %}" onclick="selectRank('ATL',90,450000,this)">&#128081; ATL 90%</span>
+        </div>
+        <form method="POST" action="/admin/set-agent-rank" onsubmit="return confirmRankChange()">
+            <input type="hidden" name="agent_id" value="{{ agent.id }}">
+            <input type="hidden" name="redirect_to" value="/admin/edit-agent/{{ agent.id }}">
+            <div class="rank-grid">
+                <div class="rank-field">
+                    <label>New Rank</label>
+                    <select name="new_rank" id="rank-select" onchange="onRankSelectChange()">
+                        <option value="REN" {% if (agent.agent_rank or 'REN')=='REN' %}selected{% endif %}>&#128995; REN</option>
+                        <option value="Assoc REN" {% if agent.agent_rank=='Assoc REN' %}selected{% endif %}>&#128309; Associate REN</option>
+                        <option value="Elite REN" {% if agent.agent_rank=='Elite REN' %}selected{% endif %}>&#11088; Elite REN</option>
+                        <option value="TL" {% if agent.agent_rank=='TL' %}selected{% endif %}>&#127973; Team Leader</option>
+                        <option value="ATL" {% if agent.agent_rank=='ATL' %}selected{% endif %}>&#128081; Associate Team Leader</option>
+                    </select>
+                    <div style="margin-top:6px">Payout rate: <span class="pct-display" id="pct-display">{{ agent.commission_rate|int if agent.commission_rate else 70 }}%</span></div>
+                </div>
+                <div class="rank-field">
+                    <label>Cumulative Gross (RM)</label>
+                    <input type="number" name="cumulative_gross" id="cumul-input" value="{{ agent.cumulative_gross or 0 }}" step="0.01" min="0">
+                    <small id="threshold-hint"></small>
+                    <div class="prog-bg"><div class="prog-fg" id="rank-progress-bar" style="width:0%"></div></div>
+                    <small id="progress-label" style="margin-top:3px"></small>
+                </div>
+                <div class="rank-field">
+                    <label>Reason <span style="font-weight:400;color:#aaa">(required)</span></label>
+                    <input type="text" name="reason" id="rank-reason" placeholder="e.g. Experienced hire from previous agency" required>
+                </div>
+            </div>
+            <div class="demotion-warn" id="demotion-warn">
+                &#9888; <strong>Demotion detected.</strong> This will lower the agent&#39;s rank from <span id="warn-from"></span> to <span id="warn-to"></span>.
+            </div>
+            <div style="margin-top:14px">
+                <button type="submit" class="btn-primary">&#10003; Apply Rank Change</button>
+            </div>
+        </form>
+
+        <button class="rh-toggle" onclick="toggleHistory()">&#128203; View rank change history</button>
+        <div class="rh-table-wrap" id="rh-wrap"><em style="color:#aaa;font-size:13px">Loading&#8230;</em></div>
+    </div>
+
+</div><!-- /wrap -->
+
+<script>
+const RANKS=['REN','Assoc REN','Elite REN','TL','ATL'];
+const RANK_INFO={'REN':{pct:70,min:0,max:30000},'Assoc REN':{pct:75,min:30000,max:90000},'Elite REN':{pct:80,min:90000,max:210000},'TL':{pct:85,min:210000,max:450000},'ATL':{pct:90,min:450000,max:null}};
+const currentRank="{{ agent.agent_rank or 'REN' }}";
+
+function selectRank(rankName,pct,min,el){
+    document.getElementById('rank-select').value=rankName;
+    updateDisplay(rankName);
+    document.querySelectorAll('.rank-pill').forEach(p=>p.classList.remove('active'));
+    el.classList.add('active');
+}
+function onRankSelectChange(){
+    const v=document.getElementById('rank-select').value;
+    updateDisplay(v);
+    const rkey=v.replace(' ','');
+    document.querySelectorAll('.rank-pill').forEach(p=>{p.classList.remove('active');if(p.classList.contains('rp-'+rkey))p.classList.add('active');});
+}
+function updateDisplay(rankName){
+    const info=RANK_INFO[rankName]; if(!info)return;
+    document.getElementById('pct-display').textContent=info.pct+'%';
+    const hint=document.getElementById('threshold-hint');
+    hint.textContent=info.max?'Min RM '+info.min.toLocaleString()+' · Max RM '+info.max.toLocaleString():'Min RM '+info.min.toLocaleString()+' (top rank)';
+    const cumul=parseFloat(document.getElementById('cumul-input').value)||0;
+    const bar=document.getElementById('rank-progress-bar');
+    const label=document.getElementById('progress-label');
+    if(info.max){
+        const pct=Math.min(100,((cumul-info.min)/(info.max-info.min))*100);
+        bar.style.width=Math.max(0,pct).toFixed(1)+'%';
+        const rem=Math.max(0,info.max-cumul);
+        label.textContent=rem>0?'RM '+rem.toLocaleString('en-MY',{minimumFractionDigits:2})+' to next rank':'✓ Next rank threshold reached';
+    }else{bar.style.width='100%';label.textContent='🏆 Top rank';}
+    const curIdx=RANKS.indexOf(currentRank),newIdx=RANKS.indexOf(rankName);
+    const w=document.getElementById('demotion-warn');
+    if(newIdx<curIdx){document.getElementById('warn-from').textContent=currentRank+' ('+RANK_INFO[currentRank].pct+'%)';document.getElementById('warn-to').textContent=rankName+' ('+info.pct+'%)';w.style.display='block';}
+    else w.style.display='none';
+}
+function confirmRankChange(){
+    const newRank=document.getElementById('rank-select').value;
+    const reason=document.getElementById('rank-reason').value.trim();
+    if(!reason){alert('Please enter a reason.');return false;}
+    const ci=RANKS.indexOf(currentRank),ni=RANKS.indexOf(newRank);
+    if(ni<ci)return confirm('⚠️ Demoting from '+currentRank+' to '+newRank+'. Are you sure?');
+    if(newRank===currentRank)return confirm('Rank unchanged. Only cumulative gross will update. Continue?');
+    return true;
+}
+document.getElementById('cumul-input').addEventListener('input',()=>updateDisplay(document.getElementById('rank-select').value));
+window.addEventListener('DOMContentLoaded',()=>{updateDisplay(document.getElementById('rank-select').value);});
+
+let historyLoaded=false;
+function toggleHistory(){
+    const wrap=document.getElementById('rh-wrap');
+    if(wrap.style.display==='block'){wrap.style.display='none';return;}
+    wrap.style.display='block';
+    if(historyLoaded)return;
+    historyLoaded=true;
+    fetch('/admin/agent-rank-history/{{ agent.id }}')
+    .then(r=>r.json())
+    .then(data=>{
+        if(!data.history||data.history.length===0){wrap.innerHTML='<em style="color:#aaa;font-size:13px">No rank changes recorded yet.</em>';return;}
+        wrap.innerHTML='<div class="tbl-wrap"><table class="rh-table"><thead><tr><th>Date</th><th>Change</th><th>Rate</th><th>Cumul. Gross</th><th>By</th><th>Reason</th></tr></thead><tbody>'+
+        data.history.map(h=>'<tr><td>'+(h.promoted_at||'').slice(0,10)+'</td><td><strong>'+h.old_rank+'</strong> → <strong>'+h.new_rank+'</strong></td><td>'+h.old_pct+'% → '+h.new_pct+'%</td><td>RM '+parseFloat(h.cumulative_gross_at_promotion||0).toLocaleString('en-MY',{minimumFractionDigits:2})+'</td><td><span class="badge-'+h.promoted_by+'">'+(h.promoted_by==='admin'?'👤 '+(h.admin_name||'Admin'):'⚙️ System')+'</span></td><td>'+(h.reason||'—')+'</td></tr>').join('')+
+        '</tbody></table></div>';
+    }).catch(()=>{wrap.innerHTML='<em style="color:red">Failed to load history.</em>';});
+}
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+    document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});
+});
+</script>
+</body>
+</html>

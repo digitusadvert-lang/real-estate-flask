@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>System Settings – Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+.flash-ok{background:#d4edda;color:#155724;padding:10px 14px;border-radius:7px;margin-bottom:14px;border-left:4px solid #28a745;font-size:13px}
+.flash-err{background:#f8d7da;color:#721c24;padding:10px 14px;border-radius:7px;margin-bottom:14px;border-left:4px solid #dc3545;font-size:13px}
+.card{background:white;border-radius:10px;padding:22px 24px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.card-title{font-size:14px;font-weight:700;color:#1a2a3a;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:600px){.grid2{grid-template-columns:1fr}}
+.form-group{margin-bottom:16px}
+.form-group:last-child{margin-bottom:0}
+.form-group label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#666;margin-bottom:5px}
+.form-group input,.form-group select{width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:14px;background:#fafafa;transition:border .15s}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:#2563eb;background:white}
+.form-group .note{font-size:11px;color:#888;margin-top:4px}
+.check-group{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
+.check-group label{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:400;text-transform:none;letter-spacing:0;color:#1a2a3a;cursor:pointer}
+.check-group input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:#2563eb}
+.btn-save{background:#2563eb;color:white;padding:10px 24px;border:none;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s}
+.btn-save:hover{background:#1d4ed8}
+.btn-danger{background:#dc3545;color:white;padding:8px 18px;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
+.btn-danger:hover{background:#b91c1c}
+.danger-card{border:1.5px solid #f5c6cb;background:#fff8f8}
+.danger-card .card-title{color:#dc3545}
+.maint-item{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f5f5f5;gap:12px;flex-wrap:wrap}
+.maint-item:last-child{border-bottom:none}
+.maint-desc{flex:1;min-width:200px}
+.maint-desc strong{display:block;font-size:13px;font-weight:700;margin-bottom:2px}
+.maint-desc span{font-size:12px;color:#888}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">⚙ System Settings</div>
+  <div class="topbar-right">
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings" class="nav-active">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+</div>
+
+<div class="wrap">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    <div class="flash-{{ 'ok' if cat == 'success' else 'err' }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+{% if success %}
+<div class="flash-ok">✅ {{ success }}</div>
+{% endif %}
+{% if error %}
+<div class="flash-err">❌ {{ error }}</div>
+{% endif %}
+
+<!-- Payment Settings -->
+<form method="POST" action="/admin/update-payment-settings">
+<div class="card">
+  <div class="card-title">💰 Payment & Payout Settings</div>
+  <div class="grid2">
+    <div class="form-group">
+      <label>Payment Processing Days</label>
+      <input type="number" name="processing_days" value="{{ payment_settings.processing_days }}" min="1" max="60" required>
+      <div class="note">Days until commission is paid after approval</div>
+    </div>
+    <div class="form-group">
+      <label>Minimum Payout Amount (RM)</label>
+      <input type="number" name="min_payout" value="{{ payment_settings.min_payout }}" step="10" min="0" required>
+      <div class="note">Minimum commission balance for payout</div>
+    </div>
+    <div class="form-group">
+      <label>Payout Schedule</label>
+      <select name="payout_schedule" required>
+        <option value="weekly" {% if payment_settings.payout_schedule == 'weekly' %}selected{% endif %}>Weekly (Every Friday)</option>
+        <option value="biweekly" {% if payment_settings.payout_schedule == 'biweekly' %}selected{% endif %}>Bi-weekly</option>
+        <option value="monthly" {% if payment_settings.payout_schedule == 'monthly' %}selected{% endif %}>Monthly (End of month)</option>
+        <option value="immediate" {% if payment_settings.payout_schedule == 'immediate' %}selected{% endif %}>Immediate (After approval)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Payment Voucher Prefix</label>
+      <input type="text" name="voucher_prefix" value="{{ payment_settings.voucher_prefix }}" maxlength="10">
+      <div class="note">Prefix for voucher numbers (e.g. PAY-2024-001)</div>
+    </div>
+    <div class="form-group">
+      <label>Auto-Generate Payment Voucher</label>
+      <select name="auto_generate_voucher" required>
+        <option value="yes" {% if payment_settings.auto_generate_voucher == 'yes' %}selected{% endif %}>Yes — auto-generate when marked paid</option>
+        <option value="no" {% if payment_settings.auto_generate_voucher == 'no' %}selected{% endif %}>No — generate manually</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Voucher Email Template</label>
+      <select name="voucher_template" required>
+        <option value="simple" {% if payment_settings.voucher_template == 'simple' %}selected{% endif %}>Simple Text</option>
+        <option value="detailed" {% if payment_settings.voucher_template == 'detailed' %}selected{% endif %}>Detailed HTML</option>
+        <option value="receipt" {% if payment_settings.voucher_template == 'receipt' %}selected{% endif %}>Official Receipt</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Payment Methods Allowed</label>
+    <div class="check-group">
+      <label><input type="checkbox" name="payment_methods" value="bank_transfer" {% if 'bank_transfer' in payment_settings.payment_methods %}checked{% endif %}> Bank Transfer</label>
+      <label><input type="checkbox" name="payment_methods" value="cheque" {% if 'cheque' in payment_settings.payment_methods %}checked{% endif %}> Cheque</label>
+      <label><input type="checkbox" name="payment_methods" value="cash" {% if 'cash' in payment_settings.payment_methods %}checked{% endif %}> Cash</label>
+      <label><input type="checkbox" name="payment_methods" value="online" {% if 'online' in payment_settings.payment_methods %}checked{% endif %}> Online Transfer</label>
+    </div>
+  </div>
+  <button type="submit" class="btn-save">💾 Save Payment Settings</button>
+</div>
+</form>
+
+<!-- Notification Settings -->
+<form method="POST" action="/admin/update-notification-settings">
+<div class="card">
+  <div class="card-title">📧 Notification & Email Settings</div>
+  <div class="grid2">
+    <div class="form-group">
+      <label>Enable Email Notifications</label>
+      <select name="email_notifications">
+        <option value="yes" {% if notification_settings.email_notifications == 'yes' %}selected{% endif %}>Yes — send email notifications</option>
+        <option value="no" {% if notification_settings.email_notifications == 'no' %}selected{% endif %}>No — disable email notifications</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Admin Email Address</label>
+      <input type="email" name="admin_email" value="{{ notification_settings.admin_email }}" placeholder="admin@worldtree.com">
+      <div class="note">Receives approval requests and system alerts</div>
+    </div>
+    <div class="form-group">
+      <label>Agent New Submission Alert</label>
+      <select name="notify_new_submission">
+        <option value="yes" {% if notification_settings.notify_new_submission == 'yes' %}selected{% endif %}>Yes — notify admin on new submission</option>
+        <option value="no" {% if notification_settings.notify_new_submission == 'no' %}selected{% endif %}>No</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Agent Approval Notification</label>
+      <select name="notify_approval">
+        <option value="yes" {% if notification_settings.notify_approval == 'yes' %}selected{% endif %}>Yes — notify agent when approved</option>
+        <option value="no" {% if notification_settings.notify_approval == 'no' %}selected{% endif %}>No</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Rank Promotion Alert</label>
+      <select name="notify_promotion">
+        <option value="yes" {% if notification_settings.notify_promotion == 'yes' %}selected{% endif %}>Yes — notify agent on rank promotion</option>
+        <option value="no" {% if notification_settings.notify_promotion == 'no' %}selected{% endif %}>No</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Payment Confirmation</label>
+      <select name="notify_payment">
+        <option value="yes" {% if notification_settings.notify_payment == 'yes' %}selected{% endif %}>Yes — notify agent when commission paid</option>
+        <option value="no" {% if notification_settings.notify_payment == 'no' %}selected{% endif %}>No</option>
+      </select>
+    </div>
+  </div>
+  <button type="submit" class="btn-save">💾 Save Notification Settings</button>
+</div>
+</form>
+
+<!-- System Maintenance -->
+<div class="card danger-card">
+  <div class="card-title">🔧 System Maintenance</div>
+  <div class="maint-item">
+    <div class="maint-desc">
+      <strong>Clear Expired Notifications</strong>
+      <span>Remove notifications older than 30 days</span>
+    </div>
+    <a href="/admin/clear-notifications" class="btn-danger" onclick="return confirm('Clear all expired notifications?')">🗑 Clear</a>
+  </div>
+  <div class="maint-item">
+    <div class="maint-desc">
+      <strong>Recalculate Agent Ranks</strong>
+      <span>Force recalculate all agent ranks based on cumulative gross</span>
+    </div>
+    <a href="/admin/recalculate-ranks" class="btn-danger" onclick="return confirm('Recalculate all agent ranks?')">🔄 Recalculate</a>
+  </div>
+  <div class="maint-item">
+    <div class="maint-desc">
+      <strong>Export Full Database</strong>
+      <span>Download complete system backup</span>
+    </div>
+    <a href="/admin/export-full-db" class="btn-danger" style="background:#6c757d">💾 Export</a>
+  </div>
+  <div class="maint-item">
+    <div class="maint-desc">
+      <strong>Forms Library</strong>
+      <span>Upload and manage forms for agents to view, download and share</span>
+    </div>
+    <a href="/admin/forms-library" style="background:#2563eb" class="btn-danger">📁 Manage Forms</a>
+  </div>
+</div>
+
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+</script>
+</body>
+</html>

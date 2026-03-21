@@ -1,0 +1,1742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Commission Calculator - WTP Formula</title>
+<style>
+:root {
+  --bg:#0a0f1a; --surface:#111827; --surface2:#1a2235; --border:#1e2d45;
+  --blue:#3b82f6; --blue-dim:#1d3a6a; --green:#10b981; --amber:#f59e0b;
+  --red:#ef4444; --text:#e2e8f0; --muted:#64748b; --pill:999px;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:80px;font-size:16px;}
+.header{background:linear-gradient(135deg,#060c18 0%,#0c1e38 60%,#0f2850 100%);border-bottom:1px solid var(--border);padding:40px 24px 36px;text-align:center;}
+.header-badge{display:inline-block;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);color:#93c5fd;font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 16px;border-radius:var(--pill);margin-bottom:14px;}
+.header h1{font-size:32px;font-weight:800;color:#fff;margin-bottom:8px;}
+.header p{color:rgba(255,255,255,.55);font-size:15px;}
+.ranks-bar{background:#080e1a;border-bottom:1px solid var(--border);padding:16px 24px;display:flex;justify-content:center;flex-wrap:wrap;gap:8px 6px;align-items:center;}
+.rchip{display:flex;align-items:center;gap:6px;border-radius:var(--pill);padding:8px 18px;font-size:14px;font-weight:700;border:1.5px solid;}
+.rchip .pct{font-family:'Courier New',monospace;font-size:15px;font-weight:700;}
+.rc-atl{background:#0e1e3a;border-color:#3b6fd4;color:#93c5fd;}
+.rc-tl{background:#0a1e14;border-color:#2a7a44;color:#6ee7a8;}
+.rc-er{background:#1e1000;border-color:#c07820;color:#fcd34d;}
+.rc-as{background:#0a1828;border-color:#2a7890;color:#67e8f9;}
+.rc-ren{background:#180e28;border-color:#7c3aed;color:#c4b5fd;}
+.arr{color:rgba(255,255,255,.25);font-size:16px;}
+.wrap{max-width:1200px;margin:0 auto;padding:32px 24px 0;}
+.sec-label{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.sec-label::after{content:'';flex:1;height:1px;background:var(--border);}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:26px;margin-bottom:22px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;}
+label{display:block;font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;}
+.inp-wrap{position:relative;}
+.inp-pre{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:700;font-size:15px;pointer-events:none;}
+input[type=number],input[type=text],select{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:13px 16px;color:var(--text);font-family:'Segoe UI',Arial,sans-serif;font-size:16px;font-weight:600;outline:none;transition:border-color .2s,box-shadow .2s;-moz-appearance:textfield;}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+.inp-wrap input{padding-left:34px;}
+input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.15);}
+input[readonly]{cursor:default;opacity:.85;}
+select{cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 4 5-4' stroke='%2364748b' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;}
+.toggle-wrap{display:flex;align-items:center;gap:8px;margin-top:4px;}
+.tog{position:relative;width:40px;height:22px;flex-shrink:0;cursor:pointer;}
+.tog input{opacity:0;width:0;height:0;position:absolute;}
+.tog-sl{position:absolute;inset:0;background:#1e2d45;border-radius:var(--pill);border:1.5px solid var(--border);transition:.2s;}
+.tog-sl::before{content:'';position:absolute;height:14px;width:14px;left:2px;top:2px;background:var(--muted);border-radius:50%;transition:.2s;}
+.tog input:checked+.tog-sl{background:var(--blue-dim);border-color:var(--blue);}
+.tog input:checked+.tog-sl::before{transform:translateX(18px);background:var(--blue);}
+.tog-label{font-size:13px;color:var(--muted);font-weight:600;}
+
+/* ── EDMOND ROOT ── */
+.edmond-root{background:linear-gradient(135deg,#0e1e3a,#0c1830);border:2px solid #3b6fd4;border-radius:16px;padding:22px 26px;margin-bottom:22px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;}
+.edmond-badge{background:#0e1e3a;border:2px solid #3b6fd4;border-radius:var(--pill);padding:8px 20px;color:#93c5fd;font-weight:800;font-size:16px;white-space:nowrap;}
+.edmond-name-wrap{flex:1;min-width:180px;}
+.edmond-deal-wrap{display:flex;align-items:center;gap:10px;}
+
+/* ── BRANCHES ── */
+.branches-scroll{overflow-x:auto;padding-bottom:8px;margin-bottom:22px;}
+.branches-row{display:flex;gap:16px;align-items:flex-start;min-width:max-content;padding:4px 2px 12px;}
+.branch-col{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;min-width:300px;max-width:340px;display:flex;flex-direction:column;gap:10px;position:relative;}
+.branch-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+.branch-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}
+.btn-del-branch{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 10px;color:#f87171;font-size:12px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;}
+.btn-del-branch:hover{background:rgba(239,68,68,.2);}
+.branch-connector{width:2px;height:20px;background:linear-gradient(180deg,#3b6fd4,var(--border));margin:0 auto;display:block;}
+.add-branch-btn{background:transparent;border:2px dashed #3b6fd4;border-radius:16px;padding:28px 20px;color:#3b6fd4;font-size:15px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;min-width:200px;transition:all .2s;white-space:nowrap;}
+.add-branch-btn:hover{background:rgba(59,130,246,.08);border-color:#60a5fa;}
+
+/* ── AGENT ROWS IN BRANCH ── */
+.branch-agent{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:1fr 100px;gap:10px;align-items:start;}
+.ba-rank-wrap{margin-bottom:8px;}
+.rp-atl{background:#0e1e3a;color:#93c5fd;border:1px solid #3b6fd4;}
+.rp-tl{background:#0a1e14;color:#6ee7a8;border:1px solid #2a7a44;}
+.rp-er{background:#1e1000;color:#fcd34d;border:1px solid #c07820;}
+.rp-as{background:#0a1828;color:#67e8f9;border:1px solid #2a7890;}
+.rp-ren{background:#180e28;color:#c4b5fd;border:1px solid #7c3aed;}
+.rank-pill{display:inline-block;font-size:12px;font-weight:700;padding:3px 10px;border-radius:var(--pill);margin-bottom:6px;}
+.ba-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+.btn-remove{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:7px 10px;color:#f87171;font-size:13px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;transition:all .15s;}
+.btn-remove:hover{background:rgba(239,68,68,.2);}
+.btn-add-down{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);border-radius:8px;padding:7px 10px;color:#93c5fd;font-size:12px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;transition:all .15s;white-space:nowrap;}
+.btn-add-down:hover{background:rgba(59,130,246,.18);}
+
+.btn-add{width:100%;background:transparent;border:1.5px dashed var(--border);border-radius:10px;padding:14px;color:var(--muted);font-family:'Segoe UI',Arial,sans-serif;font-size:15px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:4px;}
+.btn-add:hover{border-color:var(--blue);color:var(--blue);background:rgba(59,130,246,.05);}
+.btn-calc{width:100%;background:linear-gradient(135deg,#2563eb,#1d4ed8);border:none;border-radius:12px;padding:18px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;font-size:17px;font-weight:700;cursor:pointer;letter-spacing:.02em;transition:transform .15s,box-shadow .15s;margin-top:10px;}
+.btn-calc:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(37,99,235,.4);}
+.btn-calc:active{transform:translateY(0);}
+.alert{padding:11px 14px;border-radius:10px;margin-bottom:14px;font-size:15px;font-weight:600;display:none;}
+.alert-err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#fca5a5;display:block;}
+#results{display:none;}
+
+/* ── TREE VIZ ── */
+.tree-viz{overflow-x:auto;padding:20px 22px;}
+.tree-root{display:flex;flex-direction:column;align-items:center;}
+.tree-node-box{border-radius:var(--pill);padding:10px 20px;font-weight:700;font-size:14px;border:2px solid;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:110px;text-align:center;}
+.tree-node-box .hn-name{font-size:13px;font-weight:600;opacity:.85;}
+.tree-node-box .hn-pct{font-family:'Courier New',monospace;font-size:15px;font-weight:700;}
+.tree-node-box .hn-deal{font-size:11px;color:var(--green);margin-top:1px;}
+.hn-atl{border-color:#3b6fd4;background:#0e1e3a;color:#93c5fd;}
+.hn-tl{border-color:#2a7a44;background:#0a1e14;color:#6ee7a8;}
+.hn-er{border-color:#c07820;background:#1e1000;color:#fcd34d;}
+.hn-as{border-color:#2a7890;background:#0a1828;color:#67e8f9;}
+.hn-ren{border-color:#7c3aed;background:#180e28;color:#c4b5fd;}
+.tree-children{display:flex;gap:24px;align-items:flex-start;margin-top:0;}
+.tree-branch-wrap{display:flex;flex-direction:column;align-items:center;}
+.tree-vline{width:2px;height:18px;background:var(--border);}
+.tree-hline-wrap{position:relative;display:flex;align-items:flex-start;}
+.tree-hline{height:2px;background:var(--border);position:absolute;top:0;}
+
+/* ── RESULT CARDS ── */
+.result-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:22px;}
+.result-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:20px 22px;position:relative;overflow:hidden;}
+.result-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
+.bar-atl::before{background:linear-gradient(90deg,#3b6fd4,#60a5fa);}
+.bar-tl::before{background:linear-gradient(90deg,#2a7a44,#34d399);}
+.bar-er::before{background:linear-gradient(90deg,#c07820,#fcd34d);}
+.bar-as::before{background:linear-gradient(90deg,#2a7890,#67e8f9);}
+.bar-ren::before{background:linear-gradient(90deg,#7c3aed,#c4b5fd);}
+.bar-pic::before{background:linear-gradient(90deg,#e11d48,#fb7185);}
+.bar-company::before{background:linear-gradient(90deg,#7c3aed,#a78bfa);}
+.rc-name{font-weight:800;font-size:18px;color:#fff;margin-bottom:2px;}
+.rc-rank{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;}
+.rc-role-badge{font-size:11px;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em;}
+.rc-lines{margin-bottom:10px;}
+.rc-line{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;}
+.rc-line:last-child{border-bottom:none;}
+.rc-lbl{color:var(--muted);}
+.rc-val{font-family:'Courier New',monospace;font-weight:700;font-size:15px;color:var(--text);}
+.rc-val.wtp{color:var(--amber);}
+.rc-total{display:flex;justify-content:space-between;align-items:center;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:12px 14px;}
+.rc-total-lbl{font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.06em;}
+.rc-total-val{font-family:'Courier New',monospace;font-weight:700;color:var(--green);font-size:20px;}
+
+/* ── BRANCH SUMMARY ── */
+.branch-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:22px;}
+.branch-summary-card{background:var(--surface2);border:1.5px solid #1e2d45;border-radius:14px;padding:18px 20px;border-left:4px solid #3b6fd4;}
+.bsc-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;}
+.bsc-row{display:flex;justify-content:space-between;font-size:14px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.bsc-row:last-child{border-bottom:none;}
+.bsc-lbl{color:var(--muted);}
+.bsc-val{font-family:'Courier New',monospace;font-weight:700;color:var(--green);}
+.bsc-edmond{font-weight:700;color:#93c5fd;}
+
+/* ── BREAKDOWN TABLE ── */
+.bk-wrap{background:var(--surface2);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+.bk-head{display:grid;grid-template-columns:2fr 2.5fr 2.5fr 1.5fr;background:#080e1a;padding:12px 16px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;}
+.bk-row{display:grid;grid-template-columns:2fr 2.5fr 2.5fr 1.5fr;padding:13px 16px;border-top:1px solid var(--border);font-size:14px;align-items:start;}
+.bk-row:hover{background:rgba(255,255,255,.02);}
+.bk-row.is-wtp{background:rgba(245,158,11,.04);}
+.bk-row.is-pic{background:rgba(225,29,72,.04);}
+.bk-row.is-pic-pool{background:rgba(103,232,249,.03);border-left:3px solid rgba(103,232,249,.2);}
+.bk-row.is-company{background:rgba(167,139,250,.04);border-left:3px solid rgba(167,139,250,.3);}
+.bk-section-head{display:grid;grid-template-columns:2fr 2.5fr 2.5fr 1.5fr;padding:8px 16px;background:rgba(59,130,246,.07);border-top:1px solid var(--border);font-size:11px;font-weight:700;color:#93c5fd;text-transform:uppercase;letter-spacing:.1em;}
+.bk-agent{font-weight:700;color:#fff;line-height:1.4;}
+.bk-formula{font-family:'Courier New',monospace;font-size:13px;color:#7dd3fc;line-height:1.6;}
+.bk-exp{color:var(--muted);font-size:13px;line-height:1.6;}
+.bk-amt{font-family:'Courier New',monospace;font-weight:700;color:var(--green);text-align:right;font-size:15px;}
+.bk-amt.wtp{color:var(--amber);}
+.bk-amt.pic{color:#fb7185;}
+.bk-amt.company{color:#a78bfa;}
+.summary-box{background:linear-gradient(135deg,#060c18,#0c1e38);border:1px solid var(--border);border-radius:16px;padding:26px 28px;margin-top:22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;}
+.sum-items{display:flex;flex-wrap:wrap;gap:18px;}
+.sum-item{display:flex;flex-direction:column;gap:3px;}
+.sum-lbl{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.sum-val{font-family:'Courier New',monospace;font-weight:700;font-size:18px;color:#fff;}
+.sum-grand{text-align:right;}
+.sg-lbl{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}
+.sg-val{font-family:'Courier New',monospace;font-weight:800;font-size:36px;color:var(--green);}
+.sg-check{font-size:14px;margin-top:3px;}
+.sg-ok{color:#6ee7a8;}
+.info-box{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:12px;padding:12px 16px;margin-top:14px;font-size:14px;color:#fde68a;line-height:1.7;}
+.cobroke-section{margin-top:10px;border-top:1px solid var(--border);padding-top:10px;}
+.cobroke-toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+.cobroke-lbl{font-size:12px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.07em;}
+.cobroke-partners{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.cobroke-row{display:grid;grid-template-columns:1fr 68px 26px;gap:6px;align-items:center;}
+.cobroke-row input[type=text]{font-size:13px;padding:7px 10px;}
+.cobroke-row input[type=number]{font-size:13px;padding:7px 10px;}
+.cobroke-add-btn{background:rgba(245,158,11,.1);border:1.5px dashed rgba(245,158,11,.4);border-radius:8px;padding:6px 10px;color:#f59e0b;font-size:12px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;margin-top:6px;width:100%;transition:all .15s;}
+.cobroke-add-btn:hover{background:rgba(245,158,11,.2);}
+.cobroke-del-btn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 6px;color:#f87171;font-size:12px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;line-height:1;}
+.cobroke-del-btn:hover{background:rgba(239,68,68,.2);}
+.cobroke-status{font-size:11px;font-weight:700;margin-top:4px;padding:3px 8px;border-radius:6px;display:inline-block;}
+.cobroke-status.ok{color:var(--green);background:rgba(16,185,129,.1);}
+.cobroke-status.bad{color:var(--red);background:rgba(239,68,68,.1);}
+.bar-cobroke::before{background:linear-gradient(90deg,#b45309,#f59e0b);}
+.bk-row.is-cobroke{background:rgba(245,158,11,.04);border-left:3px solid rgba(245,158,11,.3);}
+.bk-row.is-cobroke-wtp{background:rgba(59,130,246,.04);border-left:3px solid rgba(59,130,246,.35);}
+.cobroke-partner-card{background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;flex-direction:column;gap:7px;}
+.wtp-toggle-row{display:flex;align-items:center;gap:8px;}
+.wtp-chain-wrap{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:10px 12px;margin-top:4px;}
+.wtp-chain-label{font-size:11px;font-weight:700;color:#93c5fd;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;}
+.wtp-chain-node{display:flex;flex-direction:column;align-items:stretch;}
+.wtp-chain-row{display:grid;grid-template-columns:1fr 120px 26px;gap:6px;align-items:center;}
+.wtp-chain-row input{font-size:12px;padding:7px 10px;}
+.wtp-chain-row select{font-size:12px;padding:7px 8px;}
+.wtp-arrow{text-align:center;color:#3b6fd4;font-size:14px;line-height:1;padding:3px 0;}
+.wtp-chain-bottom{margin-top:2px;}
+.wtp-agent-pill{display:inline-block;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:var(--pill);padding:5px 12px;font-size:12px;color:#93c5fd;font-weight:700;}
+.wtp-add-btn{background:rgba(59,130,246,.08);border:1.5px dashed rgba(59,130,246,.3);border-radius:7px;padding:5px 10px;color:#93c5fd;font-size:11px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;margin-top:6px;width:100%;transition:all .15s;}
+.wtp-add-btn:hover{background:rgba(59,130,246,.15);}
+.wtp-del-btn{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:4px 6px;color:#f87171;font-size:12px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;line-height:1;}
+.wtp-del-btn:hover{background:rgba(239,68,68,.2);}
+.bk-stream-a{border-left:3px solid #10b981;}
+.bk-stream-b{border-left:3px solid #3b82f6;}
+.bk-cobroke-header{display:grid;grid-template-columns:2fr 2.5fr 2.5fr 1.5fr;padding:6px 16px;background:rgba(245,158,11,.08);border-top:1px solid var(--border);font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.08em;}
+
+/* ── REVIEW MODE ── */
+.btn-review-toggle{display:none;margin-top:18px;background:linear-gradient(135deg,#92400e,#b45309);border:none;border-radius:10px;padding:13px 24px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.03em;transition:all .2s;}
+.btn-review-toggle:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(180,83,9,.35);}
+.review-toolbar{display:none;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:14px 18px;margin-top:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+.review-toolbar.active{display:flex;}
+.rtb-badge{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5;font-size:12px;font-weight:700;padding:4px 12px;border-radius:var(--pill);text-transform:uppercase;letter-spacing:.08em;}
+.rtb-info{font-size:13px;color:var(--muted);margin-left:10px;}
+.rtb-left,.rtb-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.review-name-wrap{display:flex;align-items:center;gap:8px;}
+.review-name-wrap label{margin-bottom:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--muted);white-space:nowrap;}
+.review-name-wrap input{width:140px;padding:8px 12px;font-size:13px;}
+.btn-submit-all{background:linear-gradient(135deg,#1d4ed8,#2563eb);border:none;border-radius:8px;padding:9px 18px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-submit-all:disabled{opacity:.4;cursor:not-allowed;}
+.btn-submit-all:not(:disabled):hover{transform:translateY(-1px);}
+.review-summary{display:none;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:16px 18px;margin-top:12px;}
+.review-summary.active{display:block;}
+.rs-title{font-size:13px;font-weight:700;color:#fca5a5;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;}
+.rs-item{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid rgba(239,68,68,.1);font-size:13px;align-items:flex-start;}
+.rs-item:last-child{border-bottom:none;}
+.rs-num{background:rgba(239,68,68,.2);color:#fca5a5;font-weight:700;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;}
+.rs-body{flex:1;}
+.rs-row-label{font-weight:700;color:#fff;margin-bottom:2px;}
+.rs-remark{color:var(--muted);}
+.rs-suggest{color:#86efac;font-size:12px;margin-top:2px;}
+.btn-flag{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:6px;padding:5px 10px;color:#f87171;font-size:12px;font-weight:700;cursor:pointer;font-family:'Segoe UI',Arial,sans-serif;white-space:nowrap;}
+.btn-flag:hover{background:rgba(239,68,68,.2);}
+.bk-row.flagged{background:rgba(239,68,68,.08);border-left:3px solid var(--red);}
+.bk-remark{font-size:11px;color:#fca5a5;margin-top:4px;}
+
+/* ── MODAL ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(6px);z-index:99999;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:#111827;border:1.5px solid var(--border);border-radius:20px;padding:28px 30px;width:90%;max-width:480px;box-shadow:0 24px 60px rgba(0,0,0,.7);}
+.modal-title{font-size:17px;font-weight:800;color:#fff;margin-bottom:4px;}
+.modal-sub{font-size:13px;color:var(--muted);margin-bottom:18px;}
+.modal-box textarea{width:100%;background:#1a2235;border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-family:'Segoe UI',Arial,sans-serif;font-size:14px;resize:vertical;min-height:80px;outline:none;}
+.modal-box textarea:focus{border-color:var(--blue);}
+.modal-box input[type=text]{background:#1a2235;}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;}
+.btn-modal-cancel{background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:9px 18px;color:var(--muted);font-family:'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:600;cursor:pointer;}
+.btn-modal-submit{background:linear-gradient(135deg,#dc2626,#ef4444);border:none;border-radius:8px;padding:9px 18px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;font-size:14px;font-weight:700;cursor:pointer;}
+.tg-toast{display:none;position:fixed;bottom:28px;right:28px;background:#111827;border:1px solid var(--green);border-radius:12px;padding:14px 20px;color:var(--green);font-weight:700;font-size:14px;z-index:999999;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.tg-toast.show{display:block;}
+
+/* ── PASSWORD MODAL ── */
+.pw-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(6px);z-index:99998;align-items:center;justify-content:center;}
+.pw-overlay.open{display:flex;}
+.pw-box{background:#111827;border:1.5px solid #c07820;border-radius:20px;padding:32px 34px;width:90%;max-width:400px;box-shadow:0 24px 60px rgba(0,0,0,.7);text-align:center;}
+.pw-icon{font-size:36px;margin-bottom:12px;}
+.pw-title{font-size:18px;font-weight:800;color:#fff;margin-bottom:6px;}
+.pw-sub{font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.5;}
+.pw-field{position:relative;margin-bottom:8px;}
+.pw-field input{width:100%;background:#1a2235;border:1.5px solid #c07820;border-radius:10px;padding:13px 46px 13px 16px;color:#fff;font-size:16px;font-weight:700;letter-spacing:.2em;outline:none;text-align:center;font-family:'Segoe UI',Arial,sans-serif;transition:border-color .2s,box-shadow .2s;}
+.pw-field input:focus{box-shadow:0 0 0 3px rgba(192,120,32,.25);}
+.pw-field input.shake{animation:shake .35s ease;}
+.pw-eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;}
+.pw-error{font-size:13px;color:#fca5a5;min-height:18px;margin-bottom:10px;}
+.pw-attempts{font-size:12px;color:var(--muted);}
+.pw-locked{display:none;font-size:13px;color:#fca5a5;font-weight:700;margin-bottom:12px;}
+.pw-btn{width:100%;background:linear-gradient(135deg,#92400e,#b45309);border:none;border-radius:10px;padding:13px;color:#fff;font-family:'Segoe UI',Arial,sans-serif;font-size:15px;font-weight:700;cursor:pointer;margin-top:6px;}
+.pw-btn:hover{filter:brightness(1.1);}
+.pw-cancel{background:none;border:none;color:var(--muted);font-family:'Segoe UI',Arial,sans-serif;font-size:13px;cursor:pointer;margin-top:10px;text-decoration:underline;}
+@keyframes shake{0%,100%{transform:translateX(0);}20%,60%{transform:translateX(-8px);}40%,80%{transform:translateX(8px);}}
+@keyframes modalIn{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:scale(1);}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-badge">WTP Formula &middot; Commission Calculator</div>
+  <h1>Property Commission Calculator</h1>
+  <p>Multi-branch team hierarchy &mdash; build your team tree and see how commission splits across every level.</p>
+</div>
+
+<div class="ranks-bar">
+  <div class="rchip rc-atl">ATL <span class="pct">90%</span></div>
+  <span class="arr">&#8594;</span>
+  <div class="rchip rc-tl">TL <span class="pct">85%</span></div>
+  <span class="arr">&#8594;</span>
+  <div class="rchip rc-er">Elite REN <span class="pct">80%</span></div>
+  <span class="arr">&#8594;</span>
+  <div class="rchip rc-as">Assoc REN <span class="pct">75%</span></div>
+  <span class="arr">&#8594;</span>
+  <div class="rchip rc-ren">REN <span class="pct">70%</span></div>
+</div>
+
+<div class="wrap">
+
+  <div class="sec-label">Step 1 &mdash; Deal Details</div>
+  <div class="card">
+    <div class="grid3" style="margin-bottom:18px;">
+      <div>
+        <label>Project Name</label>
+        <input type="text" id="projName" value="Project-A" oninput="updatePicProject()"/>
+      </div>
+      <div>
+        <label>Property Sales Price (RM)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="salesPrice" value="1000000" min="0" oninput="updateGross()"/>
+        </div>
+      </div>
+      <div>
+        <label>Developer Commission Rate (%)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">%</span>
+          <input type="number" id="devCommRate" value="2" min="0" max="100" step="0.1" oninput="updateGross()"/>
+        </div>
+      </div>
+    </div>
+    <div class="grid3" style="margin-bottom:18px;">
+      <div>
+        <label>Gross Commission (Auto-Calculated)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="grossComm" readonly value="20000" style="color:var(--green);border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.05);"/>
+        </div>
+      </div>
+      <div>
+        <label>SST Deduction Rate (%) &mdash; 0% if developer absorbs</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">%</span>
+          <input type="number" id="sstRate" value="8" min="0" max="100" step="0.1" oninput="updateRateSummary()"/>
+        </div>
+      </div>
+      <div>
+        <label>Net Commission After SST (Auto-Calculated)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="netComm" readonly style="color:#67e8f9;border-color:rgba(103,232,249,.3);background:rgba(103,232,249,.05);"/>
+        </div>
+        <div id="sstNote" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+      </div>
+    </div>
+    <div class="grid3" style="margin-bottom:18px;">
+      <div>
+        <label>Company Split &mdash; % of Net (e.g. 15)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">%</span>
+          <input type="number" id="companyRate" value="15" min="0" max="100" step="0.1" oninput="updateRateSummary()"/>
+        </div>
+      </div>
+      <div>
+        <label>PIC Split &mdash; % of Net (e.g. 10)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">%</span>
+          <input type="number" id="picRate" value="10" min="0" max="100" step="0.1" oninput="updateRateSummary()"/>
+        </div>
+      </div>
+      <div>
+        <label>Agents Split &mdash; % of Net (e.g. 75)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">%</span>
+          <input type="number" id="agentsRate" value="75" min="0" max="100" step="0.1" oninput="updateRateSummary()"/>
+        </div>
+      </div>
+    </div>
+    <div id="rateSummaryBox" style="background:rgba(59,130,246,.07);border:1.5px solid rgba(59,130,246,.2);border-radius:12px;padding:14px 18px;">
+      <div style="font-size:13px;font-weight:700;color:#93c5fd;margin-bottom:8px;">Rate Allocation Check &mdash; Company + PIC + Agents must total 100%</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:13px;color:var(--muted);">Gross: <strong id="rsGross" style="color:var(--green);">RM 20,000</strong></span>
+        <span style="font-size:13px;color:var(--muted);">SST: <strong id="rsSST" style="color:#f87171;">-RM 1,600</strong></span>
+        <span style="font-size:13px;color:var(--muted);">Net: <strong id="rsNet" style="color:#67e8f9;">RM 18,400</strong></span>
+        <span style="color:rgba(255,255,255,.2);">|</span>
+        <span style="font-size:13px;color:var(--muted);">Company: <strong id="rsCompany" style="color:#a78bfa;">15%</strong></span>
+        <span style="font-size:13px;color:var(--muted);">PIC: <strong id="rsPIC" style="color:var(--amber);">10%</strong></span>
+        <span style="font-size:13px;color:var(--muted);">Agents: <strong id="rsAgents" style="color:var(--green);">75%</strong></span>
+        <span style="font-size:13px;color:var(--muted);">Total: <strong id="rsTotal" style="color:var(--green);">100%</strong></span>
+        <span id="rsStatus" style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:rgba(16,185,129,.15);color:var(--green);">OK</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-label">Step 2 &mdash; Company, PIC &amp; Commission Holders</div>
+  <div class="card">
+    <div class="grid3" style="margin-bottom:18px;">
+      <div>
+        <label>Company Name</label>
+        <input type="text" id="companyName" value="Our Company" placeholder="e.g. ABC Realty"/>
+      </div>
+      <div>
+        <label>Project</label>
+        <input type="text" id="picProject" value="Project-A" readonly style="color:var(--muted);"/>
+      </div>
+      <div>
+        <label>Company Commission (on all deals)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="companyComm" readonly style="color:#a78bfa;border-color:rgba(167,139,250,.3);background:rgba(167,139,250,.05);"/>
+          <div id="companyCommNote" style="font-size:12px;color:var(--muted);margin-top:6px;">Calculated after Calculate is clicked.</div>
+        </div>
+      </div>
+    </div>
+    <div class="grid3">
+      <div>
+        <label>PIC Name</label>
+        <input type="text" id="picName" value="Erwin" placeholder="e.g. Erwin"/>
+        <div style="margin-top:10px;">
+          <label>PIC Rank</label>
+          <select id="picRank" onchange="updatePicCommPreview()">
+            <option value="ATL">ATL (90%)</option>
+            <option value="TL">TL (85%)</option>
+            <option value="ELITE">Elite REN (80%)</option>
+            <option value="ASSOC">Assoc REN (75%)</option>
+            <option value="REN" selected>REN (70%)</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label>PIC Pool (10% of Net per deal)</label>
+        <div class="inp-wrap">
+          <span class="inp-pre">RM</span>
+          <input type="number" id="picPool" readonly style="color:#67e8f9;border-color:rgba(103,232,249,.3);background:rgba(103,232,249,.05);"/>
+        </div>
+        <div style="margin-top:10px;">
+          <label>PIC Earns (Rank% of Pool)</label>
+          <div class="inp-wrap">
+            <span class="inp-pre">RM</span>
+            <input type="number" id="picComm" readonly style="color:var(--amber);border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.05);"/>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div id="picCommNote" style="font-size:12px;color:var(--muted);margin-top:28px;">Remainder (pool − PIC earn) returns silently to company.</div>
+        <div id="picRankNote" style="font-size:12px;color:var(--amber);margin-top:8px;line-height:1.6;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-label">Step 3 &mdash; Team Hierarchy (Edmond + Branches)</div>
+
+  <!-- Edmond root -->
+  <div class="edmond-root">
+    <div class="edmond-badge">ATL &bull; 90%</div>
+    <div class="edmond-name-wrap">
+      <label>Edmond (Team Leader &mdash; ATL)</label>
+      <input type="text" id="edmondName" value="Edmond" placeholder="Edmond's name"/>
+    </div>
+    <div class="edmond-deal-wrap">
+      <label style="margin-bottom:0;">Personal Deal</label>
+      <label class="tog">
+        <input type="checkbox" id="edmondDeal" onchange="renderBranches()"/>
+        <span class="tog-sl"></span>
+      </label>
+      <span class="tog-label" id="edmondDealLbl">OFF</span>
+    </div>
+  </div>
+
+  <div id="alertBox" class="alert"></div>
+
+  <!-- Branch columns -->
+  <div class="branches-scroll">
+    <div class="branches-row" id="branchesRow">
+      <!-- branches rendered here -->
+      <button class="add-branch-btn" onclick="addBranch()" id="addBranchBtn">+ Add Branch</button>
+    </div>
+  </div>
+
+  <button class="btn-calc" onclick="calculate()">Calculate Commission Split</button>
+
+  <div id="results">
+    <div class="sec-label">Results</div>
+
+    <!-- Tree Visualization -->
+    <div class="card" style="padding:18px 20px;margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;">Team Tree</div>
+      <div class="tree-viz" id="treeViz"></div>
+    </div>
+
+    <!-- Branch summaries -->
+    <div class="sec-label">Branch Summary</div>
+    <div class="branch-summary-grid" id="branchSummaryGrid"></div>
+
+    <!-- Per-agent cards -->
+    <div class="sec-label">Per Agent Payout</div>
+    <div class="result-grid" id="resultCards"></div>
+
+    <!-- Full breakdown -->
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:0;">
+      <div style="padding:20px 22px 16px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:800;color:#fff;font-size:20px;">Full Calculation Breakdown</div>
+      </div>
+      <div class="bk-wrap" style="border:none;border-radius:0;">
+        <div class="bk-head" id="bkHead">
+          <div>Agent</div><div>Formula</div><div>Explanation</div>
+          <div style="text-align:right;">Amount</div>
+          <div id="reviewColHead" style="display:none;text-align:center;">Flag</div>
+        </div>
+        <div id="bkRows"></div>
+      </div>
+    </div>
+
+    <button class="btn-review-toggle" id="reviewToggleBtn" onclick="toggleReviewMode()">&#x2691; Enable Expert Review Mode</button>
+
+    <div class="review-toolbar" id="reviewToolbar">
+      <div class="rtb-left">
+        <span class="rtb-badge">Review Mode ON</span>
+        <span class="rtb-info">Click <strong style="color:#ef4444;">Flag</strong> on any row to query it.</span>
+      </div>
+      <div class="rtb-right">
+        <div class="review-name-wrap">
+          <label for="reviewerName">Reviewer:</label>
+          <input type="text" id="reviewerName" placeholder="Your name"/>
+        </div>
+        <button class="btn-submit-all" id="submitAllBtn" onclick="submitAllRemarks()" disabled>Send All Remarks via Telegram</button>
+      </div>
+    </div>
+    <div class="review-summary" id="reviewSummary">
+      <div class="rs-title">&#9888; Flagged Items</div>
+      <div id="reviewSummaryItems"></div>
+    </div>
+
+    <div class="summary-box">
+      <div class="sum-items" id="sumItems"></div>
+      <div class="sum-grand">
+        <div class="sg-lbl">Total Agent Payout</div>
+        <div class="sg-val" id="sgVal">RM 0</div>
+        <div class="sg-check sg-ok" id="sgCheck"></div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>Calculation Chain:</strong>
+      Sales Price &times; Dev Rate = <strong>Gross</strong> (SST already included) &rarr;
+      Gross &divide; 1.08 = <strong>Net</strong> (SST extracted) &rarr;
+      Net splits into Company% + PIC% + Agents% (must total 100%) &rarr;
+      <strong>Agent pool</strong> is what ATL/TL/REN% override &amp; WTP formula applies to.
+      If developer absorbs SST, set SST to 0% &mdash; full gross flows through as net.
+      <br/><br/>
+      <strong>WTP Rule:</strong> When a direct downline reaches the <em>same</em> rank%, override = 0.
+      Instead earn <strong>2% WTP (Gen1)</strong> on their agent pool. Indirect upline earns <strong>1% WTP (Gen2)</strong>.
+    </div>
+  </div>
+
+</div>
+
+<!-- Flag Modal -->
+<div class="modal-overlay" id="remarkModal">
+  <div class="modal-box">
+    <div class="modal-title">Flag This Row</div>
+    <div class="modal-sub" id="modalSubtitle"></div>
+    <label>What is wrong?</label>
+    <textarea id="remarkText" placeholder="Describe the issue..."></textarea>
+    <label style="margin-top:12px;">Suggested fix (optional)</label>
+    <input type="text" id="remarkSuggestion" placeholder="Your suggested correction..."/>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-modal-submit" onclick="submitRemark()">Flag Row</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password Modal -->
+<div class="pw-overlay" id="pwOverlay">
+  <div class="pw-box">
+    <div class="pw-icon">&#128274;</div>
+    <div class="pw-title">Expert Review Access</div>
+    <div class="pw-sub">Enter the review password to enable flagging mode.</div>
+    <div class="pw-field">
+      <input type="password" id="pwInput" placeholder="Password" onkeydown="if(event.key==='Enter')checkPassword()"/>
+      <button class="pw-eye" onclick="togglePwVisibility()">&#128065;</button>
+    </div>
+    <div class="pw-error" id="pwError"></div>
+    <div class="pw-attempts" id="pwAttempts"></div>
+    <div class="pw-locked" id="pwLockedMsg">Too many attempts. Wait <span id="lockCountdown">60</span>s.</div>
+    <button class="pw-btn" onclick="checkPassword()">Unlock</button>
+    <button class="pw-cancel" onclick="closePwModal()">Cancel</button>
+  </div>
+</div>
+
+<div class="tg-toast" id="tgToast"></div>
+
+<script>
+var RANKS = {
+  ATL:   { label:'ATL',       pct:90, pillCls:'rp-atl', hierCls:'hn-atl', barCls:'bar-atl' },
+  TL:    { label:'TL',        pct:85, pillCls:'rp-tl',  hierCls:'hn-tl',  barCls:'bar-tl'  },
+  ELITE: { label:'Elite REN', pct:80, pillCls:'rp-er',  hierCls:'hn-er',  barCls:'bar-er'  },
+  ASSOC: { label:'Assoc REN', pct:75, pillCls:'rp-as',  hierCls:'hn-as',  barCls:'bar-as'  },
+  REN:   { label:'REN',       pct:70, pillCls:'rp-ren', hierCls:'hn-ren', barCls:'bar-ren' }
+};
+var RANK_KEYS = ['ATL','TL','ELITE','ASSOC','REN'];
+var agentCount = 0;
+var branchCount = 0;
+
+// branches = array of branch objects
+// branch = { id, agents: [ {id, rank, name, hasDeal, cobroke: [{name, pct, isWTP, wtpChain:[{name,rank}]}]}, ... ] }
+var branches = [];
+
+var REVIEW_PASSWORD = 'WTP@Expert2024'; // << CHANGE THIS PASSWORD
+var TG_BOT_TOKEN = '8090570354:AAFbSnDpuVNdoqv5v85M7JcuyDlfu8hlnPw';
+var TG_CHAT_ID   = '1572211466';
+var reviewModeActive = false;
+var pwFailCount = 0;
+var pwLocked = false;
+var flaggedRows = [];
+var currentFlagIdx = null;
+
+function __appInit() {
+  updateGross();
+  updatePicProject();
+  updateRateSummary();
+  addBranchData([
+    { rank:'TL', name:'Sarah', hasDeal:true }
+  ]);
+  addBranchData([
+    { rank:'TL', name:'Ahmad', hasDeal:true },
+    { rank:'REN', name:'Barry', hasDeal:false }
+  ]);
+}
+
+// ── BRANCH MANAGEMENT ────────────────────────────────────────────────────────
+function addBranchData(agentsArr) {
+  branchCount++;
+  var b = { id: branchCount, agents: [] };
+  for (var i = 0; i < agentsArr.length; i++) {
+    agentCount++;
+    b.agents.push({ id: agentCount, rank: agentsArr[i].rank, name: agentsArr[i].name || '', hasDeal: agentsArr[i].hasDeal === true, cobroke: [] });
+  }
+  branches.push(b);
+  renderBranches();
+}
+
+function addBranch() {
+  branchCount++;
+  agentCount++;
+  branches.push({ id: branchCount, agents: [{ id: agentCount, rank:'REN', name:'', hasDeal:false, cobroke:[] }] });
+  renderBranches();
+}
+
+function removeBranch(bid) {
+  branches = branches.filter(function(b){ return b.id !== bid; });
+  renderBranches();
+}
+
+function addAgentToBranch(bid) {
+  for (var i = 0; i < branches.length; i++) {
+    if (branches[i].id === bid) {
+      agentCount++;
+      branches[i].agents.push({ id: agentCount, rank:'REN', name:'', hasDeal:false, cobroke:[] });
+      break;
+    }
+  }
+  renderBranches();
+}
+
+function removeAgentFromBranch(bid, aid) {
+  for (var i = 0; i < branches.length; i++) {
+    if (branches[i].id === bid) {
+      branches[i].agents = branches[i].agents.filter(function(a){ return a.id !== aid; });
+      if (branches[i].agents.length === 0) {
+        branches = branches.filter(function(b){ return b.id !== bid; });
+      }
+      break;
+    }
+  }
+  renderBranches();
+}
+
+function onBranchRankChange(bid, aid, val) {
+  for (var i = 0; i < branches.length; i++) {
+    if (branches[i].id === bid) {
+      for (var j = 0; j < branches[i].agents.length; j++) {
+        if (branches[i].agents[j].id === aid) { branches[i].agents[j].rank = val; break; }
+      }
+      break;
+    }
+  }
+  renderBranches();
+}
+
+function onBranchDealChange(bid, aid, checked) {
+  for (var i = 0; i < branches.length; i++) {
+    if (branches[i].id === bid) {
+      for (var j = 0; j < branches[i].agents.length; j++) {
+        if (branches[i].agents[j].id === aid) { branches[i].agents[j].hasDeal = checked; break; }
+      }
+      break;
+    }
+  }
+  renderBranches();
+}
+
+function onBranchNameChange(bid, aid, val) {
+  for (var i = 0; i < branches.length; i++) {
+    if (branches[i].id === bid) {
+      for (var j = 0; j < branches[i].agents.length; j++) {
+        if (branches[i].agents[j].id === aid) { branches[i].agents[j].name = val; break; }
+      }
+      break;
+    }
+  }
+}
+
+// ── CO-BROKE MANAGEMENT ───────────────────────────────────────────────────────
+function getAgent(bid, aid) {
+  for (var i = 0; i < branches.length; i++) {
+    if (branches[i].id === bid) {
+      for (var j = 0; j < branches[i].agents.length; j++) {
+        if (branches[i].agents[j].id === aid) return branches[i].agents[j];
+      }
+    }
+  }
+  return null;
+}
+
+function addCobrokePartner(bid, aid) {
+  var a = getAgent(bid, aid);
+  if (!a) return;
+  a.cobroke.push({ name:'', pct:'', isWTP:false, wtpChain:[] });
+  renderBranches();
+}
+
+function removeCobrokePartner(bid, aid, idx) {
+  var a = getAgent(bid, aid);
+  if (!a) return;
+  a.cobroke.splice(idx, 1);
+  renderBranches();
+}
+
+function onCobrokeNameChange(bid, aid, idx, val) {
+  var a = getAgent(bid, aid);
+  if (a && a.cobroke[idx] !== undefined) a.cobroke[idx].name = val;
+}
+
+function onCobrokePctChange(bid, aid, idx, val) {
+  var a = getAgent(bid, aid);
+  if (a && a.cobroke[idx] !== undefined) {
+    a.cobroke[idx].pct = val;
+    updateCobrokeStatus(bid, aid);
+  }
+}
+
+function onCobrokeWTPChange(bid, aid, idx, checked) {
+  var a = getAgent(bid, aid);
+  if (!a || a.cobroke[idx] === undefined) return;
+  a.cobroke[idx].isWTP = checked;
+  if (checked && a.cobroke[idx].wtpChain.length === 0) {
+    // seed one upline slot above the co-broke agent
+    a.cobroke[idx].wtpChain.push({ name:'', rank:'TL' });
+  }
+  renderBranches();
+}
+
+function addWTPUpline(bid, aid, ci) {
+  var a = getAgent(bid, aid);
+  if (!a || !a.cobroke[ci]) return;
+  a.cobroke[ci].wtpChain.unshift({ name:'', rank:'TL' }); // add above
+  renderBranches();
+}
+
+function removeWTPUpline(bid, aid, ci, ui) {
+  var a = getAgent(bid, aid);
+  if (!a || !a.cobroke[ci]) return;
+  a.cobroke[ci].wtpChain.splice(ui, 1);
+  renderBranches();
+}
+
+function onWTPUplineNameChange(bid, aid, ci, ui, val) {
+  var a = getAgent(bid, aid);
+  if (a && a.cobroke[ci] && a.cobroke[ci].wtpChain[ui] !== undefined) {
+    a.cobroke[ci].wtpChain[ui].name = val;
+  }
+}
+
+function onWTPUplineRankChange(bid, aid, ci, ui, val) {
+  var a = getAgent(bid, aid);
+  if (a && a.cobroke[ci] && a.cobroke[ci].wtpChain[ui] !== undefined) {
+    a.cobroke[ci].wtpChain[ui].rank = val;
+    renderBranches();
+  }
+}
+
+function updateCobrokeStatus(bid, aid) {
+  var a = getAgent(bid, aid);
+  if (!a) return;
+  var statusEl = document.getElementById('cbStatus_' + bid + '_' + aid);
+  if (!statusEl) return;
+  var total = 0;
+  for (var i = 0; i < a.cobroke.length; i++) total += parseFloat(a.cobroke[i].pct) || 0;
+  statusEl.textContent = 'Total shared: ' + total.toFixed(2).replace(/\.?0+$/, '') + '% — ' +
+    (total > 100 ? 'exceeds 100%!' : (total === 0 ? 'enter %' : 'Barry keeps: ' + (100 - total).toFixed(2).replace(/\.?0+$/, '') + '%'));
+  statusEl.className = 'cobroke-status ' + (total > 100 ? 'bad' : 'ok');
+}
+
+// ── RENDER BRANCHES ──────────────────────────────────────────────────────────
+function renderBranches() {
+  var row = document.getElementById('branchesRow');
+  row.innerHTML = '';
+  for (var bi = 0; bi < branches.length; bi++) {
+    var b = branches[bi];
+    var col = document.createElement('div');
+    col.className = 'branch-col';
+    var header = '<div class="branch-header">' +
+      '<span class="branch-title">Branch ' + (bi+1) + '</span>' +
+      '<button class="btn-del-branch" onclick="removeBranch(' + b.id + ')">Remove Branch</button>' +
+      '</div>';
+    var agentsHtml = '';
+    for (var ai = 0; ai < b.agents.length; ai++) {
+      var a = b.agents[ai];
+      var r = RANKS[a.rank];
+      var opts = '';
+      for (var k = 0; k < RANK_KEYS.length; k++) {
+        var rk = RANK_KEYS[k];
+        opts += '<option value="' + rk + '"' + (a.rank === rk ? ' selected' : '') + '>' + RANKS[rk].label + ' (' + RANKS[rk].pct + '%)</option>';
+      }
+
+      // Co-broke section (only shown when hasDeal is ON)
+      var cobrokeHtml = '';
+      if (a.hasDeal) {
+        var cbTotal = 0;
+        for (var ci = 0; ci < a.cobroke.length; ci++) cbTotal += parseFloat(a.cobroke[ci].pct) || 0;
+        var agentKeeps = Math.max(0, 100 - cbTotal);
+
+        var partnersHtml = '';
+        for (var ci = 0; ci < a.cobroke.length; ci++) {
+          var cp = a.cobroke[ci];
+          var cpRankOpts = '';
+          for (var k = 0; k < RANK_KEYS.length; k++) {
+            var rk2 = RANK_KEYS[k];
+            cpRankOpts += '<option value="' + rk2 + '">' + RANKS[rk2].label + ' (' + RANKS[rk2].pct + '%)</option>';
+          }
+
+          // WTP chain builder
+          var wtpChainHtml = '';
+          if (cp.isWTP) {
+            var chainHtml = '';
+            for (var ui = 0; ui < cp.wtpChain.length; ui++) {
+              var ul = cp.wtpChain[ui];
+              var ulOpts = '';
+              for (var k2 = 0; k2 < RANK_KEYS.length; k2++) {
+                var rk3 = RANK_KEYS[k2];
+                ulOpts += '<option value="' + rk3 + '"' + (ul.rank === rk3 ? ' selected' : '') + '>' + RANKS[rk3].label + ' (' + RANKS[rk3].pct + '%)</option>';
+              }
+              chainHtml +=
+                '<div class="wtp-chain-node">' +
+                  '<div class="wtp-chain-row">' +
+                    '<input type="text" value="' + escHtml(ul.name) + '" placeholder="Upline name" style="font-size:12px;" ' +
+                      'oninput="onWTPUplineNameChange(' + b.id + ',' + a.id + ',' + ci + ',' + ui + ',this.value)"/>' +
+                    '<select style="font-size:12px;" onchange="onWTPUplineRankChange(' + b.id + ',' + a.id + ',' + ci + ',' + ui + ',this.value)">' + ulOpts + '</select>' +
+                    '<button class="wtp-del-btn" onclick="removeWTPUpline(' + b.id + ',' + a.id + ',' + ci + ',' + ui + ')">✕</button>' +
+                  '</div>' +
+                  '<div class="wtp-arrow">↓</div>' +
+                '</div>';
+            }
+            wtpChainHtml =
+              '<div class="wtp-chain-wrap">' +
+                '<div class="wtp-chain-label">Upline chain (top → down to ' + escHtml(cp.name || 'co-broke agent') + ')</div>' +
+                chainHtml +
+                '<div class="wtp-chain-node wtp-chain-bottom">' +
+                  '<span class="wtp-agent-pill">' + escHtml(cp.name || 'Co-broke agent') + ' (same rank as ' + escHtml(a.name || RANKS[a.rank].label) + ')</span>' +
+                '</div>' +
+                (cp.wtpChain.length < 3
+                  ? '<button class="wtp-add-btn" onclick="addWTPUpline(' + b.id + ',' + a.id + ',' + ci + ')">+ Add upline above</button>'
+                  : '') +
+              '</div>';
+          }
+
+          partnersHtml +=
+            '<div class="cobroke-partner-card">' +
+              '<div class="cobroke-row">' +
+                '<input type="text" value="' + escHtml(cp.name) + '" placeholder="Partner name" style="font-size:13px;" ' +
+                  'oninput="onCobrokeNameChange(' + b.id + ',' + a.id + ',' + ci + ',this.value)"/>' +
+                '<div class="inp-wrap" style="min-width:0;">' +
+                  '<span class="inp-pre" style="font-size:13px;">%</span>' +
+                  '<input type="number" value="' + escHtml(String(cp.pct)) + '" min="0" max="100" step="0.5" placeholder="0" ' +
+                    'oninput="onCobrokePctChange(' + b.id + ',' + a.id + ',' + ci + ',this.value)" style="padding-left:28px;font-size:13px;"/>' +
+                '</div>' +
+                '<button class="cobroke-del-btn" onclick="removeCobrokePartner(' + b.id + ',' + a.id + ',' + ci + ')">✕</button>' +
+              '</div>' +
+              '<div class="wtp-toggle-row">' +
+                '<label class="tog" style="width:34px;height:19px;">' +
+                  '<input type="checkbox"' + (cp.isWTP ? ' checked' : '') + ' onchange="onCobrokeWTPChange(' + b.id + ',' + a.id + ',' + ci + ',this.checked)"/>' +
+                  '<span class="tog-sl"></span>' +
+                '</label>' +
+                '<span style="font-size:12px;color:' + (cp.isWTP ? 'var(--amber)' : 'var(--muted)') + ';font-weight:600;">' +
+                  (cp.isWTP ? 'WTP Agent — upline gets override' : 'External agent — no upline') +
+                '</span>' +
+              '</div>' +
+              wtpChainHtml +
+            '</div>';
+        }
+
+        var cbStatusTxt = a.cobroke.length > 0
+          ? ('Shared: ' + cbTotal.toFixed(1).replace(/\.0$/, '') + '% — ' +
+             (cbTotal > 100 ? 'Exceeds 100%!' : escHtml(a.name || RANKS[a.rank].label) + ' keeps ' + agentKeeps.toFixed(1).replace(/\.0$/, '') + '%'))
+          : '';
+        var cbStatusCls = cbTotal > 100 ? 'bad' : 'ok';
+
+        cobrokeHtml =
+          '<div class="cobroke-section">' +
+            '<div class="cobroke-toggle-row">' +
+              '<span class="cobroke-lbl">&#9654; Co-broke / Referral Share</span>' +
+            '</div>' +
+            (a.cobroke.length > 0 ? '<div class="cobroke-partners">' + partnersHtml + '</div>' : '') +
+            (a.cobroke.length > 0 ? '<div class="cobroke-status ' + cbStatusCls + '" id="cbStatus_' + b.id + '_' + a.id + '">' + cbStatusTxt + '</div>' : '') +
+            '<button class="cobroke-add-btn" onclick="addCobrokePartner(' + b.id + ',' + a.id + ')">+ Add Co-broke Partner</button>' +
+          '</div>';
+      }
+
+      if (ai > 0) agentsHtml += '<div class="branch-connector"></div>';
+      agentsHtml += '<div class="branch-agent">' +
+        '<div style="flex:1;">' +
+          '<div class="ba-rank-wrap"><span class="rank-pill ' + r.pillCls + '">' + r.label + ' &bull; ' + r.pct + '%</span></div>' +
+          '<div style="margin-bottom:8px;"><select onchange="onBranchRankChange(' + b.id + ',' + a.id + ',this.value)">' + opts + '</select></div>' +
+          '<input type="text" value="' + escHtml(a.name) + '" placeholder="Agent name" oninput="onBranchNameChange(' + b.id + ',' + a.id + ',this.value)" style="margin-bottom:8px;"/>' +
+          '<div class="toggle-wrap">' +
+            '<label class="tog"><input type="checkbox"' + (a.hasDeal ? ' checked' : '') + ' onchange="onBranchDealChange(' + b.id + ',' + a.id + ',this.checked)"/><span class="tog-sl"></span></label>' +
+            '<span class="tog-label">' + (a.hasDeal ? 'Personal Deal ON' : 'Personal Deal OFF') + '</span>' +
+          '</div>' +
+          cobrokeHtml +
+        '</div>' +
+        '<div class="ba-right">' +
+          '<button class="btn-remove" onclick="removeAgentFromBranch(' + b.id + ',' + a.id + ')">Remove</button>' +
+        '</div>' +
+      '</div>';
+    }
+    col.innerHTML = header + agentsHtml +
+      '<button class="btn-add" onclick="addAgentToBranch(' + b.id + ')">+ Add Agent Below</button>';
+    row.appendChild(col);
+  }
+  var addBtn = document.createElement('button');
+  addBtn.className = 'add-branch-btn';
+  addBtn.id = 'addBranchBtn';
+  addBtn.onclick = addBranch;
+  addBtn.textContent = '+ Add Branch';
+  row.appendChild(addBtn);
+  var edmondDeal = document.getElementById('edmondDeal');
+  if (edmondDeal) {
+    document.getElementById('edmondDealLbl').textContent = edmondDeal.checked ? 'ON' : 'OFF';
+  }
+}
+
+// ── DEAL INPUTS ──────────────────────────────────────────────────────────────
+function updateGross() {
+  var sp = parseFloat(document.getElementById('salesPrice').value) || 0;
+  var dr = parseFloat(document.getElementById('devCommRate').value) || 0;
+  document.getElementById('grossComm').value = (sp * dr / 100).toFixed(2);
+  updateRateSummary();
+}
+function updatePicProject() {
+  document.getElementById('picProject').value = document.getElementById('projName').value || '';
+}
+function updatePicCommPreview() {
+  var net     = parseFloat(document.getElementById('netComm').value) || 0;
+  var picPct  = parseFloat(document.getElementById('picRate').value) || 0;
+  var picRank = document.getElementById('picRank').value || 'REN';
+  var rankPct = RANKS[picRank] ? RANKS[picRank].pct : 70;
+  var pool    = net * picPct / 100;
+  var earn    = pool * rankPct / 100;
+  var remainder = pool - earn;
+  var poolEl  = document.getElementById('picPool');
+  if (poolEl) poolEl.value = pool.toFixed(2);
+  document.getElementById('picComm').value = earn.toFixed(2);
+  var note = document.getElementById('picRankNote');
+  if (note) {
+    note.textContent = pool > 0
+      ? fmtRM(pool) + ' \u00d7 ' + rankPct + '% = ' + fmtRM(earn) + ' (remainder ' + fmtRM(remainder) + ' \u2192 company)'
+      : '';
+  }
+}
+function updateRateSummary() {
+  var gross   = parseFloat(document.getElementById('grossComm').value) || 0;
+  var sstPct  = parseFloat(document.getElementById('sstRate').value) || 0;
+  // Reverse SST: gross already includes SST, so divide to extract net
+  var net     = sstPct > 0 ? gross / (1 + sstPct / 100) : gross;
+  var sstAmt  = gross - net;
+  document.getElementById('netComm').value = net.toFixed(2);
+  var sstNote = document.getElementById('sstNote');
+  if (sstPct > 0) {
+    sstNote.textContent = fmtRM(gross) + ' \u00f7 1.' + (sstPct < 10 ? '0' : '') + sstPct + ' = ' + fmtRM(net) + ' (SST portion: ' + fmtRM(sstAmt) + ')';
+  } else {
+    sstNote.textContent = 'No SST \u2014 developer absorbs the 8%, full gross flows through.';
+    sstNote.style.color = 'var(--green)';
+  }
+
+  var comp = parseFloat(document.getElementById('companyRate').value) || 0;
+  var pic  = parseFloat(document.getElementById('picRate').value) || 0;
+  var agt  = parseFloat(document.getElementById('agentsRate').value) || 0;
+  var tot  = comp + pic + agt;
+  var diff = Math.abs(tot - 100);
+  var ok   = diff < 0.0001;
+
+  document.getElementById('rsGross').textContent   = fmtRM(gross);
+  document.getElementById('rsSST').textContent     = sstPct > 0 ? '-' + fmtRM(sstAmt) : 'None (0%)';
+  document.getElementById('rsSST').style.color     = sstPct > 0 ? '#f87171' : 'var(--green)';
+  document.getElementById('rsNet').textContent     = fmtRM(net);
+  document.getElementById('rsCompany').textContent = comp + '%';
+  document.getElementById('rsPIC').textContent     = pic + '%';
+  document.getElementById('rsAgents').textContent  = agt + '%';
+  document.getElementById('rsTotal').textContent   = tot.toFixed(4).replace(/\.?0+$/, '') + '%';
+  document.getElementById('rsTotal').style.color   = ok ? 'var(--green)' : 'var(--red)';
+  var st = document.getElementById('rsStatus');
+  if (ok) {
+    st.textContent = 'OK'; st.style.background = 'rgba(16,185,129,.15)'; st.style.color = 'var(--green)';
+  } else {
+    st.textContent = diff.toFixed(2).replace(/\.?0+$/, '') + '% ' + (tot > 100 ? 'over' : 'under') + ' 100%';
+    st.style.background = 'rgba(239,68,68,.15)'; st.style.color = 'var(--red)';
+  }
+  updatePicCommPreview();
+}
+
+// ── CALCULATE ────────────────────────────────────────────────────────────────
+function calculate() {
+  clearAlert();
+  var grossComm   = parseFloat(document.getElementById('grossComm').value) || 0;
+  var sstPct      = parseFloat(document.getElementById('sstRate').value) || 0;
+  var companyPct  = parseFloat(document.getElementById('companyRate').value) || 0;
+  var picPct      = parseFloat(document.getElementById('picRate').value) || 0;
+  var picRankKey  = document.getElementById('picRank').value || 'REN';
+  var picRankPct  = RANKS[picRankKey] ? RANKS[picRankKey].pct : 70;
+  var picRankLbl  = RANKS[picRankKey] ? RANKS[picRankKey].label : 'REN';
+  var agentsPct   = parseFloat(document.getElementById('agentsRate').value) || 0;
+  var picName     = document.getElementById('picName').value || 'PIC';
+  var companyName = document.getElementById('companyName').value || 'Company';
+  var edmondName  = document.getElementById('edmondName').value || 'Edmond';
+  var edmondDeal  = document.getElementById('edmondDeal').checked;
+  var salesPrice  = parseFloat(document.getElementById('salesPrice').value) || 0;
+
+  if (branches.length === 0) { showAlert('Please add at least one branch.'); return; }
+  if (grossComm <= 0) { showAlert('Gross commission must be greater than 0.'); return; }
+
+  var splitTotal = companyPct + picPct + agentsPct;
+  var splitDiff  = Math.abs(splitTotal - 100);
+  if (splitDiff > 0.0001) {
+    showAlert('Split error: Company (' + companyPct + '%) + PIC (' + picPct + '%) + Agents (' + agentsPct + '%) = ' + splitTotal.toFixed(2) + '%. Must sum to exactly 100%.');
+    return;
+  }
+
+  // Validate branch rank order
+  for (var bi = 0; bi < branches.length; bi++) {
+    var b = branches[bi];
+    if (b.agents.length === 0) continue;
+    for (var ai = 1; ai < b.agents.length; ai++) {
+      if (RANKS[b.agents[ai].rank].pct > RANKS[b.agents[ai-1].rank].pct) {
+        showAlert('Branch ' + (bi+1) + ' rank conflict: "' + (b.agents[ai].name || RANKS[b.agents[ai].rank].label) + '" has higher rank than "' + (b.agents[ai-1].name || RANKS[b.agents[ai-1].rank].label) + '". Order top to bottom (highest rank first).');
+        return;
+      }
+    }
+  }
+
+  // ── STEP 1: Gross → SST (reverse) → Net (per deal)
+  // Gross already includes SST baked in, so divide to extract net
+  var netComm = sstPct > 0 ? grossComm / (1 + sstPct / 100) : grossComm;
+  var sstAmt  = grossComm - netComm;
+
+  // ── STEP 2: Net splits per deal
+  var agentPoolPerDeal    = netComm * agentsPct / 100;
+  var companyAmtPerDeal   = netComm * companyPct / 100;
+  var picPoolPerDeal      = netComm * picPct / 100;          // total PIC pool (e.g. RM 1,852)
+  var picEarnPerDeal      = picPoolPerDeal * picRankPct / 100; // PIC earns rank% of pool
+  var picRemainderPerDeal = picPoolPerDeal - picEarnPerDeal;   // silent → company
+
+  // Count ALL deals
+  var totalDealsCount = edmondDeal ? 1 : 0;
+  for (var bi = 0; bi < branches.length; bi++) {
+    for (var ai = 0; ai < branches[bi].agents.length; ai++) {
+      if (branches[bi].agents[ai].hasDeal) totalDealsCount++;
+    }
+  }
+  var totalGrossAllDeals  = totalDealsCount * grossComm;
+  var totalNetAllDeals    = totalDealsCount * netComm;
+  var totalSSTAllDeals    = totalDealsCount * sstAmt;
+  var totalCompanyComm    = totalDealsCount * companyAmtPerDeal;
+  var totalPicPool        = totalDealsCount * picPoolPerDeal;
+  var totalPicComm        = totalDealsCount * picEarnPerDeal;    // what PIC actually receives
+  var totalPicRemainder   = totalDealsCount * picRemainderPerDeal; // silent back to company
+  var totalAgentPool      = totalDealsCount * agentPoolPerDeal;
+
+  var lines = [];
+  var allPayouts = {};
+  var cobrokePayouts = {}; // keyed by partner name string
+  var branchResults = [];
+  var edmondPayout = { personal:0, overrides:0, wtp1:0, wtp2:0, total:0 };
+
+  // Personal deal for Edmond — his share is 90% of the agent pool for his deal
+  if (edmondDeal) {
+    var earn = agentPoolPerDeal * 0.90;
+    edmondPayout.personal = earn;
+    lines.push({
+      label: edmondName + ' (personal deal)',
+      formula: '90% x ' + fmtRM(agentPoolPerDeal),
+      exp: 'ATL 90% of agent pool (' + fmtRM(agentPoolPerDeal) + ')',
+      amount: earn, isWTP:false, isPIC:false, branch:'Edmond'
+    });
+  }
+
+  // Process each branch
+  for (var bi = 0; bi < branches.length; bi++) {
+    var b = branches[bi];
+    var branchAgents = b.agents;
+    var n = branchAgents.length;
+    var branchPayout = {};
+    for (var ai = 0; ai < n; ai++) {
+      branchPayout[branchAgents[ai].id] = { personal:0, overrides:0, wtp1:0, wtp2:0, total:0 };
+      allPayouts[branchAgents[ai].id]   = branchPayout[branchAgents[ai].id];
+    }
+    var branchTag = 'Branch ' + (bi+1);
+
+    // Personal deals in branch — each agent earns their rank% of the agent pool
+    for (var ai = 0; ai < n; ai++) {
+      var a = branchAgents[ai];
+      if (!a.hasDeal) continue;
+
+      // ── Co-broke pool split ──────────────────────────────────────────────────
+      // Total share % going to co-broke partners
+      var cbTotalPct = 0;
+      if (a.cobroke && a.cobroke.length > 0) {
+        for (var ci = 0; ci < a.cobroke.length; ci++) {
+          cbTotalPct += parseFloat(a.cobroke[ci].pct) || 0;
+        }
+      }
+      if (cbTotalPct > 100) {
+        showAlert((a.name || RANKS[a.rank].label) + ' co-broke share total exceeds 100%. Please fix before calculating.');
+        return;
+      }
+
+      // Stream A: agent's own slice of the pool
+      var streamA = agentPoolPerDeal * (1 - cbTotalPct / 100);
+      // Agent earns their rank% of their stream A slice
+      var earnA = streamA * RANKS[a.rank].pct / 100;
+      branchPayout[a.id].personal = earnA;
+
+      var labelSuffix = cbTotalPct > 0 ? ' (keeps ' + (100-cbTotalPct).toFixed(1).replace(/\.0$/,'') + '% of pool)' : '';
+      lines.push({
+        label: (a.name||RANKS[a.rank].label) + ' (personal deal' + labelSuffix + ')',
+        formula: RANKS[a.rank].pct + '% \xd7 ' + fmtRM(streamA),
+        exp: (cbTotalPct > 0 ? 'Stream A: pool \xd7 ' + (100-cbTotalPct).toFixed(1).replace(/\.0$/,'') + '% = ' + fmtRM(streamA) + '. ' : '') +
+             RANKS[a.rank].label + ' earns ' + RANKS[a.rank].pct + '%',
+        amount: earnA, isWTP:false, isPIC:false, branch: branchTag, streamA: cbTotalPct > 0
+      });
+
+      // ── Stream B: each co-broke partner ──────────────────────────────────────
+      if (a.cobroke && a.cobroke.length > 0) {
+        for (var ci = 0; ci < a.cobroke.length; ci++) {
+          var cp = a.cobroke[ci];
+          var cpPct = parseFloat(cp.pct) || 0;
+          if (cpPct <= 0) continue;
+          var streamB = agentPoolPerDeal * cpPct / 100;
+          var cpName = cp.name || ('Co-broke ' + (ci+1));
+
+          if (cp.isWTP && cp.wtpChain && cp.wtpChain.length > 0) {
+            // ── WTP path: stream B flows up through cp's own chain ────────────
+            // Chain is stored top-to-bottom, e.g. [Peter TL, Adrian REN-implied]
+            // The co-broke agent (Adrian) has same rank as the dealing agent (Barry)
+            var cbAgentRank = a.rank; // Adrian inherits same rank as Barry
+            var cbAgentPct  = RANKS[cbAgentRank].pct;
+            var cbChain     = cp.wtpChain; // [{name, rank}, ...]
+
+            // Adrian earns his rank% of stream B
+            var cbAgentEarn = streamB * cbAgentPct / 100;
+            lines.push({
+              label: cpName + ' co-broke (' + cpPct + '% of pool)',
+              formula: cbAgentPct + '% \xd7 ' + fmtRM(streamB),
+              exp: 'Stream B (' + cpPct + '% of pool = ' + fmtRM(streamB) + '). ' + cpName + ' earns ' + RANKS[cbAgentRank].label + ' ' + cbAgentPct + '%',
+              amount: cbAgentEarn, isWTP:false, isPIC:false, isCobroke:true, isCobrokeWTP:true,
+              branch: branchTag, cobrokeName: cpName
+            });
+            if (!cobrokePayouts[cpName]) cobrokePayouts[cpName] = { earn:0, overrides:0, wtp1:0, isWTP:true, chain:[] };
+            cobrokePayouts[cpName].earn += cbAgentEarn;
+
+            // Walk up the WTP chain: [Peter TL, ...] overriding on stream B
+            // First upline overrides on Adrian; each subsequent on the one below it
+            var prevPct = cbAgentPct;
+            for (var ui = cbChain.length - 1; ui >= 0; ui--) {
+              var ul = cbChain[ui];
+              var ulPct = RANKS[ul.rank].pct;
+              var ulName = ul.name || (RANKS[ul.rank].label + ' (upline)');
+              var gap = ulPct - prevPct;
+              if (gap > 0) {
+                var ulEarn = streamB * gap / 100;
+                lines.push({
+                  label: ulName + ' override on ' + cpName,
+                  formula: '(' + ulPct + '% - ' + prevPct + '%) \xd7 ' + fmtRM(streamB),
+                  exp: gap + '% gap on Stream B (' + fmtRM(streamB) + '). WTP chain override.',
+                  amount: ulEarn, isWTP:false, isPIC:false, isCobroke:true, isCobrokeWTP:true,
+                  branch: branchTag, cobrokeName: ulName
+                });
+                if (!cobrokePayouts[ulName]) cobrokePayouts[ulName] = { earn:0, overrides:0, wtp1:0, isWTP:true, chain:[] };
+                cobrokePayouts[ulName].overrides += ulEarn;
+              } else if (gap === 0) {
+                var wtp1 = streamB * 0.02;
+                lines.push({
+                  label: ulName + ' WTP Gen1 on ' + cpName,
+                  formula: '2% \xd7 ' + fmtRM(streamB),
+                  exp: 'Same rank — WTP Gen1 on Stream B',
+                  amount: wtp1, isWTP:true, isPIC:false, isCobroke:true, isCobrokeWTP:true,
+                  branch: branchTag, cobrokeName: ulName
+                });
+                if (!cobrokePayouts[ulName]) cobrokePayouts[ulName] = { earn:0, overrides:0, wtp1:0, isWTP:true, chain:[] };
+                cobrokePayouts[ulName].wtp1 += wtp1;
+              }
+              prevPct = ulPct;
+            }
+
+          } else {
+            // ── External path: partner gets full stream B slice flat ──────────
+            lines.push({
+              label: cpName + ' (co-broke ' + cpPct + '% — external)',
+              formula: fmtRM(streamB) + ' flat',
+              exp: 'External agent. Stream B: pool \xd7 ' + cpPct + '% = ' + fmtRM(streamB) + '. No upline chain.',
+              amount: streamB, isWTP:false, isPIC:false, isCobroke:true, isCobrokeWTP:false,
+              branch: branchTag, cobrokeName: cpName
+            });
+            if (!cobrokePayouts[cpName]) cobrokePayouts[cpName] = { earn:0, overrides:0, wtp1:0, isWTP:false, chain:[] };
+            cobrokePayouts[cpName].earn += streamB;
+          }
+        }
+      }
+    }
+
+    // Team gross (agent pool) per position — cumulative downward
+    // For override/WTP purposes we use each agent's Stream A slice (what flows up to their upline)
+    var teamGross = new Array(n).fill(0);
+    for (var ai = n-1; ai >= 0; ai--) {
+      if (branchAgents[ai].hasDeal) {
+        var cbTotalPct2 = 0;
+        if (branchAgents[ai].cobroke) {
+          for (var ci2 = 0; ci2 < branchAgents[ai].cobroke.length; ci2++) cbTotalPct2 += parseFloat(branchAgents[ai].cobroke[ci2].pct) || 0;
+        }
+        var streamAPool = agentPoolPerDeal * (1 - cbTotalPct2 / 100);
+        teamGross[ai] = streamAPool + (ai < n-1 ? teamGross[ai+1] : 0);
+      } else {
+        teamGross[ai] = (ai < n-1 ? teamGross[ai+1] : 0);
+      }
+    }
+
+    // Overrides / WTP within branch
+    for (var ai = 0; ai < n-1; ai++) {
+      var up      = branchAgents[ai];
+      var down    = branchAgents[ai+1];
+      var upPct   = RANKS[up.rank].pct;
+      var downPct = RANKS[down.rank].pct;
+      var gap     = upPct - downPct;
+      var tg      = teamGross[ai+1];
+      if (tg === 0) continue;
+      if (gap > 0) {
+        var earn = tg * gap / 100;
+        branchPayout[up.id].overrides += earn;
+        lines.push({
+          label: (up.name||RANKS[up.rank].label) + ' override on ' + (down.name||RANKS[down.rank].label),
+          formula: '(' + upPct + '% - ' + downPct + '%) x ' + fmtRM(tg),
+          exp: gap + '% gap on agent pool of ' + fmtRM(tg),
+          amount: earn, isWTP:false, isPIC:false, branch:branchTag
+        });
+      } else {
+        var wtp1 = tg * 0.02;
+        branchPayout[up.id].wtp1 += wtp1;
+        lines.push({
+          label: (up.name||RANKS[up.rank].label) + ' WTP Gen1 on ' + (down.name||RANKS[down.rank].label),
+          formula: '2% x ' + fmtRM(tg),
+          exp: 'Same rank - WTP Gen1 (2%) replaces 0% override',
+          amount: wtp1, isWTP:true, isPIC:false, branch:branchTag
+        });
+        if (ai > 0) {
+          var gen2 = branchAgents[ai-1];
+          var wtp2 = tg * 0.01;
+          branchPayout[gen2.id].wtp2 += wtp2;
+          lines.push({
+            label: (gen2.name||RANKS[gen2.rank].label) + ' WTP Gen2',
+            formula: '1% x ' + fmtRM(tg),
+            exp: 'Indirect upline (2 levels up) earns 1% WTP',
+            amount: wtp2, isWTP:true, isPIC:false, branch:branchTag
+          });
+        }
+      }
+    }
+
+    // Edmond override / WTP on first agent in branch
+    var firstAgent     = branchAgents[0];
+    var branchTeamPool = teamGross[0]; // total agent pool flowing up from this branch
+    if (branchTeamPool === 0) {
+      branchResults.push({ id:bi+1, name:branchTag, agents:n, deals:0, gross:0, edmondEarn:0 });
+      continue;
+    }
+    var edmondPct  = 90;
+    var firstPct   = RANKS[firstAgent.rank].pct;
+    var gap        = edmondPct - firstPct;
+    var edmondEarn = 0;
+    if (gap > 0) {
+      edmondEarn = branchTeamPool * gap / 100;
+      edmondPayout.overrides += edmondEarn;
+      lines.push({
+        label: edmondName + ' override on ' + (firstAgent.name||RANKS[firstAgent.rank].label) + ' (' + branchTag + ')',
+        formula: '(' + edmondPct + '% - ' + firstPct + '%) x ' + fmtRM(branchTeamPool),
+        exp: gap + '% gap on ' + branchTag + ' agent pool of ' + fmtRM(branchTeamPool),
+        amount: edmondEarn, isWTP:false, isPIC:false, branch:branchTag
+      });
+    } else {
+      edmondEarn = branchTeamPool * 0.02;
+      edmondPayout.wtp1 += edmondEarn;
+      lines.push({
+        label: edmondName + ' WTP Gen1 on ' + (firstAgent.name||RANKS[firstAgent.rank].label) + ' (' + branchTag + ')',
+        formula: '2% x ' + fmtRM(branchTeamPool),
+        exp: 'Same rank - WTP Gen1 (2%) from ' + branchTag,
+        amount: edmondEarn, isWTP:true, isPIC:false, branch:branchTag
+      });
+    }
+
+    var branchDeals = 0;
+    for (var ai = 0; ai < n; ai++) { if (branchAgents[ai].hasDeal) branchDeals++; }
+    branchResults.push({ id:bi+1, name:branchTag, agents:n, deals:branchDeals, gross:branchTeamPool, edmondEarn:edmondEarn });
+  }
+
+  // Company + PIC lines (on total NET, all deals)
+  lines.push({
+    label: companyName + ' (Company ' + companyPct + '% of net)',
+    formula: companyPct + '% \xd7 ' + fmtRM(totalNetAllDeals) + ' (' + totalDealsCount + ' deal(s))',
+    exp: 'Net = Gross \u00f7 1.' + (sstPct < 10 ? '0' : '') + sstPct + ' = ' + fmtRM(netComm) + ' per deal. Company ' + companyPct + '%.',
+    amount: totalCompanyComm, isWTP:false, isPIC:false, isCompany:true, branch:'Company'
+  });
+  // PIC pool line — shows what system allocates
+  lines.push({
+    label: picName + ' pool (' + picPct + '% of net)',
+    formula: picPct + '% \xd7 ' + fmtRM(totalNetAllDeals) + ' (' + totalDealsCount + ' deal(s))',
+    exp: 'PIC pool = ' + fmtRM(totalPicPool) + '. Rank: ' + picRankLbl + ' ' + picRankPct + '%. Remainder ' + fmtRM(totalPicRemainder) + ' \u2192 company.',
+    amount: totalPicPool, isWTP:false, isPIC:true, isPICpool:true, branch:'PIC'
+  });
+  // PIC earn line — what PIC actually receives
+  lines.push({
+    label: picName + ' (' + picRankLbl + ' ' + picRankPct + '% of pool)',
+    formula: picRankPct + '% \xd7 ' + fmtRM(totalPicPool),
+    exp: picName + ' earns ' + picRankLbl + ' rate (' + picRankPct + '%) of pool ' + fmtRM(totalPicPool) + ' = ' + fmtRM(totalPicComm),
+    amount: totalPicComm, isWTP:false, isPIC:true, branch:'PIC'
+  });
+
+  // Edmond total
+  edmondPayout.total = edmondPayout.personal + edmondPayout.overrides + edmondPayout.wtp1 + edmondPayout.wtp2;
+
+  // Agent totals - sum actual payouts
+  var totalAgentPayout = edmondPayout.total;
+  for (var key in allPayouts) {
+    var p = allPayouts[key];
+    p.total = p.personal + p.overrides + p.wtp1 + p.wtp2;
+    totalAgentPayout += p.total;
+  }
+
+  // ── RENDER ────────────────────────────────────────────────────────────────
+  renderTreeViz(edmondName, edmondDeal, edmondPayout);
+  renderBranchSummary(branchResults, edmondName);
+  renderCards(allPayouts, cobrokePayouts, edmondName, edmondPayout, picName, picRankLbl, picRankPct, totalPicPool, totalPicComm, totalPicRemainder, companyName, totalCompanyComm);
+  renderBreakdownWithReview(lines);
+  document.getElementById('reviewToggleBtn').style.display = 'inline-block';
+  renderSummary(grossComm, sstAmt, netComm, totalAgentPayout, totalPicComm, totalPicRemainder, totalCompanyComm, companyName, totalDealsCount, totalGrossAllDeals, totalNetAllDeals, sstPct);
+  var picPoolEl = document.getElementById('picPool');
+  if (picPoolEl) picPoolEl.value = totalPicPool.toFixed(2);
+  document.getElementById('picComm').value = totalPicComm.toFixed(2);
+  document.getElementById('picCommNote').textContent =
+    totalDealsCount + ' deal(s): pool ' + fmtRM(totalPicPool) + ' \xd7 ' + picRankPct + '% (' + picRankLbl + ') = ' + fmtRM(totalPicComm) + ' | remainder ' + fmtRM(totalPicRemainder) + ' \u2192 company';
+  document.getElementById('companyComm').value = totalCompanyComm.toFixed(2);
+  document.getElementById('companyCommNote').textContent = totalDealsCount + ' deal(s): ' + totalDealsCount + ' \xd7 ' + fmtRM(netComm) + ' \xd7 ' + companyPct + '% = ' + fmtRM(totalCompanyComm);
+
+  var el = document.getElementById('results');
+  el.style.display = 'block';
+  setTimeout(function(){ el.scrollIntoView({behavior:'smooth',block:'start'}); }, 80);
+}
+
+// ── TREE VISUALIZATION ────────────────────────────────────────────────────────
+function renderTreeViz(edmondName, edmondDeal, edmondPayout) {
+  var viz = document.getElementById('treeViz');
+  // Simple CSS tree: Edmond at top, branches as children
+  var edmondHtml = '<div class="tree-root">' +
+    '<div class="tree-node-box hn-atl">' +
+      '<span class="hn-name">' + escHtml(edmondName) + '</span>' +
+      '<span class="hn-pct">ATL 90%</span>' +
+      (edmondDeal ? '<span class="hn-deal">personal deal</span>' : '') +
+    '</div>';
+
+  if (branches.length > 0) {
+    edmondHtml += '<div class="tree-vline"></div>';
+    edmondHtml += '<div class="tree-children">';
+    for (var bi = 0; bi < branches.length; bi++) {
+      var b = branches[bi];
+      edmondHtml += '<div class="tree-branch-wrap">';
+      for (var ai = 0; ai < b.agents.length; ai++) {
+        var a = b.agents[ai];
+        var r = RANKS[a.rank];
+        edmondHtml += '<div class="tree-node-box ' + r.hierCls + '">' +
+          '<span class="hn-name">' + escHtml(a.name || r.label) + '</span>' +
+          '<span class="hn-pct">' + r.label + ' ' + r.pct + '%</span>' +
+          (a.hasDeal ? '<span class="hn-deal">personal deal</span>' : '') +
+          '</div>';
+        if (ai < b.agents.length - 1) edmondHtml += '<div class="tree-vline"></div>';
+      }
+      edmondHtml += '</div>';
+    }
+    edmondHtml += '</div>';
+  }
+  edmondHtml += '</div>';
+  viz.innerHTML = edmondHtml;
+}
+
+// ── BRANCH SUMMARY ────────────────────────────────────────────────────────────
+function renderBranchSummary(branchResults, edmondName) {
+  var grid = document.getElementById('branchSummaryGrid');
+  grid.innerHTML = '';
+  var totalEdmond = 0;
+  for (var i = 0; i < branchResults.length; i++) {
+    var br = branchResults[i];
+    totalEdmond += br.edmondEarn;
+    var card = document.createElement('div');
+    card.className = 'branch-summary-card';
+    card.innerHTML =
+      '<div class="bsc-title">' + br.name + ' &mdash; ' + br.agents + ' agent(s)</div>' +
+      '<div class="bsc-row"><span class="bsc-lbl">Deals in branch</span><span class="bsc-val">' + br.deals + '</span></div>' +
+      '<div class="bsc-row"><span class="bsc-lbl">Branch team gross</span><span class="bsc-val">' + fmtRM(br.gross) + '</span></div>' +
+      '<div class="bsc-row"><span class="bsc-lbl bsc-edmond">' + escHtml(edmondName) + ' earns from branch</span><span class="bsc-val bsc-edmond">' + fmtRM(br.edmondEarn) + '</span></div>';
+    grid.appendChild(card);
+  }
+}
+
+// ── CARDS ─────────────────────────────────────────────────────────────────────
+function rcLine(lbl, val, isWtp) {
+  return '<div class="rc-line"><span class="rc-lbl">' + lbl + '</span><span class="rc-val' + (isWtp ? ' wtp' : '') + '">' + fmtRM(val) + '</span></div>';
+}
+
+function renderCards(allPayouts, cobrokePayouts, edmondName, edmondPayout, picName, picRankLbl, picRankPct, picPool, picComm, picRemainder, companyName, companyComm) {
+  var grid = document.getElementById('resultCards');
+  grid.innerHTML = '';
+
+  // Edmond card first
+  var ec = document.createElement('div');
+  ec.className = 'result-card bar-atl';
+  ec.innerHTML = '<div class="rc-name">' + escHtml(edmondName) + '</div>' +
+    '<div class="rc-rank">ATL &bull; 90%</div>' +
+    '<div class="rc-lines">' +
+    (edmondPayout.personal  ? rcLine('Personal deal', edmondPayout.personal, false) : '') +
+    (edmondPayout.overrides ? rcLine('Override income', edmondPayout.overrides, false) : '') +
+    (edmondPayout.wtp1      ? rcLine('WTP Gen1 (2%)', edmondPayout.wtp1, true) : '') +
+    (edmondPayout.wtp2      ? rcLine('WTP Gen2 (1%)', edmondPayout.wtp2, true) : '') +
+    '</div>' +
+    '<div class="rc-total"><div class="rc-total-lbl">Total Payout</div><div class="rc-total-val">' + fmtRM(edmondPayout.total) + '</div></div>';
+  grid.appendChild(ec);
+
+  // Branch agents
+  for (var bi = 0; bi < branches.length; bi++) {
+    for (var ai = 0; ai < branches[bi].agents.length; ai++) {
+      var a = branches[bi].agents[ai];
+      var r = RANKS[a.rank];
+      var p = allPayouts[a.id] || { personal:0, overrides:0, wtp1:0, wtp2:0, total:0 };
+      var card = document.createElement('div');
+      card.className = 'result-card ' + r.barCls;
+      card.innerHTML = '<div class="rc-name">' + escHtml(a.name || r.label) + '</div>' +
+        '<div class="rc-rank">' + r.label + ' &bull; ' + r.pct + '% &mdash; Branch ' + (bi+1) + '</div>' +
+        '<div class="rc-lines">' +
+        (p.personal  ? rcLine('Personal deal', p.personal, false) : '') +
+        (p.overrides ? rcLine('Override income', p.overrides, false) : '') +
+        (p.wtp1      ? rcLine('WTP Gen1 (2%)', p.wtp1, true) : '') +
+        (p.wtp2      ? rcLine('WTP Gen2 (1%)', p.wtp2, true) : '') +
+        (!p.personal && !p.overrides && !p.wtp1 && !p.wtp2 ? '<div style="color:var(--muted);font-size:13px;padding:8px 0;">No personal deal, no direct downline</div>' : '') +
+        '</div>' +
+        '<div class="rc-total"><div class="rc-total-lbl">Total Payout</div><div class="rc-total-val">' + fmtRM(p.total) + '</div></div>';
+      grid.appendChild(card);
+    }
+  }
+
+  // Co-broke partner cards
+  for (var cpName in cobrokePayouts) {
+    var cpData = cobrokePayouts[cpName];
+    var cpTotal = cpData.earn + cpData.overrides + cpData.wtp1;
+    var cpCard = document.createElement('div');
+    cpCard.className = 'result-card bar-cobroke';
+    var cpLines = '';
+    if (cpData.earn)      cpLines += rcLine(cpData.isWTP ? 'Personal commission' : 'Referral share', cpData.earn, false);
+    if (cpData.overrides) cpLines += rcLine('Override income', cpData.overrides, false);
+    if (cpData.wtp1)      cpLines += rcLine('WTP Gen1 (2%)', cpData.wtp1, true);
+    cpCard.innerHTML = '<div class="rc-name">' + escHtml(cpName) + '</div>' +
+      '<div class="rc-rank" style="color:#f59e0b;">' + (cpData.isWTP ? 'WTP Co-broke Agent / Upline' : 'External Co-broke Partner') + '</div>' +
+      '<div class="rc-lines">' + cpLines + '</div>' +
+      '<div class="rc-total" style="background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.2);">' +
+        '<div class="rc-total-lbl" style="color:#f59e0b;">Total Payout</div>' +
+        '<div class="rc-total-val" style="color:#f59e0b;">' + fmtRM(cpTotal) + '</div></div>';
+    grid.appendChild(cpCard);
+  }
+
+  // Company card
+  var compCard = document.createElement('div');
+  compCard.className = 'result-card bar-company';
+  compCard.innerHTML = '<div class="rc-name">' + escHtml(companyName||'Company') + '</div>' +
+    '<div class="rc-role-badge" style="color:#a78bfa;">Company Commission</div>' +
+    '<div class="rc-lines">' + rcLine('Company comm', companyComm, false) + '</div>' +
+    '<div class="rc-total" style="background:rgba(167,139,250,.08);border-color:rgba(167,139,250,.2);">' +
+      '<div class="rc-total-lbl" style="color:#a78bfa;">Total</div>' +
+      '<div class="rc-total-val" style="color:#a78bfa;">' + fmtRM(companyComm) + '</div></div>' +
+    '<div style="font-size:13px;color:var(--muted);margin-top:8px;">Retained by company</div>';
+  grid.appendChild(compCard);
+
+  // PIC card
+  var picCard = document.createElement('div');
+  picCard.className = 'result-card bar-pic';
+  picCard.innerHTML = '<div class="rc-name">' + escHtml(picName) + '</div>' +
+    '<div class="rc-rank" style="color:var(--amber);">Project PIC &bull; ' + escHtml(picRankLbl) + ' ' + picRankPct + '%</div>' +
+    '<div class="rc-lines">' +
+      rcLine('PIC pool (10% of net)', picPool, false) +
+      rcLine(picRankLbl + ' ' + picRankPct + '% of pool', picComm, false) +
+      '<div class="rc-line"><span class="rc-lbl" style="color:var(--muted);">Remainder \u2192 company</span>' +
+        '<span class="rc-val" style="color:var(--muted);">(' + fmtRM(picRemainder) + ')</span></div>' +
+    '</div>' +
+    '<div class="rc-total" style="background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.2);">' +
+      '<div class="rc-total-lbl" style="color:var(--amber);">PIC Receives</div>' +
+      '<div class="rc-total-val" style="color:var(--amber);">' + fmtRM(picComm) + '</div></div>' +
+    '<div style="font-size:12px;color:var(--muted);margin-top:8px;">Upline gets no commission from PIC pool.</div>';
+  grid.appendChild(picCard);
+}
+
+// ── BREAKDOWN TABLE ───────────────────────────────────────────────────────────
+function renderBreakdownWithReview(lines) {
+  flaggedRows = [];
+  var bkRows  = document.getElementById('bkRows');
+  var bkHead  = document.getElementById('bkHead');
+  reviewModeActive = false;
+  document.getElementById('reviewToolbar').classList.remove('active');
+  document.getElementById('reviewSummary').classList.remove('active');
+  document.getElementById('reviewColHead').style.display = 'none';
+  bkHead.style.gridTemplateColumns = '2fr 2.5fr 2.5fr 1.5fr';
+  bkRows.innerHTML = '';
+
+  var currentBranch = '';
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    // Section header when branch changes
+    if (l.branch !== currentBranch) {
+      currentBranch = l.branch;
+      var sh = document.createElement('div');
+      sh.className = 'bk-section-head';
+      sh.innerHTML = '<div>' + escHtml(l.branch) + '</div><div></div><div></div><div></div>';
+      bkRows.appendChild(sh);
+    }
+    var remarkHtml = '';
+    var row = document.createElement('div');
+    var rowCls = 'bk-row' + (l.isWTP ? ' is-wtp' : '') + (l.isPIC && l.isPICpool ? ' is-pic-pool' : l.isPIC ? ' is-pic' : '') + (l.isCompany ? ' is-company' : '') + (l.isCobroke && l.isCobrokeWTP ? ' bk-stream-b' : l.isCobroke ? ' is-cobroke' : '');
+    row.className = rowCls;
+    row.dataset.idx = i;
+    row.innerHTML =
+      '<div class="bk-agent">' + escHtml(l.label) + remarkHtml + '</div>' +
+      '<div class="bk-formula">' + l.formula + '</div>' +
+      '<div class="bk-exp">' + escHtml(l.exp) + '</div>' +
+      '<div class="bk-amt' + (l.isWTP ? ' wtp' : '') + (l.isPIC ? ' pic' : '') + (l.isCompany ? ' company' : '') + (l.isCobroke ? ' wtp' : '') + '">' + fmtRM(l.amount) + '</div>';
+    bkRows.appendChild(row);
+  }
+  window._calcLines = lines;
+}
+
+function applyReviewGrid() {
+  var bkHead = document.getElementById('bkHead');
+  var rows   = document.getElementById('bkRows').querySelectorAll('.bk-row,.bk-section-head');
+  var cols   = reviewModeActive ? '2fr 2fr 2fr 1.2fr 80px' : '2fr 2.5fr 2.5fr 1.5fr';
+  bkHead.style.gridTemplateColumns = cols;
+  for (var i = 0; i < rows.length; i++) rows[i].style.gridTemplateColumns = cols;
+  document.getElementById('reviewColHead').style.display = reviewModeActive ? 'block' : 'none';
+  if (reviewModeActive) {
+    var bkRows = document.getElementById('bkRows');
+    var lines  = window._calcLines || [];
+    bkRows.innerHTML = '';
+    var currentBranch = '';
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      if (l.branch !== currentBranch) {
+        currentBranch = l.branch;
+        var sh = document.createElement('div');
+        sh.className = 'bk-section-head';
+        sh.style.gridTemplateColumns = cols;
+        sh.innerHTML = '<div>' + escHtml(l.branch) + '</div><div></div><div></div><div></div><div></div>';
+        bkRows.appendChild(sh);
+      }
+      var fr = flaggedRows.find(function(f){ return f.idx === i; });
+      var remarkHtml = fr ? '<div class="bk-remark">&#9888; ' + escHtml(fr.remark) + (fr.suggestion ? ' | Suggestion: ' + escHtml(fr.suggestion) : '') + '</div>' : '';
+      var row = document.createElement('div');
+      var rowCls = 'bk-row' + (l.isWTP?' is-wtp':'') + (l.isPIC?' is-pic':'') + (l.isCompany?' is-company':'') + (l.isCobroke&&l.isCobrokeWTP?' bk-stream-b':l.isCobroke?' is-cobroke':'') + (fr?' flagged':'');
+      row.className = rowCls; row.dataset.idx = i;
+      row.style.gridTemplateColumns = cols;
+      row.innerHTML =
+        '<div class="bk-agent">' + escHtml(l.label) + remarkHtml + '</div>' +
+        '<div class="bk-formula">' + l.formula + '</div>' +
+        '<div class="bk-exp">' + escHtml(l.exp) + '</div>' +
+        '<div class="bk-amt' + (l.isWTP?' wtp':'') + (l.isPIC?' pic':'') + (l.isCompany?' company':'') + (l.isCobroke?' wtp':'') + '">' + fmtRM(l.amount) + '</div>' +
+        '<div style="text-align:center;">' + (fr ? '<span style="color:#fca5a5;font-size:12px;font-weight:700;">FLAGGED</span>' : '<button class="btn-flag" onclick="openFlagModal(' + i + ')">Flag</button>') + '</div>';
+      bkRows.appendChild(row);
+    }
+  }
+}
+
+// ── SUMMARY ──────────────────────────────────────────────────────────────────
+function renderSummary(grossComm, sstAmt, netComm, totalAgentPool, picComm, picRemainder, companyComm, companyName, totalDeals, totalGross, totalNet, sstPct) {
+  document.getElementById('sgVal').textContent = fmtRM(totalAgentPool);
+  var sc = document.getElementById('sgCheck');
+  sc.textContent = 'Agent pool = ' + fmtRM(totalNet) + ' net \xd7 ' + (100 - parseFloat(document.getElementById('companyRate').value) - parseFloat(document.getElementById('picRate').value)).toFixed(2).replace(/\.?0+$/,'') + '% | Company: ' + fmtRM(companyComm) + ' | PIC receives: ' + fmtRM(picComm) + ' (remainder ' + fmtRM(picRemainder) + ' \u2192 company)';
+  sc.className = 'sg-check sg-ok';
+  var si = document.getElementById('sumItems');
+  si.innerHTML = '';
+  var items = [
+    { lbl:'Total Deals',                val: totalDeals.toString() },
+    { lbl:'Gross Commission',           val: fmtRM(totalGross) },
+    { lbl:'SST Deduction (' + sstPct + '%)', val: sstPct > 0 ? '-' + fmtRM(sstAmt * totalDeals) : 'None', style:'color:#f87171;' },
+    { lbl:'Net Commission',             val: fmtRM(totalNet), style:'color:#67e8f9;' },
+    { lbl:(companyName||'Company') + ' Comm', val: fmtRM(companyComm), style:'color:#a78bfa;' },
+    { lbl:'PIC Receives',               val: fmtRM(picComm), style:'color:var(--amber);' },
+    { lbl:'PIC Remainder \u2192 Co.',   val: fmtRM(picRemainder), style:'color:var(--muted);font-size:14px;' }
+  ];
+  for (var i = 0; i < items.length; i++) {
+    var d = document.createElement('div');
+    d.className = 'sum-item';
+    d.innerHTML = '<span class="sum-lbl">' + items[i].lbl + '</span><span class="sum-val"' + (items[i].style ? ' style="' + items[i].style + '"' : '') + '>' + items[i].val + '</span>';
+    si.appendChild(d);
+  }
+}
+
+// ── REVIEW MODE ───────────────────────────────────────────────────────────────
+function toggleReviewMode() { openPwModal(); }
+function openPwModal() {
+  if (pwLocked) return;
+  document.getElementById('pwOverlay').classList.add('open');
+  document.getElementById('pwInput').value = '';
+  document.getElementById('pwError').textContent = '';
+  setTimeout(function(){ document.getElementById('pwInput').focus(); }, 100);
+}
+function closePwModal() { document.getElementById('pwOverlay').classList.remove('open'); }
+function clearPwError() { document.getElementById('pwError').textContent = ''; }
+function togglePwVisibility() {
+  var inp = document.getElementById('pwInput');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+function checkPassword() {
+  if (pwLocked) return;
+  var entered = document.getElementById('pwInput').value;
+  var _enc = new TextEncoder().encode(entered);
+  crypto.subtle.digest('SHA-256', _enc).then(function(buf) {
+    var hex = Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+    _verifyPw(hex);
+  });
+  return;
+}
+function _verifyPw(hashHex) {
+  if (hashHex === REVIEW_PASSWORD) {
+    pwFailCount = 0;
+    reviewModeActive = true;
+    closePwModal();
+    document.getElementById('reviewToolbar').classList.add('active');
+    applyReviewGrid();
+  } else {
+    pwFailCount++;
+    var inp = document.getElementById('pwInput');
+    inp.classList.add('shake');
+    setTimeout(function(){ inp.classList.remove('shake'); }, 400);
+    document.getElementById('pwError').textContent = 'Incorrect password.';
+    document.getElementById('pwAttempts').textContent = 'Attempt ' + pwFailCount + ' of 5';
+    if (pwFailCount >= 5) {
+      pwLocked = true;
+      document.getElementById('pwLockedMsg').style.display = 'block';
+      var t = 60;
+      var iv = setInterval(function(){
+        t--;
+        document.getElementById('lockCountdown').textContent = t;
+        if (t <= 0) { clearInterval(iv); pwLocked = false; pwFailCount = 0; document.getElementById('pwLockedMsg').style.display = 'none'; }
+      }, 1000);
+    }
+  }
+}
+function openFlagModal(idx) {
+  currentFlagIdx = idx;
+  var lines = window._calcLines || [];
+  document.getElementById('modalSubtitle').textContent = 'Row: ' + (lines[idx] ? lines[idx].label : '');
+  document.getElementById('remarkText').value = '';
+  document.getElementById('remarkSuggestion').value = '';
+  document.getElementById('remarkModal').classList.add('open');
+}
+function closeModal() { document.getElementById('remarkModal').classList.remove('open'); currentFlagIdx = null; }
+function submitRemark() {
+  if (currentFlagIdx === null) return;
+  var txt = document.getElementById('remarkText').value.trim();
+  if (!txt) { alert('Please describe the issue.'); return; }
+  var existing = flaggedRows.findIndex(function(f){ return f.idx === currentFlagIdx; });
+  var entry = { idx:currentFlagIdx, remark:txt, suggestion:document.getElementById('remarkSuggestion').value.trim(), by:document.getElementById('reviewerName').value.trim()||'Reviewer', ts:new Date().toLocaleString() };
+  if (existing > -1) flaggedRows[existing] = entry; else flaggedRows.push(entry);
+  closeModal();
+  applyReviewGrid();
+  updateReviewSummary();
+  updateSubmitBtn();
+}
+function updateReviewSummary() {
+  var rs  = document.getElementById('reviewSummary');
+  var rsi = document.getElementById('reviewSummaryItems');
+  if (flaggedRows.length === 0) { rs.classList.remove('active'); return; }
+  rs.classList.add('active');
+  var lines = window._calcLines || [];
+  rsi.innerHTML = '';
+  for (var i = 0; i < flaggedRows.length; i++) {
+    var f = flaggedRows[i];
+    var d = document.createElement('div');
+    d.className = 'rs-item';
+    d.innerHTML = '<div class="rs-num">' + (i+1) + '</div><div class="rs-body"><div class="rs-row-label">' + escHtml(lines[f.idx] ? lines[f.idx].label : '') + '</div><div class="rs-remark">' + escHtml(f.remark) + '</div>' + (f.suggestion ? '<div class="rs-suggest">Suggestion: ' + escHtml(f.suggestion) + '</div>' : '') + '</div>';
+    rsi.appendChild(d);
+  }
+}
+function updateSubmitBtn() {
+  var btn = document.getElementById('submitAllBtn');
+  btn.disabled = flaggedRows.length === 0;
+  btn.textContent = flaggedRows.length > 0 ? 'Send ' + flaggedRows.length + ' Remark(s) via Telegram' : 'Send All Remarks via Telegram';
+}
+function submitAllRemarks() {
+  if (flaggedRows.length === 0) return;
+  var lines = window._calcLines || [];
+  var reviewer = document.getElementById('reviewerName').value.trim() || 'Reviewer';
+  var proj = document.getElementById('projName').value || 'Unknown Project';
+  var msg = 'WTP Commission Review\nProject: ' + proj + '\nReviewer: ' + reviewer + '\nDate: ' + new Date().toLocaleString() + '\n\n';
+  for (var i = 0; i < flaggedRows.length; i++) {
+    var f = flaggedRows[i];
+    var l = lines[f.idx];
+    msg += (i+1) + '. Row: ' + (l ? l.label : '') + '\n   Formula: ' + (l ? l.formula : '') + '\n   Issue: ' + f.remark + (f.suggestion ? '\n   Suggestion: ' + f.suggestion : '') + '\n\n';
+  }
+  fetch('https://api.telegram.org/bot' + TG_BOT_TOKEN + '/sendMessage', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ chat_id:TG_CHAT_ID, text:msg })
+  }).then(function(r){ return r.json(); }).then(function(d){
+    if (d.ok) showToast('Remarks sent via Telegram!');
+    else showToast('Telegram error: ' + (d.description||'unknown'));
+  }).catch(function(){ showToast('Network error. Check connection.'); });
+}
+function showToast(msg) {
+  var t = document.getElementById('tgToast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 3500);
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function fmtRM(v) { return 'RM ' + (v||0).toLocaleString('en-MY', {minimumFractionDigits:2,maximumFractionDigits:2}); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showAlert(msg) { var b=document.getElementById('alertBox'); b.textContent=msg; b.className='alert alert-err'; }
+function clearAlert() { var b=document.getElementById('alertBox'); b.textContent=''; b.className='alert'; }
+function showLockScreen() {}
+window.onload = __appInit;
+</script>
+</body>
+</html>

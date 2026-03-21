@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Unified Submissions – Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+.scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd;text-align:center}
+.scard h3{margin:0 0 4px;font-size:10px;font-weight:700;text-transform:uppercase;color:#888}
+.scard-val{font-size:1.4rem;font-weight:800}
+.filter-card{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-card select,.filter-card input{padding:7px 10px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;flex:1;min-width:140px}
+.btn-filter{padding:7px 16px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}
+.btn-clear{padding:7px 12px;background:#6c757d;color:white;border:none;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block}
+.tbl-wrap{overflow-x:auto;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+table{width:100%;border-collapse:collapse;background:white;min-width:700px}
+th{background:#2c3e50;color:white;padding:10px 12px;text-align:left;font-size:11px;white-space:nowrap;font-weight:700;text-transform:uppercase}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:none}tr:hover td{background:#fafbfc}
+.badge{padding:3px 8px;border-radius:8px;font-size:11px;font-weight:700}
+.t-np{background:#dbeafe;color:#1e40af}.t-ss{background:#f3e8ff;color:#6b21a8}.t-rn{background:#ffedd5;color:#9a3412}
+.stage-0{background:#e5e7eb;color:#374151}.stage-1{background:#fef9c3;color:#854d0e}
+.stage-2{background:#dcfce7;color:#166534}.stage-3{background:#dbeafe;color:#1e40af}
+.stage-4{background:#d1fae5;color:#065f46;font-weight:800}
+.btn-view{display:inline-block;padding:5px 12px;background:#6f42c1;color:white;border-radius:5px;font-size:12px;font-weight:700;text-decoration:none}
+.empty{text-align:center;padding:40px;background:white;border-radius:10px;color:#888}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">📋 Unified Submissions</div>
+  <div class="topbar-right">
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions" class="nav-active">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+</div>
+
+<div class="wrap">
+
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#6b21a8"><h3>Total</h3><div class="scard-val" style="color:#6b21a8">{{ stats.total }}</div></div>
+  <div class="scard" style="border-top-color:#16a34a"><h3>Complete</h3><div class="scard-val" style="color:#16a34a">{{ stats.complete }}</div></div>
+  <div class="scard" style="border-top-color:#fbbf24"><h3>In Progress</h3><div class="scard-val" style="color:#fbbf24">{{ stats.in_progress }}</div></div>
+  <div class="scard" style="border-top-color:#1d4ed8"><h3>Sub Sales</h3><div class="scard-val" style="color:#1d4ed8">{{ stats.ss }}</div></div>
+  <div class="scard" style="border-top-color:#9333ea"><h3>New Project</h3><div class="scard-val" style="color:#9333ea">{{ stats.np }}</div></div>
+  <div class="scard" style="border-top-color:#ea580c"><h3>Rental</h3><div class="scard-val" style="color:#ea580c">{{ stats.rn }}</div></div>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="filter-card">
+  <select name="type">
+    <option value="">All Types</option>
+    <option value="ss" {% if type_filter=='ss' %}selected{% endif %}>Sub Sales</option>
+    <option value="np" {% if type_filter=='np' %}selected{% endif %}>New Project</option>
+    <option value="rn" {% if type_filter=='rn' %}selected{% endif %}>Rental</option>
+  </select>
+  <select name="stage">
+    <option value="">All Stages</option>
+    <option value="0" {% if stage_filter=='0' %}selected{% endif %}>Draft</option>
+    <option value="1" {% if stage_filter=='1' %}selected{% endif %}>Awaiting Party A</option>
+    <option value="2" {% if stage_filter=='2' %}selected{% endif %}>Party A Signed</option>
+    <option value="3" {% if stage_filter=='3' %}selected{% endif %}>Awaiting Party B</option>
+    <option value="4" {% if stage_filter=='4' %}selected{% endif %}>Complete</option>
+  </select>
+  <input type="text" name="search" placeholder="Search ref, address, name..." value="{{ search }}">
+  <button type="submit" class="btn-filter">🔍 Filter</button>
+  <a href="/admin/unified-submissions" class="btn-clear">Clear</a>
+</form>
+
+<!-- Table -->
+{% if submissions %}
+<div class="tbl-wrap">
+<table>
+  <thead>
+    <tr><th>Ref</th><th>Type</th><th>Agent</th><th>Property</th><th>Party A</th><th>Party B</th><th>Stage</th><th>Updated</th><th>Action</th></tr>
+  </thead>
+  <tbody>
+  {% set type_labels = {'np':'New Project','ss':'Sub Sales','rn':'Rental'} %}
+  {% set stage_labels = {0:'Draft',1:'Awaiting A',2:'A Signed',3:'Awaiting B',4:'✓ Complete'} %}
+  {% for s in submissions %}
+  <tr>
+    <td style="font-weight:800;font-family:monospace">{{ s.ref or s.id[:8] }}</td>
+    <td><span class="badge t-{{ s.sub_type }}">{{ type_labels.get(s.sub_type,'—') }}</span></td>
+    <td>{{ s.agent_name or '—' }}</td>
+    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.prop_address or '—' }}</td>
+    <td>{{ s.partyA_name or '—' }}</td>
+    <td>{{ s.partyB_name or '—' }}</td>
+    <td><span class="badge stage-{{ s.stage }}">{{ stage_labels.get(s.stage,'—') }}</span></td>
+    <td style="font-size:11px;color:#888">{{ (s.updated_at or '')[:10] }}</td>
+    <td><a href="/admin/unified-submission/{{ s.id }}" class="btn-view">👁 View</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty">
+  <div style="font-size:36px;margin-bottom:10px">📋</div>
+  <p style="font-weight:600;color:#555">No unified submissions yet</p>
+</div>
+{% endif %}
+
+</div>
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+</script>
+</body>
+</html>

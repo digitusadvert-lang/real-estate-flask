@@ -1,166 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>New {{ "Rental" if transaction_type == "rental" else "Sales" }} Entry</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 20px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-        .agent-info { background: #e8f4ff; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
-        .commission-preview { background: #f0f8ff; padding: 15px; border-left: 4px solid #007bff; margin: 20px 0; border-radius: 5px; }
-        .form-section { border: 1px solid #e0e0e0; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-        .required:after { content: " *"; color: red; }
-        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
-        input:focus, select:focus, textarea:focus { border-color: #007bff; outline: none; box-shadow: 0 0 5px rgba(0,123,255,0.3); }
-        .btn { padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-right: 10px; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-primary:hover { background: #0056b3; }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn-secondary:hover { background: #545b62; }
-        .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .file-upload { border: 2px dashed #ddd; padding: 20px; text-align: center; border-radius: 5px; }
-        .file-upload:hover { border-color: #007bff; background: #f8f9fa; }
-        .checklist { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-top: 20px; }
-        .project-info { background: #f0fdf4; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745; display: none; }
-        .unit-info { background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px; }
-        .transaction-badge { 
-            background-color: {% if transaction_type == "rental" %}#17a2b8{% else %}#28a745{% endif %}; 
-            color: white; 
-            padding: 5px 15px; 
-            border-radius: 20px; 
-            font-size: 0.9em; 
-            display: inline-block;
-            margin-left: 10px;
-        }
-        .form-actions {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin-top: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .btn-grey { 
-            background: #6c757d; 
-            color: white; 
-            padding: 12px 25px; 
-            border: none; 
-            border-radius: 5px; 
-            cursor: pointer; 
-            font-size: 16px; 
-            text-decoration: none; 
-            display: inline-block;
-            margin-left: 10px;
-        }
-        .btn-grey:hover { 
-            background: #545b62; 
-            color: white;
-        }
-        
-        /* OR if you prefer the outline style: */
-        .btn-outline {
-            background: transparent;
-            color: #6c757d;
-            padding: 11px 25px;
-            border: 1px solid #6c757d;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            text-decoration: none;
-            display: inline-block;
-        }
-        .btn-outline:hover {
-            background: #6c757d;
-            color: white;
-        }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>New Sale Listing</title>
+<style>*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-btn:hover{background:#15803d}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}.nav-bar a:last-child{border-bottom:none}}
+.wrap{max-width:1400px;margin:0 auto;padding:16px}
+.card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+.card-title{font-size:13px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+.scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
+.scard h3{margin:0 0 6px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.scard-val{font-size:1.4rem;font-weight:800;margin-bottom:2px}
+.scard small{font-size:11px;color:#888}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+table{width:100%;border-collapse:collapse;background:white;min-width:500px}
+th{background:#1a3a2a;color:white;padding:10px 12px;text-align:left;font-size:12px;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f9fafb}
+.badge{padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.st-draft{background:#fef9c3;color:#854d0e}
+.st-submitted{background:#dbeafe;color:#1e40af}
+.st-approved{background:#dcfce7;color:#166534}
+.st-rejected{background:#fee2e2;color:#991b1b}
+.st-pending{background:#fef9c3;color:#854d0e}
+.st-paid{background:#dcfce7;color:#166534}
+.act-btn{display:inline-block;padding:5px 10px;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;margin:2px 0}
+.act-green{background:#16a34a;color:white}.act-teal{background:#0891b2;color:white}
+.act-purple{background:#7c3aed;color:white}.act-grey{background:#6c757d;color:white}
+.filter-wrap{background:white;border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.filter-wrap h3{margin:0 0 10px;font-size:14px;color:#444}
+.filter-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-row select,.filter-row input{padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;flex:1;min-width:120px}
+.btn-go{padding:7px 14px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+.btn-clr{padding:7px 12px;background:#6c757d;color:white;border:none;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;white-space:nowrap}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.sec-hdr h2{margin:0;font-size:15px}
+.empty{padding:40px;text-align:center;background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.empty h3{color:#666;margin-bottom:8px}.empty p{color:#888;margin:0 0 16px}
+.form-group{margin-bottom:14px}
+label{display:block;margin-bottom:5px;font-weight:600;color:#444;font-size:13px}
+input[type=text],input[type=email],input[type=number],input[type=date],input[type=tel],select,textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;font-size:14px;background:#fafafa;box-sizing:border-box}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;background:white}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.btn-submit{background:#16a34a;color:white;padding:11px 24px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+@media(max-width:900px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.wrap{padding:10px}.stats-grid{grid-template-columns:repeat(2,1fr);gap:8px}.scard{padding:12px}.scard-val{font-size:1.2rem}.filter-row{flex-direction:column;align-items:stretch}.filter-row select,.filter-row input,.btn-go,.btn-clr{width:100%}.form-row{grid-template-columns:1fr}td,th{padding:8px 10px!important;font-size:12px}}
 
-    </style>
+.type-selector{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px}
+.type-card{border:2px solid #e5e7eb;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .2s}
+.type-card:hover,.type-card.selected{border-color:#16a34a;background:#f0fdf4}
+.type-card input{display:none}
+.type-card .tc-icon{font-size:28px;margin-bottom:6px}
+.type-card .tc-name{font-weight:700;font-size:14px}
+.type-card .tc-desc{font-size:11px;color:#888;margin-top:3px}
+.comm-preview{background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.comm-preview .comm-val{font-size:1.4rem;font-weight:900;color:#16a34a}
+.comm-preview .comm-lbl{font-size:12px;color:#166534}
+.step-card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.step-title{font-size:13px;font-weight:700;color:#1a2a3a;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.step-num{background:#16a34a;color:white;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.doc-upload{border:2px dashed #d1fae5;border-radius:8px;padding:16px;text-align:center;cursor:pointer;transition:border-color .2s;margin-bottom:8px}
+.doc-upload:hover{border-color:#16a34a}
+.doc-upload input{display:none}
+.doc-upload label{cursor:pointer;font-size:13px;color:#16a34a;font-weight:600}
+.unit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-top:8px}
+.unit-card{border:2px solid #e5e7eb;border-radius:8px;padding:12px;cursor:pointer;transition:all .2s;font-size:13px}
+.unit-card:hover,.unit-card.selected{border-color:#16a34a;background:#f0fdf4}
+.unit-card .uc-type{font-weight:700;margin-bottom:4px}
+.unit-card .uc-price{color:#16a34a;font-weight:800;font-size:14px}
+.unit-card .uc-meta{font-size:11px;color:#888;margin-top:2px}
+.form-actions{display:flex;gap:10px;flex-wrap:wrap;padding-top:8px}
+.btn-submit{background:#16a34a;color:white;padding:12px 28px;border:none;border-radius:7px;cursor:pointer;font-size:15px;font-weight:700}
+.btn-draft{background:#6c757d;color:white;padding:12px 20px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:600}
+@media(max-width:640px){.type-selector{grid-template-columns:1fr}.form-actions{flex-direction:column}.btn-submit,.btn-draft{width:100%;text-align:center}}</style>
 </head>
 <body>
-    <div class="container">
-        <h1>
-            {% if transaction_type == "rental" %}
-                📝 New Rental Entry
-            {% else %}
-                📝 New Sales Entry
-            {% endif %}
-            <span class="transaction-badge">
-                {% if transaction_type == "rental" %}
-                    RENTAL
-                {% else %}
-                    SALES
-                {% endif %}
-            </span>
-        </h1>
-        
-        <div class="agent-info">
-            <strong>Agent:</strong> {{ agent_name }} | 
-            <strong>ID:</strong> {{ agent_id }}
-        </div>
-        
-        {% if success %}
-        <div class="success">
-            ✅ {% if transaction_type == "rental" %}Rental{% else %}Sale{% endif %} submitted successfully! Commission: RM{{ commission|default('0.00') }}
-        </div>
-        {% endif %}
 
-        <div class="transaction-buttons" style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
-            <h3 style="margin-top: 0; color: #495057;">📊 Select Transaction Type</h3>
-            
-            <div style="display: flex; gap: 20px; justify-content: center; margin: 20px 0;">
-                <a href="{{ url_for('new_listing', type='sales') }}" 
-                   style="text-decoration: none; flex: 0 1 200px;">
-                    <div style="padding: 20px; border-radius: 10px; 
-                               background: {% if transaction_type == 'sales' %}#28a745{% else %}#ffffff{% endif %}; 
-                               border: 3px solid {% if transaction_type == 'sales' %}#28a745{% else %}#dee2e6{% endif %}; 
-                               color: {% if transaction_type == 'sales' %}#ffffff{% else %}#495057{% endif %}; 
-                               transition: all 0.3s;">
-                        <div style="font-size: 32px;">💰</div>
-                        <div style="font-weight: bold; font-size: 18px; margin: 10px 0;">Sales</div>
-                        <div style="font-size: 14px; opacity: 0.8;">Property Purchase</div>
-                    </div>
-                </a>
-                
-                <a href="{{ url_for('new_listing', type='rental') }}" 
-                   style="text-decoration: none; flex: 0 1 200px;">
-                    <div style="padding: 20px; border-radius: 10px; 
-                               background: {% if transaction_type == 'rental' %}#17a2b8{% else %}#ffffff{% endif %}; 
-                               border: 3px solid {% if transaction_type == 'rental' %}#17a2b8{% else %}#dee2e6{% endif %}; 
-                               color: {% if transaction_type == 'rental' %}#ffffff{% else %}#495057{% endif %}; 
-                               transition: all 0.3s;">
-                        <div style="font-size: 32px;">🏠</div>
-                        <div style="font-weight: bold; font-size: 18px; margin: 10px 0;">Rental</div>
-                        <div style="font-size: 14px; opacity: 0.8;">Property Rental</div>
-                    </div>
-                </a>
-            </div>
-            
-            <div style="padding: 10px; background: #e8f4ff; border-radius: 5px; display: inline-block;">
-                <strong>Currently viewing:</strong> 
-                <span style="color: {% if transaction_type == 'sales' %}#28a745{% else %}#17a2b8{% endif %}; font-weight: bold;">
-                    {{ 'Sales' if transaction_type == 'sales' else 'Rental' }} Projects
-                </span>
-                • {{ projects|length }} projects available
-            </div>
-        </div>
-        
-        <div class="commission-preview">
-            <h3>💵 Estimated Commission: <span id="estCommission">RM0.00</span></h3>
-            <p id="commissionBreakdown">
-                {% if transaction_type == "rental" %}
-                    Enter rental price to see calculation
-                {% else %}
-                    Enter sale price to see calculation
-                {% endif %}
-            </p>
-            <div id="projectCommissionInfo" style="display: none; margin-top: 10px; padding: 10px; background: #e8f4ff; border-radius: 5px;">
-                <strong>Project Commission:</strong> <span id="projectCommissionRate">0%</span>
-            </div>
-        </div>
-        
-        <form method="POST" action="{{ url_for('submit_listing') }}" enctype="multipart/form-data" id="listingForm">
+<div class="topbar">
+  <div class="topbar-title">&#10133; New Sale Listing</div>
+  <div class="topbar-right">
+    <a href="/agent/submissions">&#128203; Submissions</a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/new-listing" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+<div class="wrap">
+
+<form method="POST" action="{{ url_for('submit_listing') }}" enctype="multipart/form-data" id="listingForm">
             <input type="hidden" name="sale_type" value="{{ transaction_type }}">
             
             <!-- Project Selection -->
@@ -375,12 +325,15 @@
                     {% endif %}
                 </button>
                 <button type="button" class="btn btn-secondary" onclick="saveDraft()">💾 Save as Draft</button>
-                <a href="{{ url_for('agent_dashboard') }}" class="btn btn-grey">← Back to Dashboard</a>
+                <a href="{{ url_for('agent_dashboard') }}" class="btn btn-grey">&#8592; Back to Dashboard</a>
             </div>
         </form>
     </div>
-    
-    <script>
+</form>
+
+</div>
+
+<script>
     // ============ SALES/RENTAL FILTERING ============
     function filterProjectsByType(selectedType) {
         console.log(`🎯 filterProjectsByType called with: ${selectedType}`);
@@ -727,5 +680,11 @@
         });
     }
     </script>
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});
+});
+</script>
 </body>
 </html>

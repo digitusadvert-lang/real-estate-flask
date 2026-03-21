@@ -1,6 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <style>
+    *,*::before,*::after{box-sizing:border-box}
+    html{-webkit-text-size-adjust:100%}
+    body{overflow-x:hidden}
+    .nav{display:flex;flex-wrap:wrap;gap:4px 0}
+    .nav a{white-space:nowrap;margin-right:12px}
+    .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%}
+    table{min-width:480px}
+    @media(max-width:640px){
+      .form-layout,.grid2,.grid3{grid-template-columns:1fr!important}
+      .stats{flex-wrap:wrap}
+      .stat-card{min-width:120px}
+      .header{flex-direction:column;gap:8px}
+      .card,.form-container{padding:12px!important}
+      .btn{width:100%!important;margin-bottom:6px!important}
+      th,td{padding:8px 10px!important;font-size:12px}
+    }
+    @media(max-width:480px){
+      body{font-size:13px;margin:8px!important}
+      h1{font-size:1.1rem}
+    }
+    </style>
     <title>Documents Uploaded Successfully</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
@@ -17,9 +40,17 @@
         .btn-primary { background: #007bff; color: white; }
         .btn-info { background: #17a2b8; color: white; }
         .btn-success { background: #28a745; color: white; }
+        .nav { display:flex; flex-wrap:wrap; gap:6px 0; align-items:center; margin-top:10px; }
+        .nav a { margin-right:14px; color:#007bff; text-decoration:none; font-weight:bold; font-size:14px; white-space:nowrap; }
+        .nav a:hover { text-decoration:underline; }
+        .nav a.nav-btn { background:#2563eb; color:white; padding:5px 12px; border-radius:5px; font-size:13px; }
+        .nav a.nav-btn:hover { background:#1d4ed8; text-decoration:none; }
+        .nav a.nav-logout { color:#dc3545; }
     </style>
 </head>
 <body>
+<div style="max-width:800px;margin:20px auto 0;padding:0 20px"><a href="/agent/dashboard" style="color:#007bff;font-weight:bold;text-decoration:none">&#128202; Dashboard</a> &nbsp;|&nbsp; <a href="/agent/submissions" style="color:#007bff;font-weight:bold;text-decoration:none">&#128203; My Submissions</a> &nbsp;|&nbsp; <a href="/logout" style="color:#dc3545;font-weight:bold;text-decoration:none">&#128274; Logout</a></div>
+
     <div class="success-box">
         <h2>✅ Documents Uploaded Successfully!</h2>
         <p>Listing: <strong>#{{ listing_id }}</strong></p>

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>{{ project.name }} — Project Detail</title>
+    <style>
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+        .topbar { background: #2c3e50; color: white; padding: 12px 16px; display: flex;
+                  align-items: center; justify-content: space-between; gap: 8px;
+                  position: sticky; top: 0; z-index: 100; }
+        .topbar-title { font-size: 1rem; font-weight: 700; max-width: 55%; overflow: hidden;
+                        text-overflow: ellipsis; white-space: nowrap; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-right a { color: #a8c8ff; text-decoration: none; font-size: 13px; white-space: nowrap; }
+        .hamburger { display: none; background: none; border: none; color: white;
+                     font-size: 22px; cursor: pointer; padding: 2px 6px; }
+        .nav-bar { background: white; padding: 10px 16px; display: flex; flex-wrap: wrap;
+                   gap: 4px; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+        .nav-bar a { color: #007bff; text-decoration: none; font-weight: 600; font-size: 13px;
+                     padding: 5px 10px; border-radius: 6px; white-space: nowrap; }
+        .nav-bar a:hover { background: #f0f7ff; }
+        .nav-bar a.nav-btn { background: #2563eb; color: white; }
+        .nav-bar a.nav-logout { color: #dc3545; }
+        .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+        .card { background: white; border-radius: 10px; padding: 20px;
+                box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+        .card-title { font-size: 14px; font-weight: 700; color: #1a2a3a; margin-bottom: 16px;
+                      padding-bottom: 10px; border-bottom: 2px solid #f0f0f0;
+                      display: flex; align-items: center; gap: 8px; }
+        /* project header card */
+        .proj-header-card { background: linear-gradient(135deg, #667eea, #764ba2);
+                            color: white; border-radius: 10px; padding: 20px;
+                            margin-bottom: 16px; display: flex; justify-content: space-between;
+                            align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+        .proj-header-card h1 { margin: 0 0 8px; font-size: 1.3rem; }
+        .proj-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        /* badges */
+        .badge { padding: 4px 10px; border-radius: 10px; font-size: 11px; font-weight: 700;
+                 display: inline-block; margin-right: 4px; }
+        .badge-white { background: rgba(255,255,255,.25); color: white; }
+        .badge-active   { background: #d4edda; color: #155724; }
+        .badge-inactive { background: #e2e3e5; color: #383d41; }
+        /* info grid */
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .info-item dt { font-size: 11px; color: #888; text-transform: uppercase;
+                        letter-spacing: .06em; margin-bottom: 3px; font-weight: 600; }
+        .info-item dd { font-size: 14px; font-weight: 600; color: #1a2a3a; margin: 0; }
+        /* commission */
+        .comm-big { font-size: 2.8rem; font-weight: 900; color: #2563eb;
+                    text-align: center; padding: 12px 0 4px; }
+        .comm-sub { text-align: center; font-size: 12px; color: #888; margin-bottom: 12px; }
+        .comm-splits { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+        .split-box { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; text-align: center; }
+        .split-val { font-size: 1.2rem; font-weight: 800; }
+        .split-lbl { font-size: 11px; color: #888; margin-top: 2px; }
+        /* action buttons */
+        .act-btn { display: inline-block; padding: 8px 16px; border-radius: 6px; font-size: 13px;
+                   font-weight: 600; text-decoration: none; border: none; cursor: pointer;
+                   white-space: nowrap; }
+        .act-blue   { background: #007bff; color: white; }
+        .act-yellow { background: #ffc107; color: #000; }
+        .act-green  { background: #28a745; color: white; }
+        .act-orange { background: #fd7e14; color: white; }
+        .act-grey   { background: #6c757d; color: white; }
+        /* table */
+        .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px;
+                    box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+        table { width: 100%; border-collapse: collapse; background: white; min-width: 480px; }
+        th { background: #2c3e50; color: white; padding: 10px 12px; text-align: left;
+             font-size: 12px; white-space: nowrap; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #fafbfc; }
+        .empty-table { padding: 40px; text-align: center; color: #888; }
+        /* flash */
+        .flash-s { background: #d4edda; color: #155724; padding: 10px 14px; border-radius: 8px;
+                   margin-bottom: 14px; font-size: 13px; border-left: 4px solid #28a745; }
+        /* mobile */
+        @media(max-width:640px) {
+            .hamburger { display: block; }
+            .nav-bar { display: none; flex-direction: column; align-items: stretch;
+                       padding: 8px 12px; gap: 2px; }
+            .nav-bar.open { display: flex; }
+            .nav-bar a { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom: none; }
+            .wrap { padding: 10px; }
+            .proj-header-card { flex-direction: column; }
+            .info-grid { grid-template-columns: 1fr; }
+            .comm-splits { grid-template-columns: repeat(3,1fr); }
+            .proj-header-actions { width: 100%; }
+            .act-btn { font-size: 12px; padding: 7px 12px; }
+            td,th { padding: 8px 10px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <div class="topbar-title">&#127962; {{ project.name }}</div>
+    <div class="topbar-right">
+        <a href="/admin/projects">&#8592; Projects</a>
+        <a href="/admin/edit-project/{{ project.id }}">&#9999; Edit</a>
+        <button class="hamburger" onclick="toggleNav()">&#9776;</button>
+    </div>
+</div>
+<div class="nav-bar" id="mainNav">
+    <a href="/admin/dashboard">&#128202; Dashboard</a>
+    <a href="/admin/projects">&#127962; Projects</a>
+    <a href="/admin/create-project" class="nav-btn">&#10010; New</a>
+    <a href="/admin/agents">&#128101; Agents</a>
+    <a href="/admin/payments">&#9993; Payments</a>
+    <a href="/admin/commissions">&#128176; Commissions</a>
+    <a href="/admin/agent-performance">&#128200; Performance</a>
+    <a href="/admin/commission-calculator">&#9889; Calc</a>
+    <a href="/admin/settings">&#9881; Settings</a>
+    <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<div class="wrap">
+
+{% if success %}
+<div class="flash-s">&#10003; {{ success }}</div>
+{% endif %}
+
+<!-- Project Header -->
+<div class="proj-header-card">
+    <div>
+        <h1>{{ project.name }}</h1>
+        <div>
+            <span class="badge badge-white">{{ project.category|title }}</span>
+            <span class="badge badge-white">{{ project.project_type|title }}</span>
+            <span class="badge badge-white">{{ project.sale_type|title }}</span>
+            <span class="badge {{ 'badge-active' if project.is_active else 'badge-inactive' }}">
+                {{ 'Active' if project.is_active else 'Inactive' }}
+            </span>
+        </div>
+    </div>
+    <div class="proj-header-actions">
+        <a href="/admin/edit-project/{{ project.id }}" class="act-btn act-yellow">&#9999; Edit Project</a>
+        {% if project.is_active %}
+        <a href="/admin/toggle-project/{{ project.id }}" class="act-btn act-orange"
+           onclick="return confirm('Deactivate this project?')">&#9208; Deactivate</a>
+        {% else %}
+        <a href="/admin/toggle-project/{{ project.id }}" class="act-btn act-green"
+           onclick="return confirm('Activate this project?')">&#9654; Activate</a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Info + Commission side by side -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+    <div class="card">
+        <div class="card-title">&#128203; Project Information</div>
+        <div class="info-grid">
+            <dl class="info-item"><dt>Location</dt><dd>{{ project.location or '—' }}</dd></dl>
+            <dl class="info-item"><dt>Default Commission</dt><dd>{{ project.commission_rate }}%</dd></dl>
+            <dl class="info-item"><dt>Status</dt><dd>{{ project.status|title }}</dd></dl>
+            <dl class="info-item"><dt>Sale Type</dt><dd>{{ project.sale_type|title }}</dd></dl>
+            <dl class="info-item"><dt>Created</dt><dd>{{ project.created_at }}</dd></dl>
+            <dl class="info-item"><dt>By</dt><dd>{{ project.created_by }}</dd></dl>
+            {% if project.updated_at %}
+            <dl class="info-item"><dt>Last Updated</dt><dd>{{ project.updated_at }}</dd></dl>
+            {% endif %}
+        </div>
+        {% if project.description %}
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #f0f0f0">
+            <dt style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;font-weight:600">Description</dt>
+            <dd style="margin:4px 0 0;font-size:13px;color:#444;line-height:1.6">{{ project.description }}</dd>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-title">&#128200; Commission Structure</div>
+        <div class="comm-big">{{ project.comm_dev_rate }}%</div>
+        <div class="comm-sub">Developer Rate &nbsp;&bull;&nbsp; SST: {{ project.comm_sst_rate }}%</div>
+        <div class="comm-splits">
+            <div class="split-box">
+                <div class="split-val" style="color:#6f42c1">{{ project.comm_company_pct }}%</div>
+                <div class="split-lbl">Company</div>
+            </div>
+            <div class="split-box">
+                <div class="split-val" style="color:#007bff">{{ project.comm_pic_pct }}%</div>
+                <div class="split-lbl">PIC</div>
+            </div>
+            <div class="split-box">
+                <div class="split-val" style="color:#28a745">{{ project.comm_agents_pct }}%</div>
+                <div class="split-lbl">Agents</div>
+            </div>
+        </div>
+        {% if project.comm_pic_name %}
+        <div style="margin-top:12px;background:#f8f9fa;border-radius:7px;padding:10px 12px;font-size:13px">
+            <strong>PIC:</strong> {{ project.comm_pic_name }}
+            <span style="color:#888;font-size:12px">({{ project.comm_pic_rank }})</span>
+        </div>
+        {% endif %}
+        <div style="margin-top:12px">
+            <div style="font-size:11px;color:#888;margin-bottom:4px">Commission Rules</div>
+            <ul style="font-size:12px;color:#666;margin:0;padding-left:16px;line-height:1.8">
+                <li>Default rate for all sales in this project</li>
+                <li>Unit-specific rates override this default</li>
+                <li>Net = Gross &divide; (1 + SST%)</li>
+            </ul>
+        </div>
+    </div>
+
+</div>
+
+<!-- Units Table -->
+<div class="card">
+    <div class="card-title">&#127968; Project Units ({{ units|length }} unit{{ 's' if units|length != 1 else '' }})</div>
+    <div class="tbl-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Unit Code</th>
+                <th>Unit Type</th>
+                <th>Size (sqft)</th>
+                <th>{{ price_label }}</th>
+                <th>Commission</th>
+                <th>Qty</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% if units %}
+            {% for unit in units %}
+            <tr>
+                <td>{{ unit.code or '—' }}</td>
+                <td>{{ unit.unit_type or '—' }}</td>
+                <td>{{ unit.square_feet or '—' }}</td>
+                <td>{{ unit.price_display }}</td>
+                <td>{{ unit.commission_display }}</td>
+                <td>{{ unit.quantity }}</td>
+                <td><span style="color:{{ '#28a745' if unit.status == 'available' else '#dc3545' }};font-weight:600">
+                    {{ unit.status|title }}</span></td>
+            </tr>
+            {% endfor %}
+        {% else %}
+            <tr><td colspan="7" class="empty-table">
+                No units defined yet.
+                <a href="/admin/edit-project/{{ project.id }}">Add units by editing this project.</a>
+            </td></tr>
+        {% endif %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+    document.querySelectorAll('#mainNav a').forEach(function(a){
+        a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+    });
+});
+</script>
+</body>
+</html>

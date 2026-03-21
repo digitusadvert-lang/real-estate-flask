@@ -1,251 +1,141 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>My Submissions</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif;
-            margin: 20px; 
-            background: #f5f5f5; 
-        }
-        .header { 
-            background: white; 
-            padding: 20px; 
-            border-radius: 10px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }
-        .stats { 
-            display: flex; 
-            gap: 15px; 
-            margin: 20px 0; 
-            flex-wrap: wrap; 
-        }
-        .stat-card { 
-            background: white; 
-            padding: 15px; 
-            border-radius: 8px; 
-            flex: 1; 
-            min-width: 120px; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
-            text-align: center; 
-        }
-        .stat-value { 
-            font-size: 1.8em; 
-            font-weight: bold; 
-        }
-        .filters { 
-            background: white; 
-            padding: 20px; 
-            border-radius: 10px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-        }
-        .filter-group { 
-            display: flex; 
-            gap: 15px; 
-            align-items: center; 
-        }
-        select, input { 
-            padding: 8px 12px; 
-            border: 1px solid #ddd; 
-            border-radius: 5px; 
-        }
-        .btn { 
-            padding: 8px 16px; 
-            background: #007bff; 
-            color: white; 
-            border: none; 
-            border-radius: 5px; 
-            cursor: pointer; 
-            text-decoration: none; 
-            display: inline-block;
-        }
-        .btn:hover {
-            background: #0056b3;
-        }
-        table { 
-            width: 100%; 
-            background: white; 
-            border-radius: 10px; 
-            overflow: hidden; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            margin: 20px 0; 
-        }
-        th, td { 
-            padding: 12px 15px; 
-            text-align: left; 
-            border-bottom: 1px solid #eee; 
-        }
-        th { 
-            background: #2c3e50; 
-            color: white; 
-        }
-        .status-badge { 
-            padding: 4px 10px; 
-            border-radius: 12px; 
-            font-size: 12px; 
-            font-weight: bold; 
-        }
-        .status-draft { 
-            background: #fff3cd; 
-            color: #856404; 
-        }
-        .status-submitted { 
-            background: #cce5ff; 
-            color: #004085; 
-        }
-        .status-approved { 
-            background: #d4edda; 
-            color: #155724; 
-        }
-        .status-rejected { 
-            background: #f8d7da; 
-            color: #721c24; 
-        }
-        .action-btn { 
-            padding: 4px 8px; 
-            border-radius: 4px; 
-            font-size: 12px; 
-            text-decoration: none; 
-            margin-right: 5px; 
-        }
-        .btn-view { 
-            background: #17a2b8; 
-            color: white; 
-        }
-        .btn-docs { 
-            background: #6f42c1; 
-            color: white; 
-        }
-        .empty-state { 
-            text-align: center; 
-            padding: 50px 20px; 
-            background: white; 
-            border-radius: 10px; 
-            color: #666; 
-        }
-        .doc-status {
-            font-weight: bold;
-        }
-        .doc-status-none {
-            color: #dc3545;
-        }
-        .doc-status-partial {
-            color: #ffc107;
-        }
-        .doc-status-complete {
-            color: #28a745;
-        }
-    </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>My Submissions</title>
+<style>*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-btn:hover{background:#15803d}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}.nav-bar a:last-child{border-bottom:none}}
+.wrap{max-width:1400px;margin:0 auto;padding:16px}
+.card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+.card-title{font-size:13px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+.scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
+.scard h3{margin:0 0 6px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.scard-val{font-size:1.4rem;font-weight:800;margin-bottom:2px}
+.scard small{font-size:11px;color:#888}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+table{width:100%;border-collapse:collapse;background:white;min-width:500px}
+th{background:#1a3a2a;color:white;padding:10px 12px;text-align:left;font-size:12px;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f9fafb}
+.badge{padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.st-draft{background:#fef9c3;color:#854d0e}
+.st-submitted{background:#dbeafe;color:#1e40af}
+.st-approved{background:#dcfce7;color:#166534}
+.st-rejected{background:#fee2e2;color:#991b1b}
+.st-pending{background:#fef9c3;color:#854d0e}
+.st-paid{background:#dcfce7;color:#166534}
+.act-btn{display:inline-block;padding:5px 10px;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;margin:2px 0}
+.act-green{background:#16a34a;color:white}.act-teal{background:#0891b2;color:white}
+.act-purple{background:#7c3aed;color:white}.act-grey{background:#6c757d;color:white}
+.filter-wrap{background:white;border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.filter-wrap h3{margin:0 0 10px;font-size:14px;color:#444}
+.filter-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-row select,.filter-row input{padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;flex:1;min-width:120px}
+.btn-go{padding:7px 14px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+.btn-clr{padding:7px 12px;background:#6c757d;color:white;border:none;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;white-space:nowrap}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.sec-hdr h2{margin:0;font-size:15px}
+.empty{padding:40px;text-align:center;background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.empty h3{color:#666;margin-bottom:8px}.empty p{color:#888;margin:0 0 16px}
+.form-group{margin-bottom:14px}
+label{display:block;margin-bottom:5px;font-weight:600;color:#444;font-size:13px}
+input[type=text],input[type=email],input[type=number],input[type=date],input[type=tel],select,textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;font-size:14px;background:#fafafa;box-sizing:border-box}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;background:white}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.btn-submit{background:#16a34a;color:white;padding:11px 24px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
+@media(max-width:900px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.wrap{padding:10px}.stats-grid{grid-template-columns:repeat(2,1fr);gap:8px}.scard{padding:12px}.scard-val{font-size:1.2rem}.filter-row{flex-direction:column;align-items:stretch}.filter-row select,.filter-row input,.btn-go,.btn-clr{width:100%}.form-row{grid-template-columns:1fr}td,th{padding:8px 10px!important;font-size:12px}}
+</style>
 </head>
 <body>
-    <div class="header">
-        <h1>📋 My Submissions</h1>
-        <div>
-            <a href="/agent/dashboard" class="btn">← Dashboard</a>
-            <a href="/new-listing" class="btn" style="background: #28a745;">➕ New Submission</a>
-            <a href="/logout" style="color: #dc3545; margin-left: 20px;">Logout</a>
-        </div>
-    </div>
-    
-    <div class="stats">
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Total</div>
-            <div class="stat-value" style="color: #007bff;">{{ total_count }}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Draft</div>
-            <div class="stat-value" style="color: #6c757d;">{{ status_counts.get('draft', 0) }}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Submitted</div>
-            <div class="stat-value" style="color: #007bff;">{{ status_counts.get('submitted', 0) }}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Approved</div>
-            <div class="stat-value" style="color: #28a745;">{{ status_counts.get('approved', 0) }}</div>
-        </div>
-        <div class="stat-card">
-            <div style="font-size: 14px; color: #666;">Rejected</div>
-            <div class="stat-value" style="color: #dc3545;">{{ status_counts.get('rejected', 0) }}</div>
-        </div>
-    </div>
-    
-    <div class="filters">
-        <h3>Filter Submissions</h3>
-        <form method="GET" class="filter-group">
-            <select name="status">
-                <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status ({{ total_count }})</option>
-                <option value="incomplete" {% if status_filter == 'incomplete' %}selected{% endif %}>Incomplete Documents ({{ incomplete_count }})</option>
-                <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Drafts ({{ status_counts.get('draft', 0) }})</option>
-                <option value="submitted" {% if status_filter == 'submitted' %}selected{% endif %}>Submitted ({{ status_counts.get('submitted', 0) }})</option>
-                <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved ({{ status_counts.get('approved', 0) }})</option>
-                <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected ({{ status_counts.get('rejected', 0) }})</option>
-            </select>
-            
-            <input type="text" name="search" placeholder="Search by customer or property..." value="{{ search_query }}">
-            
-            <button type="submit" class="btn">🔍 Filter</button>
-            <a href="/agent/submissions" class="btn" style="background: #6c757d;">Clear</a>
-        </form>
-    </div>
-    
-    {% if submissions %}
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Customer</th>
-                <th>Property</th>
-                <th>Sale Price</th>
-                <th>Commission</th>
-                <th>Documents</th>
-                <th>Status</th>
-                <th>Submitted</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for sub in submissions %}
-            <tr>
-                <td>#{{ sub[0] }}</td>
-                <td>{{ sub[2] or '' }}</td>
-                <td>{{ (sub[3] or '')[:30] }}{% if (sub[3] or '')|length > 30 %}...{% endif %}</td>
-                <td>RM{{ "%.2f"|format(sub[4] or 0) }}</td>
-                <td>RM{{ "%.2f"|format(sub[5] or 0) }}</td>
-                <td>
-                    {% if sub[9] == 0 %}
-                    <span class="doc-status doc-status-none">❌ No Docs</span>
-                    {% elif sub[9] < 3 %}
-                    <span class="doc-status doc-status-partial">⚠️ {{ sub[9] }}/3</span>
-                    {% else %}
-                    <span class="doc-status doc-status-complete">✅ {{ sub[9] }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <span class="status-badge status-{{ sub[1] or 'draft' }}">
-                        {{ (sub[1] or 'draft')|title }}
-                    </span>
-                    {% if sub[8] and sub[1] == 'approved' %}
-                    <br><small>Approved: {{ sub[8][:10] }}</small>
-                    {% endif %}
-                </td>
-                <td>{{ sub[7][:10] if sub[7] else 'Not submitted' }}</td>
-                <td>
-                    <a href="/agent/submission/{{ sub[0] }}" class="action-btn btn-view">👁️ View</a>
-                    <a href="/agent/documents/{{ sub[0] }}" class="action-btn btn-docs">📎 Docs</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div class="empty-state">
-        <h3>No submissions found</h3>
-        <p>{{ empty_message }}</p>
-        <a href="/new-listing" class="btn" style="background: #28a745; margin-top: 15px;">Create Your First Submission</a>
-    </div>
-    {% endif %}
+<div class="topbar">
+  <div class="topbar-title">&#128203; My Submissions</div>
+  <div class="topbar-right"><button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button></div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/agent/unified-submit" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/unified-submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/forms-library">&#128193; Forms</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/agent/profile">&#128100; Profile</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+<div class="wrap">
+
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#16a34a"><h3>Total</h3><div class="scard-val" style="color:#16a34a">{{ total_count }}</div></div>
+  <div class="scard" style="border-top-color:#9ca3af"><h3>Draft</h3><div class="scard-val" style="color:#6b7280">{{ status_counts.get('draft',0) }}</div></div>
+  <div class="scard" style="border-top-color:#2563eb"><h3>Submitted</h3><div class="scard-val" style="color:#2563eb">{{ status_counts.get('submitted',0) }}</div></div>
+  <div class="scard" style="border-top-color:#16a34a"><h3>Approved</h3><div class="scard-val" style="color:#16a34a">{{ status_counts.get('approved',0) }}</div></div>
+  <div class="scard" style="border-top-color:#dc3545"><h3>Rejected</h3><div class="scard-val" style="color:#dc3545">{{ status_counts.get('rejected',0) }}</div></div>
+</div>
+
+<div class="filter-wrap">
+  <h3>Filter Submissions</h3>
+  <form method="GET" class="filter-row">
+    <select name="status">
+      <option value="all" {% if status_filter=='all' %}selected{% endif %}>All Status ({{ total_count }})</option>
+      <option value="incomplete" {% if status_filter=='incomplete' %}selected{% endif %}>Incomplete Docs ({{ incomplete_count }})</option>
+      <option value="draft" {% if status_filter=='draft' %}selected{% endif %}>Drafts ({{ status_counts.get('draft',0) }})</option>
+      <option value="submitted" {% if status_filter=='submitted' %}selected{% endif %}>Submitted ({{ status_counts.get('submitted',0) }})</option>
+      <option value="approved" {% if status_filter=='approved' %}selected{% endif %}>Approved ({{ status_counts.get('approved',0) }})</option>
+      <option value="rejected" {% if status_filter=='rejected' %}selected{% endif %}>Rejected ({{ status_counts.get('rejected',0) }})</option>
+    </select>
+    <input type="text" name="search" placeholder="Search customer or property..." value="{{ search_query }}"/>
+    <button type="submit" class="btn-go">&#128269; Filter</button>
+    <a href="/agent/submissions" class="btn-clr">Clear</a>
+  </form>
+</div>
+
+{% if submissions %}
+<div class="tbl-wrap"><table>
+  <thead><tr><th>#</th><th>Customer</th><th>Property</th><th>Sale Price</th><th>Commission</th><th>Docs</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for sub in submissions %}
+    <tr>
+      <td style="font-weight:700;color:#888">#{{ sub[0] }}</td>
+      <td>{{ sub[2] or '' }}</td>
+      <td>{{ (sub[3] or '')[:30] }}{% if (sub[3] or '')|length > 30 %}…{% endif %}</td>
+      <td>RM{{ "%.2f"|format(sub[4] or 0) }}</td>
+      <td><strong style="color:#16a34a">RM{{ "%.2f"|format(sub[5] or 0) }}</strong></td>
+      <td>{% if sub[9]==0 %}<span class="badge" style="background:#fee2e2;color:#991b1b">&#10060; None</span>
+          {% elif sub[9]<3 %}<span class="badge" style="background:#fef9c3;color:#854d0e">&#9888; {{ sub[9] }}/3</span>
+          {% else %}<span class="badge st-approved">&#10003; {{ sub[9] }}</span>{% endif %}</td>
+      <td><span class="badge st-{{ sub[1] or 'draft' }}">{{ (sub[1] or 'draft')|title }}</span>{% if sub[8] and sub[1]=='approved' %}<br><small style="color:#888">{{ sub[8][:10] }}</small>{% endif %}</td>
+      <td>{{ sub[7][:10] if sub[7] else '—' }}</td>
+      <td><a href="/agent/submission/{{ sub[0] }}" class="act-btn act-teal">&#128065; View</a> <a href="/agent/documents/{{ sub[0] }}" class="act-btn act-purple">&#128206; Docs</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty"><h3>No submissions found</h3><p>{{ empty_message }}</p><a href="/agent/unified-submit" class="act-btn act-green" style="padding:9px 18px;font-size:13px">&#10010; Create First Submission</a></div>
+{% endif %}
+</div>
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});
+});
+</script>
 </body>
 </html>

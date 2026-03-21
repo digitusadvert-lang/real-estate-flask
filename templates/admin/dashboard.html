@@ -2,301 +2,606 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Admin Dashboard</title>
     <style>
-        /* CSS from your template - I'm keeping it all */
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .stats { display: flex; gap: 12px; margin: 15px 0; flex-wrap: wrap; }
-        .stat-card { background: white; padding: 12px; border-radius: 8px; flex: 1; min-width: 140px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .stat-card h3 { margin-top: 0; color: #555; font-size: 13px; margin-bottom: 8px; }
-        .stat-value { font-size: 1.5em; font-weight: bold; margin-bottom: 5px; }
-        .stat-card small { font-size: 11px; color: #666; line-height: 1.3; }
-        table { width: 100%; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin: 20px 0; }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #2c3e50; color: white; }
-        .btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
-        .nav { margin: 20px 0; padding: 15px; background: white; border-radius: 10px; }
-        .nav a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
-        .positive { color: #28a745; }
-        .negative { color: #dc3545; }
-        .neutral { color: #007bff; }
-        .quick-actions { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
-        .action-btn { padding: 12px 20px; background: white; border-radius: 8px; text-decoration: none; color: #333; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .action-btn:hover { background: #f8f9fa; }
-        .filters { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
-        .filter-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        select, input[type="text"] { padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; }
-        .badge-sales { background: #28a745; color: white; padding: 3px 8px; border-radius: 12px; font-size: 11px; }
-        .badge-rental { background: #17a2b8; color: white; padding: 3px 8px; border-radius: 12px; font-size: 11px; }
-        .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .status-draft { background: #6c757d; color: white; }
-        .status-submitted { background: #007bff; color: white; }
-        .status-approved { background: #28a745; color: white; }
-        .status-rejected { background: #dc3545; color: white; }
-        
-        /* Temporary style to handle missing sale_type column */
-        .sale-info { font-size: 12px; color: #666; }
-        .temp-note { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 14px; }
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+
+        /* ── TOP BAR ── */
+        .topbar {
+            background: #2c3e50;
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .topbar-title { font-size: 1rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-right a { color: #a8c8ff; text-decoration: none; font-size: 13px; }
+        .hamburger {
+            display: none;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 22px;
+            cursor: pointer;
+            padding: 2px 6px;
+        }
+
+        /* ── NAV ── */
+        .nav-bar {
+            background: white;
+            padding: 10px 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            align-items: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,.08);
+        }
+        .nav-bar a {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 13px;
+            padding: 5px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+            transition: background .15s;
+        }
+        .nav-bar a:hover { background: #f0f7ff; }
+        .nav-bar a.nav-btn { background: #2563eb; color: white; }
+        .nav-bar a.nav-btn:hover { background: #1d4ed8; }
+        .nav-bar a.nav-logout { color: #dc3545; }
+
+        /* ── MOBILE NAV DRAWER ── */
+        @media(max-width:640px) {
+            .hamburger { display: block; }
+            .nav-bar {
+                display: none;
+                flex-direction: column;
+                align-items: stretch;
+                padding: 8px 12px;
+                gap: 2px;
+            }
+            .nav-bar.open { display: flex; }
+            .nav-bar a { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom: none; }
+        }
+
+        /* ── PAGE WRAP ── */
+        .wrap { max-width: 1400px; margin: 0 auto; padding: 16px; }
+
+        /* ── STATS GRID ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .scard {
+            background: white;
+            border-radius: 10px;
+            padding: 14px 16px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08);
+            border-top: 3px solid #ddd;
+        }
+        .scard h3 { margin: 0 0 6px; font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+        .scard-val { font-size: 1.4rem; font-weight: 800; margin-bottom: 2px; }
+        .scard small { font-size: 11px; color: #888; }
+
+        /* ── PENDING ALERT BADGE ── */
+        .pending-alert {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .pending-alert a { color: #856404; font-weight: 700; }
+
+        /* ── FILTERS ── */
+        .filters {
+            background: white;
+            padding: 14px 16px;
+            border-radius: 10px;
+            margin-bottom: 14px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.07);
+        }
+        .filters h3 { margin: 0 0 10px; font-size: 14px; color: #444; }
+        .filter-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filter-row select,
+        .filter-row input[type="text"] {
+            padding: 7px 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            flex: 1;
+            min-width: 120px;
+        }
+        .filter-row .btn-filter {
+            padding: 7px 14px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .filter-row .btn-clear {
+            padding: 7px 12px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        /* ── SECTION HEADER ── */
+        .section-hdr {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .section-hdr h2 { margin: 0; font-size: 15px; color: #1a2a3a; }
+        .doc-legend { display: flex; gap: 12px; flex-wrap: wrap; }
+        .doc-legend span { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #666; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+        /* ── TABLE ── */
+        .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; background: white; min-width: 600px; }
+        th { background: #2c3e50; color: white; padding: 10px 12px; text-align: left; font-size: 12px; white-space: nowrap; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; vertical-align: top; }
+        tr:last-child td { border-bottom: none; }
+        tr.doc-low  { background: #fff5f5; border-left: 3px solid #dc3545; }
+        tr.doc-mid  { background: #fffbeb; border-left: 3px solid #ffc107; }
+        tr.doc-ok   { background: #f0fff4; border-left: 3px solid #28a745; }
+
+        /* status badges */
+        .badge { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+        .badge-sale     { background: #d4edda; color: #155724; }
+        .badge-rental   { background: #cce5ff; color: #004085; }
+        .st-draft       { background: #e2e3e5; color: #383d41; }
+        .st-submitted   { background: #cce5ff; color: #004085; }
+        .st-approved    { background: #d4edda; color: #155724; }
+        .st-rejected    { background: #f8d7da; color: #721c24; }
+
+        /* action buttons */
+        .act-btn {
+            display: inline-block;
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            white-space: nowrap;
+            margin: 2px 0;
+        }
+        .act-docs    { background: #6f42c1; color: white; }
+        .act-approve { background: #28a745; color: white; }
+        .act-reject  { background: #dc3545; color: white; }
+        .act-dis     { background: #ccc; color: #888; cursor: not-allowed; }
+
+        /* ── MOBILE CARD VIEW (replaces table on small screens) ── */
+        .submission-cards { display: none; margin-bottom: 16px; }
+        .sub-card {
+            background: white;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08);
+            border-left: 4px solid #ddd;
+        }
+        .sub-card.doc-low  { border-left-color: #dc3545; }
+        .sub-card.doc-mid  { border-left-color: #ffc107; }
+        .sub-card.doc-ok   { border-left-color: #28a745; }
+        .sub-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+        .sub-card-id  { font-weight: 800; color: #1a2a3a; font-size: 14px; }
+        .sub-card-body { font-size: 13px; color: #444; }
+        .sub-card-body p { margin: 3px 0; }
+        .sub-card-body strong { color: #1a2a3a; }
+        .sub-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+        .sub-card-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; border-top: 1px solid #f0f0f0; padding-top: 8px; }
+
+        /* ── QUICK ACTIONS ── */
+        .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-top: 4px;
+        }
+        .qcard {
+            background: white;
+            border-radius: 10px;
+            padding: 16px;
+            text-decoration: none;
+            color: #333;
+            box-shadow: 0 1px 4px rgba(0,0,0,.08);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: box-shadow .2s;
+        }
+        .qcard:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+        .qcard-icon { font-size: 24px; flex-shrink: 0; }
+        .qcard-text strong { display: block; font-size: 13px; margin-bottom: 2px; }
+        .qcard-text small { font-size: 11px; color: #888; }
+
+        /* ── EMPTY STATE ── */
+        .empty { padding: 40px; text-align: center; background: white; border-radius: 10px; }
+        .empty h3 { color: #666; margin-bottom: 8px; }
+        .empty p { color: #888; margin: 0 0 16px; }
+
+        /* ── RESPONSIVE BREAKPOINTS ── */
+        @media(max-width:900px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .quick-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media(max-width:640px) {
+            .wrap { padding: 10px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .scard { padding: 12px; }
+            .scard-val { font-size: 1.2rem; }
+            /* Hide table, show cards */
+            .tbl-wrap { display: none; }
+            .submission-cards { display: block; }
+            .quick-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .filter-row { flex-direction: column; align-items: stretch; }
+            .filter-row select,
+            .filter-row input[type="text"],
+            .filter-row .btn-filter,
+            .filter-row .btn-clear { width: 100%; }
+        }
+        @media(max-width:380px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .quick-grid { grid-template-columns: 1fr 1fr; }
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>👑 Admin Dashboard</h1>
-        <p>Welcome, {{ admin_name }}! | <a href="/logout" style="color: #dc3545;">Logout</a></p>
+
+<!-- TOP BAR -->
+<div class="topbar">
+    <div class="topbar-title">&#128081; Admin Dashboard</div>
+    <div class="topbar-right">
+        <span style="font-size:13px">{{ admin_name }}</span>
+        <a href="/logout">&#128274; Logout</a>
+        <button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
     </div>
-    
-    <div class="nav">
-        <a href="/admin/dashboard">📊 Dashboard</a>
-        <a href="/admin/projects">🏢 Projects</a>
-        <a href="/admin/create-project" style="background: #007bff; color: white; padding: 5px 10px; border-radius: 3px;">➕ Create Project</a>
-        <a href="/admin/agents">👥 Manage Agents</a>
-        <a href="/admin/commissions">💰 Commissions</a>
-        <a href="/admin/payments">💰 Payments</a>
-        <a href="/admin/sync-payments" style="background: #28a745; color: white; padding: 5px 10px; border-radius: 3px;">🔄 Sync Payments</a>
-        <a href="/admin/agent-performance">📈 Agent Performance</a>
-        <a href="/admin/export-data">📤 Export Data</a>
-        <a href="/admin/reports">📈 Reports</a>
-        <a href="/admin/settings">⚙️ Settings</a>
+</div>
+
+<!-- NAV -->
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard" class="nav-active">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+</div>
+
+<div class="wrap">
+
+<!-- PENDING ALERT -->
+{% if stats.pending and stats.pending > 0 %}
+<div class="pending-alert" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <span>&#9888; <strong>{{ stats.pending }} submission{{ 's' if stats.pending != 1 else '' }} pending approval</strong>
+    &mdash; Scroll down to see the <strong>&#10003; Approve</strong> button on the submission row.</span>
+    <button onclick="document.getElementById('submissions-table').scrollIntoView({behavior:'smooth',block:'start'});window.scrollBy(0,-60);" style="background:#856404;color:white;padding:5px 14px;border-radius:5px;border:none;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">
+        &#11015; Go to Submissions
+    </button>
+</div>
+{% endif %}
+
+<!-- STATS -->
+<div class="stats-grid">
+    <div class="scard" style="border-top-color:#007bff">
+        <h3>Total Listings</h3>
+        <div class="scard-val" style="color:#007bff">{{ stats.total_listings }}</div>
+        <small>Sales: {{ stats.sales_count }} | Rentals: {{ stats.rentals_count }}</small>
     </div>
-    
-    <!-- Temporary note about missing sale_type -->
-    <div class="temp-note">
-        ⚠️ <strong>Note:</strong> Sales/Rental type filtering is temporarily disabled as the database is being updated. All listings are treated as sales for now.
+    <div class="scard" style="border-top-color:#28a745">
+        <h3>Total Sales</h3>
+        <div class="scard-val" style="color:#28a745">RM{{ "{:,.0f}".format(stats.total_sales or 0) }}</div>
+        <small>Total property sales</small>
     </div>
-    
-    <!-- ============ STATS SECTION ============ -->
-    <div class="stats">
-        <div class="stat-card">
-            <h3>Total Listings</h3>
-            <div class="stat-value">{{ stats.total_listings }}</div>
-            <small>Sales: {{ stats.sales_count }} | Rentals: {{ stats.rentals_count }}</small>
-        </div>
-        <div class="stat-card">
-            <h3>Total Sales Value</h3>
-            <div class="stat-value">RM{{ "{:,.2f}".format(stats.total_sales or 0) }}</div>
-            <small>Total property sales</small>
-        </div>
-        <div class="stat-card">
-            <h3>Total Rentals Value</h3>
-            <div class="stat-value">RM{{ "{:,.2f}".format(stats.total_rentals or 0) }}</div>
-            <small>Monthly rental value</small>
-        </div>
-        <div class="stat-card">
-            <h3>Total Commissions</h3>
-            <div class="stat-value" style="color: #007bff;">RM{{ "{:,.2f}".format(stats.total_commissions or 0) }}</div>
-            <small>Generated from all listings</small>
-        </div>
-        <div class="stat-card">
-            <h3>Pending Approval</h3>
-            <div class="stat-value" style="color: #ffc107;">{{ stats.pending }}</div>
-            <small>{{ pending_count }} need review</small>
-        </div>
-        <div class="stat-card">
-            <h3>Approved</h3>
-            <div class="stat-value" style="color: #28a745;">{{ stats.approved }}</div>
-            <small>Completed listings</small>
-        </div>
-        <div class="stat-card">
-            <h3>Rejected</h3>
-            <div class="stat-value" style="color: #dc3545;">{{ stats.rejected }}</div>
-            <small>Declined listings</small>
-        </div>
-        <div class="stat-card">
-            <h3>Drafts</h3>
-            <div class="stat-value">{{ stats.draft }}</div>
-            <small>Unsubmitted listings</small>
-        </div>
+    <div class="scard" style="border-top-color:#6f42c1">
+        <h3>Commissions</h3>
+        <div class="scard-val" style="color:#6f42c1">RM{{ "{:,.0f}".format(stats.total_commissions or 0) }}</div>
+        <small>All listings</small>
     </div>
-    
-    <!-- ============ FILTERS SECTION ============ -->
-    <div class="filters">
-        <h3>Filter Submissions</h3>
-        <form method="GET" class="filter-group">
-            <select name="status">
-                <option value="all" {% if status_filter == "all" %}selected{% endif %}>All Status</option>
-                <option value="submitted" {% if status_filter == "submitted" %}selected{% endif %}>Pending ({{ stats.pending }})</option>
-                <option value="approved" {% if status_filter == "approved" %}selected{% endif %}>Approved ({{ stats.approved }})</option>
-                <option value="rejected" {% if status_filter == "rejected" %}selected{% endif %}>Rejected ({{ stats.rejected }})</option>
-                <option value="draft" {% if status_filter == "draft" %}selected{% endif %}>Drafts ({{ stats.draft }})</option>
-            </select>
-            
-            <!-- Temporarily commented out type filter -->
-            <!--
-            <select name="type">
-                <option value="all" {% if type_filter == "all" %}selected{% endif %}>All Types</option>
-                <option value="sales" {% if type_filter == "sales" %}selected{% endif %}>Sales ({{ stats.sales_count }})</option>
-                <option value="rental" {% if type_filter == "rental" %}selected{% endif %}>Rentals ({{ stats.rentals_count }})</option>
-            </select>
-            -->
-            
-            <input type="text" name="search" placeholder="Search by customer, property, or agent..." value="{{ search_query }}">
-            
-            <button type="submit" class="btn" style="background: #007bff; color: white;">🔍 Filter</button>
-            <a href="/admin/dashboard" class="btn" style="background: #6c757d; color: white;">Clear</a>
-        </form>
+    <div class="scard" style="border-top-color:#ffc107">
+        <h3>Pending</h3>
+        <div class="scard-val" style="color:#ffc107">{{ stats.pending }}</div>
+        <small>Need review</small>
     </div>
-    
-    <!-- ============ SUBMISSIONS TABLE ============ -->
-    <h2>📋 All Submissions ({{ submissions_list|length }})</h2>
-    
-    {% if submissions_list %}
-    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-        <div style="display: flex; align-items: center; gap: 5px;">
-            <div style="width: 12px; height: 12px; background: #dc3545; border-radius: 50%;"></div>
-            <small>Incomplete Docs (0-2)</small>
-        </div>
-        <div style="display: flex; align-items: center; gap: 5px;">
-            <div style="width: 12px; height: 12px; background: #ffc107; border-radius: 50%;"></div>
-            <small>Minimum Docs (3)</small>
-        </div>
-        <div style="display: flex; align-items: center; gap: 5px;">
-            <div style="width: 12px; height: 12px; background: #28a745; border-radius: 50%;"></div>
-            <small>Complete Docs (4+)</small>
-        </div>
+    <div class="scard" style="border-top-color:#28a745">
+        <h3>Approved</h3>
+        <div class="scard-val" style="color:#28a745">{{ stats.approved }}</div>
+        <small>Completed</small>
     </div>
-    
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Type</th>
-                <th>Agent</th>
-                <th>Customer</th>
-                <th>Property</th>
-                <th>Amount</th>
-                <th>Commission</th>
-                <th>Documents</th>
-                <th>Status</th>
-                <th>Submitted</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for sub in submissions_list %}
-            <tr {% if sub.document_count <= 2 %}style="background: #fff5f5; border-left: 4px solid #dc3545;"{% elif sub.document_count == 3 %}style="background: #fff9e6; border-left: 4px solid #ffc107;"{% else %}style="background: #f0fff4; border-left: 4px solid #28a745;"{% endif %}>
-                <td>#{{ sub.id }}</td>
-                <td>
-                    <!-- Default to SALES since we don't have sale_type column -->
-                    <span class="badge-sales">SALE</span>
-                    <br>
-                    <small class="sale-info">(Default)</small>
-                </td>
-                <td>
-                    {{ sub.agent_name }}
-                    <br>
-                    <small style="color: #666;">ID: {{ sub.agent_id }}</small>
-                </td>
-                <td>
-                    {{ sub.customer_name }}
-                    <br>
-                    <small style="color: #666;">{{ sub.customer_email }}</small>
-                    {% if sub.customer_phone %}
-                    <br>
-                    <small style="color: #666;">📱 {{ sub.customer_phone }}</small>
+    <div class="scard" style="border-top-color:#dc3545">
+        <h3>Rejected</h3>
+        <div class="scard-val" style="color:#dc3545">{{ stats.rejected }}</div>
+        <small>Declined</small>
+    </div>
+    <div class="scard" style="border-top-color:#6c757d">
+        <h3>Drafts</h3>
+        <div class="scard-val" style="color:#6c757d">{{ stats.draft }}</div>
+        <small>Unsubmitted</small>
+    </div>
+    <div class="scard" style="border-top-color:#17a2b8">
+        <h3>Rentals Value</h3>
+        <div class="scard-val" style="color:#17a2b8">RM{{ "{:,.0f}".format(stats.total_rentals or 0) }}</div>
+        <small>Monthly</small>
+    </div>
+</div>
+
+<!-- FILTERS -->
+<div class="filters">
+    <h3>&#128269; Filter Submissions</h3>
+    <form method="GET" class="filter-row">
+        <select name="status">
+            <option value="all" {% if status_filter == "all" %}selected{% endif %}>All Status</option>
+            <option value="submitted" {% if status_filter == "submitted" %}selected{% endif %}>Pending ({{ stats.pending }})</option>
+            <option value="approved" {% if status_filter == "approved" %}selected{% endif %}>Approved ({{ stats.approved }})</option>
+            <option value="rejected" {% if status_filter == "rejected" %}selected{% endif %}>Rejected ({{ stats.rejected }})</option>
+            <option value="draft" {% if status_filter == "draft" %}selected{% endif %}>Drafts ({{ stats.draft }})</option>
+        </select>
+        <input type="text" name="search" placeholder="Search customer, property, agent..." value="{{ search_query }}">
+        <button type="submit" class="btn-filter">&#128269; Filter</button>
+        <a href="/admin/dashboard" class="btn-clear">Clear</a>
+    </form>
+</div>
+
+<!-- SUBMISSIONS HEADING -->
+<div class="section-hdr" id="submissions-table">
+    <h2>&#128203; All Submissions ({{ submissions_list|length }})</h2>
+    <div class="doc-legend">
+        <span><span class="dot" style="background:#dc3545"></span>Incomplete (0-2)</span>
+        <span><span class="dot" style="background:#ffc107"></span>Minimum (3)</span>
+        <span><span class="dot" style="background:#28a745"></span>Complete (4+)</span>
+    </div>
+</div>
+
+{% if submissions_list %}
+
+<!-- DESKTOP TABLE -->
+<div class="tbl-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Agent</th>
+            <th>Customer</th>
+            <th>Property</th>
+            <th>Amount</th>
+            <th>Comm</th>
+            <th>Docs</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for sub in submissions_list %}
+    {% set doc_cls = 'doc-low' if sub.document_count <= 2 else ('doc-mid' if sub.document_count == 3 else 'doc-ok') %}
+    <tr class="{{ doc_cls }}">
+        <td><strong>#{{ sub.id }}</strong></td>
+        <td>{{ sub.agent_name }}<br><small style="color:#888">ID:{{ sub.agent_id }}</small></td>
+        <td>{{ sub.customer_name }}<br><small style="color:#888">{{ sub.customer_email }}</small></td>
+        <td>{{ (sub.property_address or '')[:25] }}{% if (sub.property_address or '')|length > 25 %}...{% endif %}</td>
+        <td>RM{{ "{:,.0f}".format(sub.sale_price or 0) }}</td>
+        <td>RM{{ "{:,.0f}".format(sub.commission_amount or 0) }}</td>
+        <td>
+            {% if sub.document_count == 0 %}<span style="color:#dc3545;font-weight:700">&#10060; 0</span>
+            {% elif sub.document_count <= 2 %}<span style="color:#dc3545;font-weight:700">&#9888; {{ sub.document_count }}</span>
+            {% elif sub.document_count == 3 %}<span style="color:#ffc107;font-weight:700">&#10003; 3</span>
+            {% else %}<span style="color:#28a745;font-weight:700">&#10003; {{ sub.document_count }}</span>{% endif %}
+        </td>
+        <td><span class="badge st-{{ sub.status }}">{{ sub.status|upper }}</span>{% if sub.approved_at %}<br><small>{{ sub.approved_at[:10] }}</small>{% endif %}</td>
+        <td><small>{{ (sub.submitted_at or '')[:10] or 'N/A' }}</small></td>
+        <td>
+            <div style="display:flex;flex-direction:column;gap:4px">
+                <a href="/admin/documents/{{ sub.id }}" class="act-btn act-docs">&#128206; Docs</a>
+                {% if sub.status == 'submitted' %}
+                    <a href="/admin/approve/{{ sub.id }}" class="act-btn act-approve">&#10003; Approve</a>
+                    {% if sub.document_count < 3 %}
+                    <span style="font-size:10px;color:#856404;text-align:center">&#9888; {{ sub.document_count }} doc{{ 's' if sub.document_count != 1 }}</span>
                     {% endif %}
-                </td>
-                <td>
-                    {{ (sub.property_address or '')[:25] }}{% if (sub.property_address or '')|length > 25 %}...{% endif %}
-                    {% if sub.project_id %}
-                    <br>
-                    <small style="background: #e8f4ff; color: #0066cc; padding: 2px 6px; border-radius: 3px; font-size: 11px;">Project: {{ sub.project_id }}</small>
-                    {% endif %}
-                </td>
-                <td>
-                    <!-- Always show as sale price since we don't have rental type -->
-                    RM{{ "{:,.2f}".format(sub.sale_price or 0) }}
-                </td>
-                <td>RM{{ "{:,.2f}".format(sub.commission_amount or 0) }}</td>
-                <td>
-                    {% if sub.document_count == 0 %}
-                        <span style="color: #dc3545; font-weight: bold;">❌ 0</span>
-                    {% elif sub.document_count == 1 %}
-                        <span style="color: #dc3545; font-weight: bold;">⚠️ 1</span>
-                    {% elif sub.document_count == 2 %}
-                        <span style="color: #ffc107; font-weight: bold;">⚠️ 2</span>
-                    {% elif sub.document_count == 3 %}
-                        <span style="color: #28a745; font-weight: bold;">✓ 3</span>
-                    {% else %}
-                        <span style="color: #28a745; font-weight: bold;">✅ {{ sub.document_count }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <span class="status-badge status-{{ sub.status }}">
-                        {{ sub.status|upper }}
-                    </span>
-                    {% if sub.approved_at %}
-                    <br>
-                    <small style="color: #666;">{{ sub.approved_at[:10] }}</small>
-                    {% endif %}
-                </td>
-                <td>{{ (sub.submitted_at or '')[:10] if sub.submitted_at else 'N/A' }}</td>
-                <td>
-                    <div style="display: flex; flex-direction: column; gap: 5px;">
-                        <a href="/admin/documents/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #6f42c1; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
-                            📎 Docs
-                        </a>
-                        
-                        {% if sub.status == 'submitted' %}
-                            {% if sub.document_count >= 3 %}
-                            <a href="/admin/approve/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #28a745; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
-                                ✅ Approve
-                            </a>
-                            {% else %}
-                            <button style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled>
-                                ❌ Incomplete
-                            </button>
-                            {% endif %}
-                            <a href="/admin/reject/{{ sub.id }}" class="btn" style="padding: 6px 12px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; font-size: 12px; text-align: center;">
-                                ❌ Reject
-                            </a>
-                        {% elif sub.status == 'draft' %}
-                            <button style="padding: 6px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled>
-                                Draft
-                            </button>
-                        {% elif sub.status == 'approved' %}
-                            <button style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed;" disabled>
-                                ✅ Approved
-                            </button>
-                        {% elif sub.status == 'rejected' %}
-                            <button style="padding: 6px 12px; background: #dc3545; color: white; border: none; border-radius: 4px; font-size: 12px; cursor: not-allowed;" disabled>
-                                ❌ Rejected
-                            </button>
-                        {% endif %}
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div style="padding: 40px; text-align: center; background: white; border-radius: 10px;">
-        <h3>📭 No submissions found</h3>
-        <p>No submissions match your filters.</p>
-        <a href="/admin/dashboard" class="btn" style="background: #007bff; color: white; margin-top: 15px;">Show All Submissions</a>
+                    <a href="/admin/reject/{{ sub.id }}" class="act-btn act-reject">&#10007; Reject</a>
+                {% elif sub.status == 'approved' %}
+                    <span class="act-btn" style="background:#d4edda;color:#155724">&#10003; Approved</span>
+                {% elif sub.status == 'rejected' %}
+                    <span class="act-btn" style="background:#f8d7da;color:#721c24">&#10007; Rejected</span>
+                {% else %}
+                    <span class="act-btn act-dis">Draft</span>
+                {% endif %}
+            </div>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- MOBILE CARD VIEW -->
+<div class="submission-cards">
+{% for sub in submissions_list %}
+{% set doc_cls = 'doc-low' if sub.document_count <= 2 else ('doc-mid' if sub.document_count == 3 else 'doc-ok') %}
+<div class="sub-card {{ doc_cls }}">
+    <div class="sub-card-top">
+        <div>
+            <span class="sub-card-id">#{{ sub.id }}</span>
+            <span class="badge st-{{ sub.status }}" style="margin-left:8px">{{ sub.status|upper }}</span>
+        </div>
+        <div style="font-size:12px;color:#888">{{ (sub.submitted_at or '')[:10] or 'N/A' }}</div>
     </div>
-    {% endif %}
-    
-    <!-- ============ QUICK ACTIONS ============ -->
-    <h2>⚡ Quick Actions</h2>
-    <div class="quick-actions">
-        <a href="/admin/add-agent" class="action-btn">
-            <div style="font-size: 24px;">➕</div>
-            <div><strong>Add Agent</strong><br><small>Create new agent account</small></div>
-        </a>
-        <a href="/admin/commissions" class="action-btn">
-            <div style="font-size: 24px;">💰</div>
-            <div><strong>Commission Report</strong><br><small>View all commissions</small></div>
-        </a>
-        <a href="/admin/export-data" class="action-btn">
-            <div style="font-size: 24px;">📤</div>
-            <div><strong>Export Data</strong><br><small>Export to Excel/CSV</small></div>
-        </a>
-        <a href="/admin/agent-performance" class="action-btn">
-            <div style="font-size: 24px;">📊</div>
-            <div><strong>Agent Performance</strong><br><small>View agent statistics</small></div>
-        </a>
+    <div class="sub-card-body">
+        <p><strong>Agent:</strong> {{ sub.agent_name }}</p>
+        <p><strong>Customer:</strong> {{ sub.customer_name }}</p>
+        <p><strong>Property:</strong> {{ (sub.property_address or '')[:40] }}{% if (sub.property_address or '')|length > 40 %}...{% endif %}</p>
     </div>
-    
+    <div class="sub-card-row">
+        <div>
+            <div style="font-size:12px;color:#888">Sale Price</div>
+            <div style="font-weight:700">RM{{ "{:,.0f}".format(sub.sale_price or 0) }}</div>
+        </div>
+        <div>
+            <div style="font-size:12px;color:#888">Commission</div>
+            <div style="font-weight:700;color:#28a745">RM{{ "{:,.0f}".format(sub.commission_amount or 0) }}</div>
+        </div>
+        <div>
+            <div style="font-size:12px;color:#888">Docs</div>
+            <div style="font-weight:700;color:{% if sub.document_count <= 2 %}#dc3545{% elif sub.document_count == 3 %}#ffc107{% else %}#28a745{% endif %}">{{ sub.document_count }}</div>
+        </div>
+    </div>
+    <div class="sub-card-actions">
+        <a href="/admin/documents/{{ sub.id }}" class="act-btn act-docs">&#128206; Docs</a>
+        {% if sub.status == 'submitted' %}
+            <a href="/admin/approve/{{ sub.id }}" class="act-btn act-approve">&#10003; Approve</a>
+            {% if sub.document_count < 3 %}<span style="font-size:10px;color:#856404">&#9888; {{ sub.document_count }} docs</span>{% endif %}
+            <a href="/admin/reject/{{ sub.id }}" class="act-btn act-reject">&#10007; Reject</a>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+
+{% else %}
+<div class="empty">
+    <h3>&#128235; No submissions found</h3>
+    <p>No submissions match your filters.</p>
+    <a href="/admin/dashboard" class="act-btn act-approve" style="padding:8px 16px;font-size:13px">Show All</a>
+</div>
+{% endif %}
+
+<!-- AGENT RANK SNAPSHOT -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 10px">
+  <h2 style="font-size:15px;margin:0">&#127942; Agent Rank Progress <span style="font-size:11px;color:#888;font-weight:400">(Top 5)</span></h2>
+  <a href="/admin/agents" style="font-size:12px;color:#007bff;font-weight:600;text-decoration:none">View all agents →</a>
+</div>
+{% if agents_snapshot %}
+<div style="background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px">
+  <table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr style="background:#2c3e50;color:white">
+        <th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:700">Agent</th>
+        <th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:700">Rank</th>
+        <th style="padding:9px 12px;text-align:left;font-size:11px;font-weight:700;min-width:180px">Gross Progress (Rank Tracker)</th>
+        <th style="padding:9px 12px;text-align:right;font-size:11px;font-weight:700">Cum. Gross</th>
+        <th style="padding:9px 12px;text-align:right;font-size:11px;font-weight:700">Next Rank</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% set rank_colors = {'REN':'#6c757d','Assoc REN':'#28a745','Elite REN':'#007bff','TL':'#ffc107','ATL':'#dc3545'} %}
+    {% for ag in agents_snapshot %}
+    {% set display = ag.display_gross|float %}
+    {% set thresh  = ag.next_threshold|float %}
+    {% set pct     = [100, (display / thresh * 100)|round(1)]|min if thresh > 0 else 100 %}
+    {% set approved_pct = [100, (ag.cumulative_gross|float / thresh * 100)|round(1)]|min if thresh > 0 else 100 %}
+    <tr style="border-bottom:1px solid #f0f0f0">
+      <td style="padding:9px 12px;font-size:13px;font-weight:600">{{ ag.name }}</td>
+      <td style="padding:9px 12px">
+        <span style="background:{{ rank_colors.get(ag.agent_rank,'#6c757d') }};color:white;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">
+          {{ ag.agent_rank }} · {{ ag.commission_rate|int }}%
+        </span>
+      </td>
+      <td style="padding:9px 12px">
+        <div style="background:#e5e7eb;height:8px;border-radius:4px;overflow:hidden;position:relative">
+          <div style="position:absolute;left:0;top:0;height:100%;width:{{ pct }}%;background:#fcd34d;border-radius:4px"></div>
+          <div style="position:absolute;left:0;top:0;height:100%;width:{{ approved_pct }}%;background:#16a34a;border-radius:4px"></div>
+        </div>
+        <div style="font-size:10px;color:#888;margin-top:2px">
+          {{ pct }}% to {{ ag.next_rank }}
+          {% if ag.pending_count > 0 %}
+          <span style="background:#fef9c3;color:#854d0e;border:1px solid #fde68a;border-radius:4px;padding:0 4px;font-size:9px;margin-left:4px">{{ ag.pending_count }} pending</span>
+          {% endif %}
+        </div>
+      </td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700;font-size:13px;color:#1a3a2a">RM{{ "{:,.0f}".format(display) }}</td>
+      <td style="padding:9px 12px;text-align:right;font-size:11px;color:#888">{{ ag.next_rank }}<br>RM{{ "{:,.0f}".format(thresh) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="padding:8px 12px;font-size:10px;color:#888;background:#f8f9fa">
+    🟢 Approved &nbsp;|&nbsp; 🟡 Including pending submissions &nbsp;|&nbsp;
+    <a href="/admin/agents" style="color:#007bff;font-weight:600">View full ranking →</a>
+  </div>
+</div>
+{% else %}
+<div style="background:white;border-radius:10px;padding:20px;text-align:center;color:#888;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+  No agents yet. <a href="/admin/add-agent" style="color:#007bff">Add your first agent →</a>
+</div>
+{% endif %}
+
+<!-- QUICK ACTIONS -->
+<h2 style="font-size:15px;margin:20px 0 10px">&#9889; Quick Actions</h2>
+<div class="quick-grid">
+    <a href="/admin/add-agent" class="qcard">
+        <span class="qcard-icon">&#10133;</span>
+        <div class="qcard-text"><strong>Add Agent</strong><small>Create new account</small></div>
+    </a>
+    <a href="/admin/commissions" class="qcard">
+        <span class="qcard-icon">&#128176;</span>
+        <div class="qcard-text"><strong>Commissions</strong><small>View all commissions</small></div>
+    </a>
+    <a href="/admin/export-data" class="qcard">
+        <span class="qcard-icon">&#128228;</span>
+        <div class="qcard-text"><strong>Export Data</strong><small>Excel / CSV</small></div>
+    </a>
+    <a href="/admin/agent-performance" class="qcard">
+        <span class="qcard-icon">&#128200;</span>
+        <div class="qcard-text"><strong>Performance</strong><small>Agent statistics</small></div>
+    </a>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+function toggleNav(){
+    var nav = document.getElementById('mainNav');
+    nav.classList.toggle('open');
+}
+// Close nav when a link is clicked on mobile
+document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click', function(){
+        document.getElementById('mainNav').classList.remove('open');
+    });
+});
+</script>
 </body>
 </html>

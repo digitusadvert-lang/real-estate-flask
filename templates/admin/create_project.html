@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Create New Project</title>
+    <style>
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+        .topbar { background: #2c3e50; color: white; padding: 12px 16px; display: flex;
+                  align-items: center; justify-content: space-between; gap: 8px;
+                  position: sticky; top: 0; z-index: 100; }
+        .topbar-title { font-size: 1rem; font-weight: 700; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-right a { color: #a8c8ff; text-decoration: none; font-size: 13px; }
+        .hamburger { display: none; background: none; border: none; color: white;
+                     font-size: 22px; cursor: pointer; padding: 2px 6px; }
+        .nav-bar { background: white; padding: 10px 16px; display: flex; flex-wrap: wrap;
+                   gap: 4px; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+        .nav-bar a { color: #007bff; text-decoration: none; font-weight: 600; font-size: 13px;
+                     padding: 5px 10px; border-radius: 6px; white-space: nowrap; }
+        .nav-bar a:hover { background: #f0f7ff; }
+        .nav-bar a.nav-btn { background: #2563eb; color: white; }
+        .nav-bar a.nav-logout { color: #dc3545; }
+        .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+        .card { background: white; border-radius: 10px; padding: 22px;
+                box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+        .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                      letter-spacing: .1em; color: #7a8fa0; margin-bottom: 14px;
+                      padding-bottom: 8px; border-bottom: 1px solid #eee; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        .form-group { margin-bottom: 14px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; color: #444; font-size: 13px; }
+        input, select, textarea { width: 100%; padding: 9px 11px; border: 1.5px solid #dde6f0;
+                                   border-radius: 7px; font-size: 14px; background: #fafafa;
+                                   box-sizing: border-box; }
+        input:focus, select:focus, textarea:focus { border-color: #3b82f6; outline: none; background: white; }
+        small { display: block; margin-top: 4px; color: #7a8fa0; font-size: 12px; }
+        /* unit rows */
+        .unit-row { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr; gap: 8px;
+                    margin-bottom: 8px; align-items: end; }
+        .btn-add-unit { background: #16a34a; color: white; border: none; border-radius: 6px;
+                        padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
+                        margin-top: 6px; }
+        /* commission box */
+        .comm-box { background: #f0f9ff; border: 1.5px solid #b3d4ff;
+                    border-radius: 10px; padding: 16px 18px; }
+        .rate-check { background: white; border: 1.5px solid #dde6f0; border-radius: 8px;
+                      padding: 10px 12px; font-size: 12px; display: flex; flex-wrap: wrap;
+                      gap: 10px; align-items: center; margin-top: 8px; }
+        .ok  { color: #16a34a; font-weight: 700; }
+        .bad { color: #dc2626; font-weight: 700; }
+        /* submit row */
+        .form-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+        .btn-submit { background: #2563eb; color: white; padding: 11px 24px; border: none;
+                      border-radius: 7px; cursor: pointer; font-size: 14px; font-weight: 700; }
+        .btn-cancel { background: #6c757d; color: white; padding: 11px 22px; border: none;
+                      border-radius: 7px; cursor: pointer; font-size: 14px; font-weight: 700;
+                      text-decoration: none; display: inline-block; }
+        .split-warn { color: #dc2626; font-size: 13px; font-weight: 600; display: none; }
+        /* mobile */
+        @media(max-width:640px) {
+            .hamburger { display: block; }
+            .nav-bar { display: none; flex-direction: column; align-items: stretch;
+                       padding: 8px 12px; gap: 2px; }
+            .nav-bar.open { display: flex; }
+            .nav-bar a { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom: none; }
+            .wrap { padding: 10px; }
+            .form-row { grid-template-columns: 1fr; }
+            .unit-row { grid-template-columns: 1fr 1fr; }
+            .unit-row > div:nth-child(3),
+            .unit-row > div:nth-child(4) { display: none; }
+            .form-actions { flex-direction: column; align-items: stretch; }
+            .btn-submit, .btn-cancel { text-align: center; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <div class="topbar-title">&#10133; Create New Project</div>
+    <div class="topbar-right">
+        <a href="/admin/projects">&#8592; Projects</a>
+        <button class="hamburger" onclick="toggleNav()">&#9776;</button>
+    </div>
+</div>
+<div class="nav-bar" id="mainNav">
+    <a href="/admin/dashboard">&#128202; Dashboard</a>
+    <a href="/admin/projects">&#127962; Projects</a>
+    <a href="/admin/create-project" class="nav-btn">&#10010; New</a>
+    <a href="/admin/agents">&#128101; Agents</a>
+    <a href="/admin/payments">&#9993; Payments</a>
+    <a href="/admin/commissions">&#128176; Commissions</a>
+    <a href="/admin/agent-performance">&#128200; Performance</a>
+    <a href="/admin/commission-calculator">&#9889; Calc</a>
+    <a href="/admin/settings">&#9881; Settings</a>
+    <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<div class="wrap">
+<form method="POST" onsubmit="return validateForm()">
+
+    <!-- Basic Info -->
+    <div class="card">
+        <div class="card-title">Basic Information</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Project Name *</label>
+                <input type="text" name="name" id="projectName" required placeholder="e.g. Residensi Harmoni"/>
+            </div>
+            <div class="form-group">
+                <label>Location *</label>
+                <input type="text" name="location" id="location" required placeholder="e.g. Petaling Jaya"/>
+            </div>
+            <div class="form-group">
+                <label>Sales or Rental *</label>
+                <select name="project_sale_type" id="projectSaleType" required>
+                    <option value="">-- Select --</option>
+                    <option value="sales">Sales</option>
+                    <option value="rental">Rental</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Project Type</label>
+                <select name="project_type">
+                    <option value="residential">Residential</option>
+                    <option value="commercial">Commercial</option>
+                    <option value="mixed">Mixed Development</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <select name="category">
+                    <option value="condo">Condo/Apartment</option>
+                    <option value="landed">Landed House</option>
+                    <option value="commercial">Commercial</option>
+                    <option value="industrial">Industrial</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Default Dev Comm Rate (%)</label>
+                <input type="number" name="project_commission" min="0" max="100" step="0.1" value="2.0"/>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <textarea name="description" rows="2" placeholder="Optional"></textarea>
+        </div>
+    </div>
+
+    <!-- WTP Commission Config -->
+    <div class="card">
+        <div class="card-title">&#128200; WTP Commission Configuration</div>
+        <div class="comm-box">
+            <div style="font-size:13px;color:#0c4a6e;margin-bottom:12px">
+                &#9432; Set the commission split rules for this project.
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Developer Rate (%)</label>
+                    <input type="number" name="comm_dev_rate" id="commDevRate"
+                           value="2.0" min="0" max="100" step="0.1" oninput="updateCommPreview()"/>
+                    <small>% developer pays the agency</small>
+                </div>
+                <div class="form-group">
+                    <label>SST Rate (%) — 0 if dev absorbs</label>
+                    <input type="number" name="comm_sst_rate" id="commSstRate"
+                           value="8.0" min="0" max="100" step="0.1" oninput="updateCommPreview()"/>
+                    <small>Net = Gross &divide; (1+SST%)</small>
+                </div>
+                <div class="form-group">
+                    <label>PIC Agent</label>
+                    <select name="comm_pic_agent_id" id="commPicAgent"
+                            onchange="onPicAgentChange(this)">
+                        {{ agent_opts|safe }}
+                    </select>
+                    <small>Selecting an agent auto-fills their rank</small>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Company Split % of Net</label>
+                    <input type="number" name="comm_company_pct" id="commCo"
+                           value="15.0" min="0" max="100" step="0.1" oninput="updateCommPreview()"/>
+                </div>
+                <div class="form-group">
+                    <label>PIC Split % of Net</label>
+                    <input type="number" name="comm_pic_pct" id="commPic"
+                           value="10.0" min="0" max="100" step="0.1" oninput="updateCommPreview()"/>
+                </div>
+                <div class="form-group">
+                    <label>Agents Split % of Net</label>
+                    <input type="number" name="comm_agents_pct" id="commAg"
+                           value="75.0" min="0" max="100" step="0.1" oninput="updateCommPreview()"/>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>PIC Rank
+                    <span id="picRankAutoNote" style="font-size:12px;color:#16a34a;font-weight:400"></span>
+                </label>
+                <select name="comm_pic_rank" id="commPicRank" style="max-width:220px">
+                    <option value="ATL">ATL (90%)</option>
+                    <option value="TL">TL (85%)</option>
+                    <option value="ELITE">Elite REN (80%)</option>
+                    <option value="ASSOC">Assoc REN (75%)</option>
+                    <option value="REN" selected>REN (70%)</option>
+                </select>
+                <small>Auto-filled from agent. Can override manually.</small>
+            </div>
+            <input type="hidden" name="comm_pic_name" id="commPicName" value=""/>
+            <div class="rate-check">
+                Co: <strong id="rcCo">15%</strong>
+                PIC: <strong id="rcPIC">10%</strong>
+                Agents: <strong id="rcAg">75%</strong>
+                Total: <strong id="rcTot" class="ok">100%</strong>
+                <strong id="rcSt" class="ok">&#10003; OK</strong>
+            </div>
+            <a href="/admin/commission-calculator" target="_blank"
+               style="display:inline-flex;align-items:center;gap:6px;background:#eff6ff;
+                      border:1px solid #bfdbfe;border-radius:7px;padding:7px 12px;
+                      color:#1d4ed8;font-size:13px;font-weight:700;text-decoration:none;margin-top:10px">
+                &#9889; Open Commission Calculator
+            </a>
+        </div>
+    </div>
+
+    <!-- Project Units -->
+    <div class="card">
+        <div class="card-title">&#127968; Project Units</div>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:6px">
+            <small style="font-weight:600;color:#888">Unit Code</small>
+            <small style="font-weight:600;color:#888">Type</small>
+            <small style="font-weight:600;color:#888">Price (RM)</small>
+            <small style="font-weight:600;color:#888">Size (sqft)</small>
+            <small style="font-weight:600;color:#888">Comm %</small>
+        </div>
+        <div id="unitsContainer">
+            <div class="unit-row">
+                <div><input type="text"   name="unit_code_1"       placeholder="e.g. A-101" required/></div>
+                <div><input type="text"   name="unit_type_1"       placeholder="e.g. 3BR"/></div>
+                <div><input type="number" name="unit_price_1"      placeholder="Optional" step="1000"/></div>
+                <div><input type="number" name="unit_size_1"       placeholder="Optional" step="10"/></div>
+                <div><input type="number" name="unit_commission_1" placeholder="Optional" min="0" max="100" step="0.1"/></div>
+            </div>
+        </div>
+        <button type="button" class="btn-add-unit" onclick="addUnit()">&#10010; Add Unit</button>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-submit" id="submitBtn">&#10003; Create Project</button>
+        <a href="/admin/projects" class="btn-cancel">Cancel</a>
+        <span id="splitWarn" class="split-warn">&#9888; Splits must total 100%.</span>
+    </div>
+
+</form>
+</div><!-- /wrap -->
+
+<script>
+let unitCounter = 1;
+
+function onPicAgentChange(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.value) return;
+    document.getElementById('commPicRank').value = opt.dataset.rank || 'REN';
+    document.getElementById('commPicName').value = opt.dataset.name || '';
+    document.getElementById('picRankAutoNote').textContent = '(auto-filled from ' + opt.dataset.name + ')';
+    updateCommPreview();
+}
+
+function addUnit() {
+    unitCounter++;
+    const c = document.getElementById('unitsContainer');
+    const d = document.createElement('div');
+    d.className = 'unit-row';
+    d.innerHTML =
+        '<div><input type="text"   name="unit_code_'+unitCounter+'"       placeholder="e.g. A-'+unitCounter+'01" required/></div>' +
+        '<div><input type="text"   name="unit_type_'+unitCounter+'"       placeholder="e.g. 3BR"/></div>' +
+        '<div><input type="number" name="unit_price_'+unitCounter+'"      placeholder="Optional" step="1000"/></div>' +
+        '<div><input type="number" name="unit_size_'+unitCounter+'"       placeholder="Optional" step="10"/></div>' +
+        '<div><input type="number" name="unit_commission_'+unitCounter+'" placeholder="Optional" min="0" max="100" step="0.1"/></div>';
+    c.appendChild(d);
+}
+
+function updateCommPreview() {
+    const co  = parseFloat(document.getElementById('commCo').value)  || 0;
+    const pic = parseFloat(document.getElementById('commPic').value) || 0;
+    const ag  = parseFloat(document.getElementById('commAg').value)  || 0;
+    const tot = co + pic + ag;
+    const ok  = Math.abs(tot - 100) < 0.001;
+    document.getElementById('rcCo').textContent  = co + '%';
+    document.getElementById('rcPIC').textContent = pic + '%';
+    document.getElementById('rcAg').textContent  = ag + '%';
+    const te = document.getElementById('rcTot');
+    te.textContent = tot.toFixed(2).replace(/\.?0+$/, '') + '%';
+    te.className = ok ? 'ok' : 'bad';
+    const se = document.getElementById('rcSt');
+    if (ok) { se.textContent = '\u2713 OK'; se.className = 'ok'; }
+    else     { se.textContent = (tot > 100 ? 'Over' : 'Under') + ' by ' + Math.abs(tot-100).toFixed(2) + '%'; se.className = 'bad'; }
+    document.getElementById('splitWarn').style.display = ok ? 'none' : 'inline';
+}
+
+function validateForm() {
+    const name = document.getElementById('projectName').value.trim();
+    const loc  = document.getElementById('location').value.trim();
+    const st   = document.getElementById('projectSaleType').value;
+    if (!name || !loc || !st) {
+        alert('Please fill: Project Name, Location, and Sales/Rental type');
+        return false;
+    }
+    const co  = parseFloat(document.getElementById('commCo').value)  || 0;
+    const pic = parseFloat(document.getElementById('commPic').value) || 0;
+    const ag  = parseFloat(document.getElementById('commAg').value)  || 0;
+    if (Math.abs(co + pic + ag - 100) > 0.001) {
+        alert('Commission split must total exactly 100%.');
+        return false;
+    }
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    return true;
+}
+
+function toggleNav() { document.getElementById('mainNav').classList.toggle('open'); }
+document.addEventListener('DOMContentLoaded', function() {
+    updateCommPreview();
+    document.querySelectorAll('#mainNav a').forEach(function(a) {
+        a.addEventListener('click', function() {
+            document.getElementById('mainNav').classList.remove('open');
+        });
+    });
+});
+</script>
+</body>
+</html>

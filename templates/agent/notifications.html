@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>My Notifications</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#86efac;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#16a34a;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0fdf4}
+.nav-bar a.nav-btn{background:#16a34a;color:white}
+.nav-bar a.nav-btn:hover{background:#15803d}
+.nav-bar a.nav-active{background:#f0fdf4;color:#15803d;font-weight:700}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){
+  .hamburger{display:block}
+  .nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}
+  .nav-bar.open{display:flex}
+  .nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}
+  .nav-bar a:last-child{border-bottom:none}
+}
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+
+/* stats */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px}
+.scard{background:white;border-radius:10px;padding:13px 15px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
+.scard h3{margin:0 0 5px;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.scard-val{font-size:1.35rem;font-weight:800}
+
+/* section header */
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.sec-hdr h2{margin:0;font-size:15px;font-weight:700}
+.mark-all-btn{display:inline-block;padding:6px 14px;background:#0891b2;color:white;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}
+.mark-all-btn:hover{background:#0e7490}
+
+/* notification cards */
+.notif-card{background:white;border-radius:10px;padding:16px 18px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #16a34a;transition:opacity .2s}
+.notif-card.read{border-left-color:#e5e7eb;opacity:.75}
+.notif-card.unread{border-left-color:#16a34a}
+.notif-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.notif-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.badge{padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;white-space:nowrap}
+.b-system{background:#e3f2fd;color:#1565c0}
+.b-payment{background:#dcfce7;color:#166534}
+.b-commission_paid{background:#dcfce7;color:#166534}
+.b-listing{background:#fef9c3;color:#854d0e}
+.b-listing_approved{background:#dcfce7;color:#166534}
+.b-submission_success{background:#dbeafe;color:#1e40af}
+.b-rank_promotion{background:#f3e8ff;color:#6b21a8}
+.b-default{background:#f3f4f6;color:#4b5563}
+.b-unread{background:#fee2e2;color:#991b1b}
+.b-read{background:#f3f4f6;color:#6b7280}
+.notif-date{font-size:11px;color:#9ca3af;white-space:nowrap;flex-shrink:0}
+.notif-title{font-weight:700;font-size:13px;color:#1a2a3a;margin-bottom:4px}
+.notif-msg{font-size:13px;color:#555;line-height:1.6}
+.notif-actions{display:flex;justify-content:flex-end;margin-top:10px}
+.mark-read-btn{display:inline-block;padding:4px 12px;background:#f0fdf4;border:1px solid #86efac;color:#16a34a;border-radius:5px;font-size:11px;font-weight:600;text-decoration:none}
+.mark-read-btn:hover{background:#dcfce7}
+
+/* empty state */
+.empty{padding:50px 20px;text-align:center;background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.empty-icon{font-size:48px;margin-bottom:12px}
+.empty h3{color:#666;margin:0 0 8px;font-size:16px}
+.empty p{color:#888;margin:0;font-size:13px}
+
+@media(max-width:640px){.wrap{padding:10px}.notif-card{padding:13px 14px}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">&#128276; Notifications</div>
+  <div class="topbar-right">
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/agent/dashboard">&#128202; Dashboard</a>
+  <a href="/agent/unified-submit" class="nav-btn">&#10010; New Sale</a>
+  <a href="/agent/unified-submissions">&#128203; Submissions</a>
+  <a href="/agent/commissions">&#128176; Commissions</a>
+  <a href="/agent/projects">&#127962; Projects</a>
+  <a href="/agent/my-downline">&#128101; My Downline</a>
+  <a href="/agent/forms-library">&#128193; Forms</a>
+  <a href="/agent/notifications">&#128276; Notifications</a>
+  <a href="/agent/profile">&#128100; Profile</a>
+  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<div class="wrap">
+
+{% set total = notifications|length %}
+{% set unread = notifications|selectattr('is_read','equalto',0)|list|length %}
+{% set read = total - unread %}
+
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="scard" style="border-top-color:#16a34a">
+    <h3>Total</h3>
+    <div class="scard-val" style="color:#16a34a">{{ total }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#dc3545">
+    <h3>Unread</h3>
+    <div class="scard-val" style="color:#dc3545">{{ unread }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#6b7280">
+    <h3>Read</h3>
+    <div class="scard-val" style="color:#6b7280">{{ read }}</div>
+  </div>
+</div>
+
+<!-- Section header -->
+<div class="sec-hdr">
+  <h2>&#128276; Recent Notifications</h2>
+  {% if unread > 0 %}
+  <a href="/agent/mark-all-read" class="mark-all-btn">&#10003; Mark All as Read</a>
+  {% endif %}
+</div>
+
+{% if notifications %}
+  {% for n in notifications %}
+  {% set type_cls = 'b-' + (n.type or 'default') %}
+  <div class="notif-card {{ 'read' if n.is_read else 'unread' }}">
+    <div class="notif-top">
+      <div class="notif-badges">
+        <span class="badge {{ type_cls }}">{{ (n.type or 'system').replace('_',' ').title() }}</span>
+        {% if not n.is_read %}<span class="badge b-unread">&#9679; New</span>{% endif %}
+      </div>
+      <span class="notif-date">{{ n.created_at[:16].replace('T',' ') if n.created_at else '' }}</span>
+    </div>
+    <div class="notif-title">{{ n.title or '' }}</div>
+    <div class="notif-msg">{{ n.message or '' }}</div>
+    {% if not n.is_read %}
+    <div class="notif-actions">
+      <a href="/agent/mark-notification-read/{{ n.id }}" class="mark-read-btn">&#10003; Mark as Read</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty">
+    <div class="empty-icon">&#128276;</div>
+    <h3>No notifications yet</h3>
+    <p>You're all caught up! Notifications will appear here when there's activity on your account.</p>
+  </div>
+{% endif %}
+
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+</script>
+</body>
+</html>

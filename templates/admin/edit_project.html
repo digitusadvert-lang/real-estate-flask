@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Edit — {{ project.name }}</title>
+    <style>
+        *,*::before,*::after { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
+        .topbar { background: #2c3e50; color: white; padding: 12px 16px; display: flex;
+                  align-items: center; justify-content: space-between; gap: 8px;
+                  position: sticky; top: 0; z-index: 100; }
+        .topbar-title { font-size: 1rem; font-weight: 700; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-right a { color: #a8c8ff; text-decoration: none; font-size: 13px; }
+        .hamburger { display: none; background: none; border: none; color: white;
+                     font-size: 22px; cursor: pointer; padding: 2px 6px; }
+        .nav-bar { background: white; padding: 10px 16px; display: flex; flex-wrap: wrap;
+                   gap: 4px; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+        .nav-bar a { color: #007bff; text-decoration: none; font-weight: 600; font-size: 13px;
+                     padding: 5px 10px; border-radius: 6px; white-space: nowrap; }
+        .nav-bar a:hover { background: #f0f7ff; }
+        .nav-bar a.nav-btn { background: #2563eb; color: white; }
+        .nav-bar a.nav-logout { color: #dc3545; }
+        .wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
+        .card { background: white; border-radius: 10px; padding: 20px;
+                box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+        .card-title { font-size: 13px; font-weight: 700; color: #1a2a3a; margin-bottom: 16px;
+                      padding-bottom: 10px; border-bottom: 2px solid #f0f0f0; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .form-group { margin-bottom: 14px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; color: #444; font-size: 13px; }
+        input[type=text],input[type=number],select,textarea {
+            width: 100%; padding: 9px 11px; border: 1px solid #ccc; border-radius: 6px;
+            font-size: 14px; background: #fafafa; box-sizing: border-box; }
+        input:focus,select:focus,textarea:focus {
+            outline: none; border-color: #007bff; background: white; }
+        small { display: block; margin-top: 3px; color: #888; font-size: 12px; }
+        /* comm box */
+        .comm-box { background: #f0f9ff; border: 1.5px solid #b3d4ff;
+                    border-radius: 10px; padding: 16px 18px; }
+        .rate-check { background: white; border: 1px solid #dde; border-radius: 7px;
+                      padding: 10px 12px; font-size: 12px; display: flex; flex-wrap: wrap;
+                      gap: 10px; align-items: center; margin-top: 8px; }
+        .ok  { color: #28a745; font-weight: 700; }
+        .bad { color: #dc3545; font-weight: 700; }
+        /* unit rows */
+        .unit-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 44px;
+                    gap: 8px; margin-bottom: 8px; align-items: end; }
+        .btn-add-unit { background: #16a34a; color: white; border: none; border-radius: 6px;
+                        padding: 8px 14px; cursor: pointer; font-size: 13px; font-weight: 600;
+                        margin-top: 8px; }
+        .btn-del-unit { background: #dc3545; color: white; border: none; border-radius: 6px;
+                        padding: 8px; cursor: pointer; font-size: 14px; width: 100%; }
+        /* actions */
+        .form-actions { display: flex; gap: 10px; flex-wrap: wrap; padding: 16px 0 8px; }
+        .btn-primary   { background: #007bff; color: white; padding: 10px 22px; border: none;
+                         border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+        .btn-secondary { background: #6c757d; color: white; padding: 10px 22px; border: none;
+                         border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;
+                         text-decoration: none; display: inline-block; }
+        /* mobile */
+        @media(max-width:640px) {
+            .hamburger { display: block; }
+            .nav-bar { display: none; flex-direction: column; align-items: stretch; padding: 8px 12px; gap: 2px; }
+            .nav-bar.open { display: flex; }
+            .nav-bar a { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+            .nav-bar a:last-child { border-bottom: none; }
+            .wrap { padding: 10px; }
+            .form-row { grid-template-columns: 1fr; }
+            .unit-row { grid-template-columns: 1fr 1fr 1fr; }
+            .unit-row > div:nth-child(4),
+            .unit-row > div:nth-child(5) { display: none; }
+            .form-actions { flex-direction: column; }
+            .btn-primary, .btn-secondary { text-align: center; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <div class="topbar-title">&#9999; Edit: {{ project.name }}</div>
+    <div class="topbar-right">
+        <a href="/admin/project/{{ project.id }}">&#8592; Back</a>
+        <button class="hamburger" onclick="toggleNav()">&#9776;</button>
+    </div>
+</div>
+<div class="nav-bar" id="mainNav">
+    <a href="/admin/dashboard">&#128202; Dashboard</a>
+    <a href="/admin/projects">&#127962; Projects</a>
+    <a href="/admin/create-project" class="nav-btn">&#10010; New</a>
+    <a href="/admin/agents">&#128101; Agents</a>
+    <a href="/admin/payments">&#9993; Payments</a>
+    <a href="/admin/commissions">&#128176; Commissions</a>
+    <a href="/admin/agent-performance">&#128200; Performance</a>
+    <a href="/admin/commission-calculator">&#9889; Calc</a>
+    <a href="/admin/settings">&#9881; Settings</a>
+    <a href="/logout" class="nav-logout">&#128274; Logout</a>
+</div>
+
+<div class="wrap">
+<form method="POST">
+
+    <!-- Basic Info -->
+    <div class="card">
+        <div class="card-title">&#128203; Basic Information</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Project Name *</label>
+                <input type="text" name="project_name" value="{{ project.name }}" required>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <select name="category" id="categorySelect">
+                    {% for opt in ['condo','landed','commercial','industrial'] %}
+                    <option value="{{ opt }}" {{ 'selected' if project.category == opt }}>{{ opt|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Project Type</label>
+                <select name="project_type">
+                    {% for opt in ['residential','commercial','mixed'] %}
+                    <option value="{{ opt }}" {{ 'selected' if project.project_type == opt }}>{{ opt|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Location</label>
+                <input type="text" name="location" value="{{ project.location or '' }}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <textarea name="description" rows="3">{{ project.description or '' }}</textarea>
+        </div>
+    </div>
+
+    <!-- Units -->
+    <div class="card">
+        <div class="card-title">&#127968; Unit Types &amp; Pricing</div>
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 44px;gap:8px;margin-bottom:6px">
+            <small style="font-weight:600;color:#888">Unit Type</small>
+            <small style="font-weight:600;color:#888">Sq Feet</small>
+            <small style="font-weight:600;color:#888">Sale Price</small>
+            <small style="font-weight:600;color:#888">Rental</small>
+            <small style="font-weight:600;color:#888">Comm %</small>
+            <small style="font-weight:600;color:#888">Qty</small>
+            <small></small>
+        </div>
+        <div id="unitContainer"></div>
+        <button type="button" class="btn-add-unit" onclick="addUnitRow()">&#10010; Add Unit Type</button>
+    </div>
+
+    <!-- WTP Commission -->
+    <div class="card">
+        <div class="card-title">&#128200; WTP Commission Configuration</div>
+        <div class="comm-box">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Developer Rate (%)</label>
+                    <input type="number" name="comm_dev_rate" id="commDevRate"
+                           value="{{ project.comm_dev_rate }}" min="0" max="100" step="0.1"
+                           oninput="updateCommCheck()">
+                    <small>% developer pays the agency</small>
+                </div>
+                <div class="form-group">
+                    <label>SST Rate (%) — 0 if dev absorbs</label>
+                    <input type="number" name="comm_sst_rate" id="commSstRate"
+                           value="{{ project.comm_sst_rate }}" min="0" max="100" step="0.1"
+                           oninput="updateCommCheck()">
+                    <small>Net = Gross &divide; (1 + SST%)</small>
+                </div>
+                <div class="form-group">
+                    <label>PIC Agent</label>
+                    <select name="comm_pic_agent_id" id="commPicAgent"
+                            onchange="onPicAgentChange(this)">
+                        {{ agent_opts|safe }}
+                    </select>
+                    <input type="hidden" name="comm_pic_name" id="commPicName"
+                           value="{{ project.comm_pic_name or '' }}">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Company Split % of Net</label>
+                    <input type="number" name="comm_company_pct" id="commCo"
+                           value="{{ project.comm_company_pct }}" min="0" max="100" step="0.1"
+                           oninput="updateCommCheck()">
+                </div>
+                <div class="form-group">
+                    <label>PIC Split % of Net</label>
+                    <input type="number" name="comm_pic_pct" id="commPic"
+                           value="{{ project.comm_pic_pct }}" min="0" max="100" step="0.1"
+                           oninput="updateCommCheck()">
+                </div>
+                <div class="form-group">
+                    <label>Agents Split % of Net</label>
+                    <input type="number" name="comm_agents_pct" id="commAg"
+                           value="{{ project.comm_agents_pct }}" min="0" max="100" step="0.1"
+                           oninput="updateCommCheck()">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>PIC Rank
+                    <span id="picRankNote" style="font-size:11px;color:#28a745;font-weight:400"></span>
+                </label>
+                <select name="comm_pic_rank" id="commPicRank" style="max-width:220px">
+                    {% for val,lbl in [('ATL','ATL (90%)'),('TL','TL (85%)'),('ELITE','Elite REN (80%)'),('ASSOC','Assoc REN (75%)'),('REN','REN (70%)')] %}
+                    <option value="{{ val }}" {{ 'selected' if project.comm_pic_rank == val }}>{{ lbl }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Default Project Commission Rate (%)</label>
+                <input type="number" name="project_commission" value="{{ project.commission_rate or 3.0 }}"
+                       min="0" max="100" step="0.1" style="max-width:150px">
+                <small>Used if no unit-specific rate is set</small>
+            </div>
+            <div class="rate-check">
+                Co: <strong id="rcCo">--</strong>
+                PIC: <strong id="rcPIC">--</strong>
+                Agents: <strong id="rcAg">--</strong>
+                Total: <strong id="rcTot">--</strong>
+                <strong id="rcSt" class="ok">&#10003; OK</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">&#10003; Save Changes</button>
+        <a href="/admin/project/{{ project.id }}" class="btn-secondary">Cancel</a>
+    </div>
+
+</form>
+</div><!-- /wrap -->
+
+<script>
+var existingUnits = {{ units_json|safe }};
+var unitCounter = 0;
+var currPicId   = {{ curr_pic_id }};
+
+function addUnitRow(data) {
+    var c = document.getElementById('unitContainer');
+    var n = unitCounter++;
+    var d = document.createElement('div');
+    d.className = 'unit-row';
+    d.id = 'ur_' + n;
+    var ut  = data ? (data.unit_type || '')        : '';
+    var sf  = data ? (data.square_feet || '')      : '';
+    var bp  = data ? (data.base_price || '')       : '';
+    var rp  = data ? (data.rental_price || '')     : '';
+    var cr  = data ? (data.commission_rate || '')  : '';
+    var qty = data ? (data.quantity || 1)          : 1;
+    d.innerHTML =
+        '<div><input type="text"   name="unit_type_'+n+'"       value="'+ut+'"  placeholder="e.g. 3BR" required></div>'+
+        '<div><input type="number" name="square_feet_'+n+'"     value="'+sf+'"  placeholder="sqft" step="10"></div>'+
+        '<div><input type="number" name="base_price_'+n+'"      value="'+bp+'"  placeholder="RM" step="1000"></div>'+
+        '<div><input type="number" name="rental_price_'+n+'"    value="'+rp+'"  placeholder="RM" step="100"></div>'+
+        '<div><input type="number" name="unit_commission_'+n+'" value="'+cr+'"  placeholder="%" min="0" max="100" step="0.1"></div>'+
+        '<div><input type="number" name="quantity_'+n+'"        value="'+qty+'" min="1"></div>'+
+        '<div><button type="button" class="btn-del-unit" onclick="removeUnit(\'ur_'+n+'\')">&#128465;</button></div>';
+    c.appendChild(d);
+}
+function removeUnit(id) {
+    var el = document.getElementById(id);
+    if (el) el.remove();
+}
+function updateCommCheck() {
+    var co  = parseFloat(document.getElementById('commCo').value)  || 0;
+    var pic = parseFloat(document.getElementById('commPic').value) || 0;
+    var ag  = parseFloat(document.getElementById('commAg').value)  || 0;
+    var tot = co + pic + ag;
+    var ok  = Math.abs(tot - 100) < 0.001;
+    document.getElementById('rcCo').textContent  = co + '%';
+    document.getElementById('rcPIC').textContent = pic + '%';
+    document.getElementById('rcAg').textContent  = ag + '%';
+    var te = document.getElementById('rcTot');
+    te.textContent = tot.toFixed(2).replace(/\.?0+$/, '') + '%';
+    te.style.color = ok ? '#28a745' : '#dc3545';
+    var se = document.getElementById('rcSt');
+    if (ok) { se.textContent = '\u2713 OK'; se.className = 'ok'; }
+    else     { se.textContent = (tot > 100 ? 'Over' : 'Under') + ' by ' + Math.abs(tot-100).toFixed(2) + '%'; se.className = 'bad'; }
+}
+function onPicAgentChange(sel) {
+    var opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.value) return;
+    document.getElementById('commPicRank').value = opt.dataset.rank || 'REN';
+    document.getElementById('commPicName').value = opt.dataset.name || '';
+    var n = document.getElementById('picRankNote');
+    if (n) n.textContent = '(auto-filled from ' + opt.dataset.name + ')';
+}
+function toggleNav() { document.getElementById('mainNav').classList.toggle('open'); }
+document.addEventListener('DOMContentLoaded', function() {
+    // Load existing units
+    existingUnits.forEach(function(u) { addUnitRow(u); });
+    if (existingUnits.length === 0) addUnitRow(null);
+    // Sync PIC agent selector
+    if (currPicId) {
+        var sel = document.getElementById('commPicAgent');
+        for (var i = 0; i < sel.options.length; i++) {
+            if (parseInt(sel.options[i].value) === currPicId) { sel.selectedIndex = i; break; }
+        }
+    }
+    updateCommCheck();
+    document.querySelectorAll('#mainNav a').forEach(function(a) {
+        a.addEventListener('click', function() { document.getElementById('mainNav').classList.remove('open'); });
+    });
+});
+</script>
+</body>
+</html>

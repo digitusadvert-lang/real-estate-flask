@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Submission {{ sub_ref }} – Admin View</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap;transition:background .15s}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-logout{color:#dc3545}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:960px;margin:0 auto;padding:16px}
+
+/* status bar */
+.status-bar{display:flex;align-items:center;gap:12px;background:white;border-radius:10px;padding:14px 18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);flex-wrap:wrap}
+.ref-num{font-family:monospace;font-size:1.3rem;font-weight:900;color:#1a3a2a}
+.badge{padding:4px 10px;border-radius:10px;font-size:11px;font-weight:700}
+.t-np{background:#dbeafe;color:#1e40af}
+.t-ss{background:#f3e8ff;color:#6b21a8}
+.t-rn{background:#ffedd5;color:#9a3412}
+.s-0{background:#e2e3e5;color:#383d41}
+.s-1{background:#cce5ff;color:#004085}
+.s-2{background:#d4edda;color:#155724}
+.s-3{background:#cce5ff;color:#004085}
+.s-4{background:#d4edda;color:#155724;font-size:12px}
+.act-row{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.btn{display:inline-block;padding:7px 16px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:none;cursor:pointer;white-space:nowrap}
+.btn-back{background:#6c757d;color:white}
+.btn-approve{background:#28a745;color:white}
+.btn-reject{background:#dc3545;color:white}
+
+/* sections */
+.section{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:12px}
+.sec-title{font-size:13px;font-weight:700;color:#1a2a3a;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+.sec-num{background:#2c3e50;color:white;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.field-item label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#888;margin-bottom:3px}
+.field-item span{display:block;font-size:13px;font-weight:600;color:#1a2a3a;padding:8px 10px;background:#f8f9fa;border-radius:5px;min-height:34px}
+.field-item span.empty{color:#aaa;font-weight:400;font-style:italic}
+.span2{grid-column:span 2}
+@media(max-width:540px){.field-grid{grid-template-columns:1fr}.span2{grid-column:span 1}}
+
+/* signatures */
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.sig-block{border:1.5px solid #e5e7eb;border-radius:8px;padding:12px;background:white}
+.sig-block.signed{border-color:#16a34a;background:#f0fdf4}
+.sig-role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1a3a2a;margin-bottom:8px;display:flex;justify-content:space-between}
+.sig-img{width:100%;height:68px;border:1px solid #e5e7eb;border-radius:4px;background:#f9fafb;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:6px}
+.sig-img img{max-width:100%;max-height:64px;object-fit:contain}
+.sig-img .no-sig{font-size:11px;color:#aaa;font-style:italic}
+.sig-fields{display:flex;flex-direction:column;gap:2px;font-size:10px;color:#555}
+.sig-stamp{display:inline-block;background:#dcfce7;color:#166534;font-size:8px;padding:1px 6px;border-radius:8px;border:1px solid #86efac;font-weight:700;float:right}
+@media(max-width:540px){.sig-grid{grid-template-columns:1fr}}
+
+/* documents */
+.doc-list{display:flex;flex-direction:column;gap:6px}
+.doc-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f8f9fa;border-radius:7px;border:1px solid #e5e7eb}
+.doc-icon{font-size:20px;flex-shrink:0}
+.doc-name{flex:1;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-meta{font-size:10px;color:#888}
+.doc-actions a{font-size:11px;padding:4px 9px;background:#007bff;color:white;border-radius:4px;text-decoration:none;white-space:nowrap}
+.empty-docs{text-align:center;padding:20px;color:#888;font-size:12px}
+
+/* approval status */
+.approval-box{border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:12px}
+.ap-pending{background:#fff3cd;border:1px solid #ffc107;color:#856404}
+.ap-approved{background:#d4edda;border:1px solid #28a745;color:#155724}
+.ap-rejected{background:#f8d7da;border:1px solid #dc3545;color:#721c24}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">📋 Submission {{ sub_ref }} — Admin View</div>
+  <div class="topbar-right">
+    <span style="font-size:13px">Admin</span>
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions" class="nav-active">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+</div>
+
+<div class="wrap">
+
+{% set type_labels = {'np':'🏢 New Project','ss':'🏠 Sub Sales','rn':'🔑 Rental'} %}
+{% set stage_labels = {0:'Draft',1:'Awaiting Party A',2:'Party A Signed',3:'Awaiting Party B',4:'✓ Complete'} %}
+
+<!-- Status Bar -->
+<div class="status-bar">
+  <span class="ref-num">{{ sub_ref }}</span>
+  <span class="badge t-{{ sub_type }}">{{ type_labels.get(sub_type,'—') }}</span>
+  <span class="badge s-{{ sub_stage }}">{{ stage_labels.get(sub_stage,'—') }}</span>
+  <span style="font-size:12px;color:#888">Agent: <strong>{{ agent_name }}</strong> · {{ agent_rank }}</span>
+  <div class="act-row">
+    <a href="/admin/unified-submissions" class="btn btn-back">← Back</a>
+    {% if linked %}
+      {% if linked.status == 'submitted' %}
+      <a href="/admin/approve/{{ linked.id }}" class="btn btn-approve">✅ Approve Commission</a>
+      <a href="/admin/reject/{{ linked.id }}" class="btn btn-reject"
+         onclick="return confirm('Reject this submission?')">✕ Reject</a>
+      {% elif linked.status == 'approved' %}
+      <span class="btn" style="background:#d4edda;color:#155724;cursor:default">✅ Commission Approved</span>
+      {% elif linked.status == 'rejected' %}
+      <span class="btn" style="background:#f8d7da;color:#721c24;cursor:default">✕ Rejected</span>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- Approval Status -->
+{% if linked %}
+<div class="approval-box {% if linked.status=='approved' %}ap-approved{% elif linked.status=='rejected' %}ap-rejected{% else %}ap-pending{% endif %}">
+  {% if linked.status == 'submitted' %}
+  ⏳ <strong>Pending Admin Approval</strong> — Listing #{{ linked.id }} · Sale Price: RM{{ "{:,.2f}".format(linked.sale_price|float) }} · Commission: RM{{ "{:,.2f}".format(linked.commission_amount|float) }}
+  {% elif linked.status == 'approved' %}
+  ✅ <strong>Commission Approved</strong> — Listing #{{ linked.id }} · RM{{ "{:,.2f}".format(linked.commission_amount|float) }} paid to agent
+  {% elif linked.status == 'rejected' %}
+  ✕ <strong>Rejected</strong> — Listing #{{ linked.id }}
+  {% endif %}
+</div>
+{% else %}
+<div class="approval-box ap-pending">
+  📋 <strong>Not yet submitted for approval</strong> — Agent has not clicked "Submit for Approval" yet.
+</div>
+{% endif %}
+
+<!-- Section 1: Agent -->
+<div class="section">
+  <div class="sec-title"><span class="sec-num">1</span> Agent Information</div>
+  <div class="field-grid">
+    <div class="field-item"><label>Agent Name</label><span>{{ agent_name or '—' }}</span></div>
+    <div class="field-item"><label>Agent Rank</label><span>{{ agent_rank or '—' }}</span></div>
+  </div>
+</div>
+
+<!-- Section 2: Property -->
+<div class="section">
+  <div class="sec-title"><span class="sec-num">2</span> Property Information</div>
+  <div class="field-grid">
+    <div class="field-item span2"><label>Property Address</label><span>{{ form.get('prop_address','') or '—' }}</span></div>
+    <div class="field-item"><label>Property Type</label><span>{{ form.get('prop_type','') or '—' }}</span></div>
+    <div class="field-item"><label>State</label><span>{{ form.get('prop_state','') or '—' }}</span></div>
+  </div>
+</div>
+
+<!-- Section 3: Party A -->
+{% set partyA_label = 'Developer' if sub_type=='np' else ('Landlord / Owner' if sub_type=='rn' else 'Vendor / Seller') %}
+<div class="section">
+  <div class="sec-title"><span class="sec-num">3</span> {{ partyA_label }}</div>
+  <div class="field-grid">
+    <div class="field-item"><label>Full Name</label><span>{{ form.get('partyA_name','') or '—' }}</span></div>
+    <div class="field-item"><label>NRIC / Passport</label><span>{{ form.get('partyA_ic','') or '—' }}</span></div>
+    <div class="field-item"><label>Phone</label><span>{{ form.get('partyA_phone','') or '—' }}</span></div>
+    <div class="field-item span2"><label>Address</label><span>{{ form.get('partyA_addr','') or '—' }}</span></div>
+  </div>
+</div>
+
+<!-- Section 4: Party B -->
+{% set partyB_label = 'Purchaser / Buyer' if sub_type in ['np','ss'] else 'Tenant' %}
+<div class="section">
+  <div class="sec-title"><span class="sec-num">4</span> {{ partyB_label }}</div>
+  <div class="field-grid">
+    <div class="field-item"><label>Full Name</label><span>{{ form.get('partyB_name','') or '—' }}</span></div>
+    <div class="field-item"><label>NRIC / Passport</label><span>{{ form.get('partyB_ic','') or '—' }}</span></div>
+    <div class="field-item"><label>Phone</label><span>{{ form.get('partyB_phone','') or '—' }}</span></div>
+    <div class="field-item span2"><label>Address</label><span>{{ form.get('partyB_addr','') or '—' }}</span></div>
+  </div>
+</div>
+
+<!-- Section 5: Type-specific details -->
+<div class="section">
+  <div class="sec-title"><span class="sec-num">5</span>
+    {% if sub_type=='np' %}🏢 New Project Details
+    {% elif sub_type=='rn' %}🔑 Tenancy Details
+    {% else %}🏠 OTP Details{% endif %}
+  </div>
+  <div class="field-grid">
+    {% if sub_type == 'ss' %}
+      <div class="field-item"><label>Purchase Price (RM)</label><span>{{ form.get('ss_price','') or '—' }}</span></div>
+      <div class="field-item span2"><label>Price in Words</label><span>{{ form.get('ss_price_words','') or '—' }}</span></div>
+      <div class="field-item"><label>Earnest Deposit %</label><span>{{ form.get('ss_dep_pct','') or '—' }}</span></div>
+      <div class="field-item"><label>Earnest Deposit (RM)</label><span>{{ form.get('ss_dep_amt','') or '—' }}</span></div>
+      <div class="field-item"><label>Cheque / Transfer Ref</label><span>{{ form.get('ss_cheque','') or '—' }}</span></div>
+      <div class="field-item"><label>SPA Target Date</label><span>{{ form.get('ss_spa_date','') or '—' }}</span></div>
+      <div class="field-item span2"><label>Special Conditions</label><span>{{ form.get('ss_special','') or '—' }}</span></div>
+    {% elif sub_type == 'np' %}
+      <div class="field-item"><label>Project Name</label><span>{{ form.get('np_project','') or '—' }}</span></div>
+      <div class="field-item"><label>Developer</label><span>{{ form.get('np_developer','') or '—' }}</span></div>
+      <div class="field-item"><label>Unit / Lot No.</label><span>{{ form.get('np_unit','') or '—' }}</span></div>
+      <div class="field-item"><label>Selling Price (RM)</label><span>{{ form.get('np_price','') or '—' }}</span></div>
+      <div class="field-item"><label>Booking Fee (RM)</label><span>{{ form.get('np_booking','') or '—' }}</span></div>
+      <div class="field-item"><label>Bumiputera Lot</label><span>{{ form.get('np_bumi','') or '—' }}</span></div>
+      <div class="field-item"><label>Expected Handover</label><span>{{ form.get('np_handover','') or '—' }}</span></div>
+      <div class="field-item span2"><label>Remarks</label><span>{{ form.get('np_remarks','') or '—' }}</span></div>
+    {% elif sub_type == 'rn' %}
+      <div class="field-item"><label>Monthly Rent (RM)</label><span>{{ form.get('rn_rent','') or '—' }}</span></div>
+      <div class="field-item"><label>Security Deposit (RM)</label><span>{{ form.get('rn_sec_dep','') or '—' }}</span></div>
+      <div class="field-item"><label>Utility Deposit (RM)</label><span>{{ form.get('rn_util_dep','') or '—' }}</span></div>
+      <div class="field-item"><label>Tenancy Period</label><span>{{ form.get('rn_period','') or '—' }}</span></div>
+      <div class="field-item"><label>Commencement</label><span>{{ form.get('rn_start','') or '—' }}</span></div>
+      <div class="field-item"><label>Expiry</label><span>{{ form.get('rn_end','') or '—' }}</span></div>
+      <div class="field-item"><label>Furnished</label><span>{{ form.get('rn_furnished','') or '—' }}</span></div>
+      <div class="field-item"><label>Stamping Duty By</label><span>{{ form.get('rn_stamp','') or '—' }}</span></div>
+      <div class="field-item span2"><label>Special Conditions</label><span>{{ form.get('rn_special','') or '—' }}</span></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Section 6: Signatures -->
+<div class="section">
+  <div class="sec-title"><span class="sec-num">6</span> ✍ Signatures</div>
+  {% set partyA_name = 'Developer' if sub_type=='np' else ('Landlord / Owner' if sub_type=='rn' else 'Vendor / Seller') %}
+  {% set partyB_name = 'Purchaser / Buyer' if sub_type in ['np','ss'] else 'Tenant' %}
+  <div class="sig-grid">
+    {% for sid, slabel in [('pA', partyA_name), ('pAw', 'Witnessed by (' ~ partyA_name ~ ')'), ('pB', partyB_name), ('pBw', 'Witnessed by (' ~ partyB_name ~ ')')] %}
+    {% set s = sig_data.get(sid, {}) %}
+    <div class="sig-block {{ 'signed' if s else '' }}">
+      <div class="sig-role">
+        <span>{{ slabel }}</span>
+        {% if s %}<span class="sig-stamp">✓ Signed</span>{% else %}<span style="font-size:10px;color:#aaa">Not signed</span>{% endif %}
+      </div>
+      <div class="sig-img">
+        {% if s and s.get('img') %}
+        <img src="{{ s.img }}" alt="Signature">
+        {% else %}
+        <span class="no-sig">No signature</span>
+        {% endif %}
+      </div>
+      {% if s %}
+      <div class="sig-fields">
+        <div>Name: <strong>{{ s.get('name','—') }}</strong></div>
+        <div>NRIC: {{ s.get('ic','—') }}</div>
+        <div>Date: {{ s.get('date','—') }}</div>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Section 7: Documents -->
+<div class="section">
+  <div class="sec-title"><span class="sec-num">7</span> 📎 Supporting Documents ({{ docs|length }})</div>
+  {% if docs %}
+  <div class="doc-list">
+    {% for d in docs %}
+    {% set icons = {'pdf':'📄','jpg':'🖼️','jpeg':'🖼️','png':'🖼️','doc':'📝','docx':'📝'} %}
+    <div class="doc-item">
+      <span class="doc-icon">{{ icons.get(d.file_type or '', '📎') }}</span>
+      <span class="doc-name">{{ d.filename }}</span>
+      <span class="doc-meta">{{ d.doc_label or '' }}{% if d.file_size %} · {{ "%.1f"|format(d.file_size/1024) }} KB{% endif %}</span>
+      <div class="doc-actions">
+        <a href="/view-document/u{{ d.id }}" target="_blank">👁 View</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-docs">📂 No documents uploaded yet</div>
+  {% endif %}
+</div>
+
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+</script>
+</body>
+</html>

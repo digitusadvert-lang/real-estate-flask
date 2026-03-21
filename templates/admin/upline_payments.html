@@ -1,0 +1,2312 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Upline Commission Payments</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: #f5f7fa;
+                margin: 0;
+                padding: 20px;
+                color: #333;
+            }
+            .header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 25px;
+                border-radius: 10px;
+                margin-bottom: 25px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+            .header h1 {
+                margin: 0;
+                font-size: 28px;
+            }
+            .header p {
+                margin: 10px 0 0;
+                opacity: 0.9;
+            }
+            .stats-card {
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                margin-bottom: 25px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+                border-left: 5px solid #667eea;
+            }
+            .stats-card h3 {
+                margin: 0 0 15px 0;
+                color: #333;
+            }
+            .commission-grid {
+                display: grid;
+                gap: 15px;
+            }
+            .commission-card {
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+                border: 1px solid #e1e5e9;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+            .commission-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            }
+            .commission-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
+                padding-bottom: 15px;
+                border-bottom: 1px solid #eef2f7;
+            }
+            .commission-id {
+                font-weight: bold;
+                color: #667eea;
+                font-size: 14px;
+            }
+            .commission-date {
+                color: #666;
+                font-size: 13px;
+            }
+            .agent-info {
+                margin-bottom: 15px;
+            }
+            .agent-row {
+                display: flex;
+                align-items: center;
+                margin-bottom: 10px;
+            }
+            .agent-label {
+                width: 80px;
+                color: #666;
+                font-size: 14px;
+            }
+            .agent-value {
+                font-weight: 500;
+            }
+            .commission-details {
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 15px 0;
+            }
+            .amount-row {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 8px;
+            }
+            .amount-label {
+                color: #666;
+            }
+            .amount-value {
+                font-weight: bold;
+            }
+            .total-commission {
+                color: #28a745;
+                font-size: 18px;
+            }
+            .upline-share {
+                color: #dc3545;
+                font-size: 18px;
+            }
+            .btn {
+                display: inline-block;
+                padding: 10px 20px;
+                background: #28a745;
+                color: white;
+                text-decoration: none;
+                border-radius: 5px;
+                border: none;
+                cursor: pointer;
+                font-weight: 500;
+                transition: background 0.2s;
+            }
+            .btn:hover {
+                background: #218838;
+            }
+            .btn-pay {
+                width: 100%;
+                text-align: center;
+                margin-top: 15px;
+            }
+            .empty-state {
+                text-align: center;
+                padding: 40px;
+                background: white;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            }
+            .empty-state h3 {
+                color: #666;
+                margin-bottom: 10px;
+            }
+            .empty-state p {
+                color: #999;
+            }
+            .back-link {
+                display: inline-block;
+                margin-top: 20px;
+                color: #667eea;
+                text-decoration: none;
+            }
+            .back-link:hover {
+                text-decoration: underline;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 4px 10px;
+                border-radius: 20px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            .status-pending {
+                background: #fff3cd;
+                color: #856404;
+            }
+            .status-paid {
+                background: #d4edda;
+                color: #155724;
+            }
+            table {
+                width: 100%;
+                background: white;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+                border-collapse: collapse;
+            }
+            th {
+                background: #f8f9fa;
+                padding: 15px;
+                text-align: left;
+                font-weight: 600;
+                color: #333;
+                border-bottom: 2px solid #eef2f7;
+            }
+            td {
+                padding: 15px;
+                border-bottom: 1px solid #eef2f7;
+            }
+            tr:hover {
+                background: #f8f9fa;
+            }
+            .actions {
+                display: flex;
+                gap: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>💰 Upline Commission Payments</h1>
+            <p>Pay 5% commissions to team leaders/supervisors</p>
+        </div>
+        
+        <div class="stats-card">
+            <h3>Pending Upline Commissions</h3>
+            <div style="display: flex; gap: 20px; align-items: center;">
+                <div>
+                    <div style="font-size: 24px; font-weight: bold; color: #dc3545;">"""
+        + str(stats[0] or 0)
+        + """</div>
+                    <div style="color: #666; font-size: 14px;">Pending Payments</div>
+                </div>
+                <div>
+                    <div style="font-size: 24px; font-weight: bold; color: #28a745;">RM"""
+        + ("{:,.2f}".format(stats[1] or 0))
+        + """</div>
+                    <div style="color: #666; font-size: 14px;">Total Amount</div>
+                </div>
+            </div>
+        </div>
+        
+        <h2 style="color: #333; margin-bottom: 20px;">📋 Pending Upline Commissions</h2>
+        
+        """
+        + (
+            """
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Listing</th>
+                    <th>Agent</th>
+                    <th>Upline</th>
+                    <th>Total Commission</th>
+                    <th>Upline Share (5%)</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+            if pending_commissions
+            else ""
+        )
+        + """
+        
+        """
+        + (
+            "".join(
+                f"""
+                <tr>
+                    <td><span class="commission-id">#{c[0]}</span></td>
+                    <td>#{c[1]}</td>
+                    <td>
+                        <div class="agent-value">{c[3]}</div>
+                        <div style="font-size: 12px; color: #666;">Agent ID: {c[2]}</div>
+                    </td>
+                    <td>
+                        <div class="agent-value">{c[5]}</div>
+                        <div style="font-size: 12px; color: #666;">Upline ID: {c[4]}</div>
+                    </td>
+                    <td><span style="font-weight: bold; color: #333;">RM{"{:,.2f}".format(c[10] if c[10] else 0)}</span></td>
+                    <td><span style="font-weight: bold; color: #dc3545;">RM{"{:,.2f}".format(c[6] if c[6] else 0)}</span></td>
+                    <td>
+                        <div class="commission-date">{c[9].split()[0] if c[9] else "N/A"}</div>
+                    </td>
+                    <td>
+                        <span class="status-badge status-pending">Pending</span>
+                    </td>
+                    <td class="actions">
+                        <a href="/admin/pay-upline/{c[0]}" class="btn" 
+                           onclick="return confirm('Pay RM{"{:,.2f}".format(c[6] if c[6] else 0)} to {c[5]}?')">
+                            Pay Now
+                        </a>
+                    </td>
+                </tr>
+        """
+                for c in pending_commissions
+            )
+            if pending_commissions
+            else """
+                <tr>
+                    <td colspan="9">
+                        <div class="empty-state">
+                            <h3>🎉 No pending upline commissions!</h3>
+                            <p>All upline commissions have been paid.</p>
+                        </div>
+                    </td>
+                </tr>
+        """
+        )
+        + """
+        
+        """
+        + (
+            """
+            </tbody>
+        </table>
+        """
+            if pending_commissions
+            else ""
+        )
+        + """
+        
+        <a href="/admin/dashboard" class="back-link" style="font-weight: bold; color: #000; font-size: 16px; text-decoration: none; padding: 10px 0; display: inline-block; margin-top: 20px;">← Back to Dashboard</a>
+        
+        <script>
+            // Confirmation for payment
+            function confirmPayment(commissionId, amount, uplineName) {
+                return confirm(`Pay RMRM{amount.toFixed(2)} to RM{uplineName}?`);
+            }
+        </script>
+    </body>
+    </html>
+    """
+    )
+
+
+@app.route("/admin/payment/<int:payment_id>")
+def payment_details(payment_id):
+    """View payment details"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+
+    try:
+        # First check what columns exist in projects table
+        cursor.execute("PRAGMA table_info(projects)")
+        project_columns = [col[1] for col in cursor.fetchall()]
+        print(f"Projects table columns: {project_columns}")
+
+        # Use appropriate column name for project name
+        project_name_column = (
+            "name"
+            if "name" in project_columns
+            else "project_name" if "project_name" in project_columns else "title"
+        )
+
+        # Get payment details with proper joins
+        query = f"""
+            SELECT 
+                cp.id,
+                cp.listing_id,
+                cp.agent_id,
+                cp.commission_amount,
+                cp.payment_status,
+                cp.payment_date,
+                cp.payment_method,
+                cp.transaction_id,
+                cp.paid_by,
+                cp.updated_at,
+                cp.notes,
+                cp.created_at,
+                u.name as agent_name,
+                u.email as agent_email,
+                pl.customer_name,
+                pl.property_address,
+                pl.sale_price,
+                cc.base_rate as commission_rate,
+                p.{project_name_column} as project_name
+            FROM commission_payments cp
+            LEFT JOIN users u ON cp.agent_id = u.id
+            LEFT JOIN property_listings pl ON cp.listing_id = pl.id
+            LEFT JOIN commission_calculations cc ON cp.listing_id = cc.listing_id
+            LEFT JOIN projects p ON pl.project_id = p.id
+            WHERE cp.id = ?
+        """
+
+        print(f"Payment details query: {query}")
+
+        cursor.execute(query, (payment_id,))
+
+        payment = cursor.fetchone()
+
+        if not payment:
+            conn.close()
+            return "Payment not found", 404
+
+        print(f"Payment data fetched: {len(payment) if payment else 0} columns")
+        print(f"Payment columns: {payment}")
+
+        # Get additional listing details
+        cursor.execute(
+            """
+            SELECT pl.customer_email, pl.customer_phone, pl.closing_date, 
+                   pl.status, pl.submitted_at, pl.approved_at, pl.commission_status
+            FROM property_listings pl
+            WHERE pl.id = ?
+        """,
+            (payment[1],),
+        )  # listing_id
+
+        listing_details = cursor.fetchone()
+
+        conn.close()
+
+        # Prepare payment data dictionary
+        payment_data = {
+            "id": payment[0],
+            "listing_id": payment[1],
+            "agent_id": payment[2],
+            "commission_amount": payment[3],
+            "payment_status": payment[4],
+            "payment_date": payment[5],
+            "payment_method": payment[6],
+            "transaction_id": payment[7],
+            "paid_by": payment[8],
+            "updated_at": payment[9],
+            "notes": payment[10],
+            "created_at": payment[11],
+            "agent_name": payment[12],
+            "agent_email": payment[13],
+            "customer_name": payment[14],
+            "property_address": payment[15],
+            "sale_price": payment[16],
+            "commission_rate": payment[17],
+            "project_name": payment[18],
+        }
+
+        # Add listing details if available
+        if listing_details:
+            payment_data.update(
+                {
+                    "customer_email": listing_details[0],
+                    "customer_phone": listing_details[1],
+                    "closing_date": listing_details[2],
+                    "listing_status": listing_details[3],
+                    "submitted_at": listing_details[4],
+                    "approved_at": listing_details[5],
+                    "commission_status": listing_details[6],
+                }
+            )
+
+        # Format the commission rate
+        if payment_data["commission_rate"]:
+            payment_data["commission_rate"] = f"{payment_data['commission_rate']}%"
+
+        # Debug: Print what we have
+        print(f"Payment data prepared:")
+        for key, value in payment_data.items():
+            print(f"  {key}: {value}")
+
+        return render_template_string(
+            """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Payment Details #{{ payment_data.id }}</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+                .container { max-width: 1200px; margin: 0 auto; }
+                .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .btn { background: #007bff; color: white; padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }
+                .btn:hover { background: #0056b3; }
+                .payment-card { background: white; padding: 30px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                .payment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+                .payment-amount { font-size: 36px; font-weight: bold; color: #28a745; }
+                .payment-status { padding: 8px 16px; border-radius: 20px; font-weight: bold; }
+                .status-pending { background: #fff3cd; color: #856404; }
+                .status-paid { background: #d4edda; color: #155724; }
+                .status-processing { background: #cce5ff; color: #004085; }
+                .details-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+                .detail-group { margin-bottom: 15px; }
+                .detail-label { font-weight: bold; color: #666; font-size: 14px; margin-bottom: 5px; }
+                .detail-value { font-size: 16px; }
+                .section-title { font-size: 18px; font-weight: bold; margin: 25px 0 15px 0; padding-bottom: 10px; border-bottom: 2px solid #007bff; color: #007bff; }
+                .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
+                .info-card { background: #f8f9fa; padding: 15px; border-radius: 5px; }
+                .notes-box { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 20px; font-style: italic; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>💰 Payment Details #{{ payment_data.id }}</h1>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <a href="/admin/payments" class="btn" style="background: #6c757d;">← Back to Payments</a>
+                        {% if payment_data.payment_status != 'paid' %}
+                        <a href="/admin/mark-commission-paid/CP-{{ payment_data.id }}" class="btn" style="background: #28a745;">✅ Mark as Paid</a>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="payment-card">
+                    <div class="payment-header">
+                        <div>
+                            <div class="payment-amount">RM{{ "{:,.2f}".format(payment_data.commission_amount or 0) }}</div>
+                            <div style="font-size: 14px; color: #666; margin-top: 5px;">Commission Payment</div>
+                        </div>
+                        <div class="payment-status status-{{ payment_data.payment_status }}">
+                            {{ payment_data.payment_status|upper }}
+                        </div>
+                    </div>
+                    
+                    <div class="details-grid">
+                        <div class="detail-group">
+                            <div class="detail-label">Payment ID</div>
+                            <div class="detail-value">#{{ payment_data.id }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Listing ID</div>
+                            <div class="detail-value">#{{ payment_data.listing_id }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Agent ID</div>
+                            <div class="detail-value">#{{ payment_data.agent_id }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Payment Date</div>
+                            <div class="detail-value">{{ payment_data.payment_date if payment_data.payment_date else 'Not set' }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Payment Method</div>
+                            <div class="detail-value">{{ payment_data.payment_method if payment_data.payment_method else 'Not set' }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Transaction ID</div>
+                            <div class="detail-value">{{ payment_data.transaction_id if payment_data.transaction_id else 'Not set' }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Paid By</div>
+                            <div class="detail-value">{{ payment_data.paid_by if payment_data.paid_by else 'Not set' }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Updated At</div>
+                            <div class="detail-value">{{ payment_data.updated_at }}</div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="detail-label">Created At</div>
+                            <div class="detail-value">{{ payment_data.created_at }}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section-title">📋 Transaction Details</div>
+                
+                <div class="info-grid">
+                    <div class="info-card">
+                        <div class="detail-label">Agent Name</div>
+                        <div class="detail-value">{{ payment_data.agent_name or 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Agent Email</div>
+                        <div class="detail-value">{{ payment_data.agent_email or 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Project</div>
+                        <div class="detail-value">{{ payment_data.project_name or 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Customer Name</div>
+                        <div class="detail-value">{{ payment_data.customer_name or 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Customer Email</div>
+                        <div class="detail-value">{{ payment_data.customer_email if payment_data.customer_email else 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Customer Phone</div>
+                        <div class="detail-value">{{ payment_data.customer_phone if payment_data.customer_phone else 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Property Address</div>
+                        <div class="detail-value">{{ payment_data.property_address or 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Sale Price</div>
+                        <div class="detail-value">RM{{ "{:,.2f}".format(payment_data.sale_price or 0) }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Commission Rate</div>
+                        <div class="detail-value">{{ payment_data.commission_rate or 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Closing Date</div>
+                        <div class="detail-value">{{ payment_data.closing_date if payment_data.closing_date else 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Listing Status</div>
+                        <div class="detail-value">{{ payment_data.listing_status if payment_data.listing_status else 'N/A' }}</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="detail-label">Commission Status</div>
+                        <div class="detail-value">{{ payment_data.commission_status if payment_data.commission_status else 'N/A' }}</div>
+                    </div>
+                </div>
+                
+                {% if payment_data.notes %}
+                <div class="section-title">📝 Payment Notes</div>
+                <div class="notes-box">
+                    {{ payment_data.notes }}
+                </div>
+                {% endif %}
+                
+                <div class="section-title">📅 Timeline</div>
+                <div class="info-grid">
+                    {% if payment_data.submitted_at %}
+                    <div class="info-card">
+                        <div class="detail-label">Submitted At</div>
+                        <div class="detail-value">{{ payment_data.submitted_at }}</div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if payment_data.approved_at %}
+                    <div class="info-card">
+                        <div class="detail-label">Approved At</div>
+                        <div class="detail-value">{{ payment_data.approved_at }}</div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if payment_data.created_at %}
+                    <div class="info-card">
+                        <div class="detail-label">Payment Created</div>
+                        <div class="detail-value">{{ payment_data.created_at }}</div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if payment_data.updated_at and payment_data.updated_at != payment_data.created_at %}
+                    <div class="info-card">
+                        <div class="detail-label">Last Updated</div>
+                        <div class="detail-value">{{ payment_data.updated_at }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </body>
+        </html>
+        """,
+            payment_data=payment_data,
+        )
+
+    except Exception as e:
+        conn.close()
+        print(f"Error fetching payment details: {e}")
+        return f"Error loading payment details: {str(e)}", 500
+
+
+@app.route("/admin/mark-commission-paid/<string:record_id>", methods=["GET", "POST"])
+def mark_commission_paid(record_id):
+    """UNIFIED: Mark ANY commission as paid - supports UC- and CP- prefixes"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    # ===== HANDLE PREFIXES =====
+    is_commission_payment = None
+    actual_id = None
+
+    if record_id.startswith("CP-"):
+        try:
+            actual_id = int(record_id[3:])
+            is_commission_payment = True
+        except ValueError:
+            return "Invalid payment ID format", 400
+
+    elif record_id.startswith("UC-"):
+        try:
+            actual_id = int(record_id[3:])
+            is_commission_payment = False
+        except ValueError:
+            return "Invalid commission ID format", 400
+
+    else:
+        try:
+            actual_id = int(record_id)
+        except ValueError:
+            return "Invalid ID format", 400
+
+    if request.method == "POST":
+        payment_method = request.form.get("payment_method", "")
+        transaction_id = request.form.get("transaction_id", "")
+        notes = request.form.get("notes", "")
+
+        conn = sqlite3.connect("real_estate.db")
+        cursor = conn.cursor()
+
+        try:
+            if is_commission_payment is None:
+                cursor.execute("SELECT id FROM commission_payments WHERE id = ?", (actual_id,))
+                if cursor.fetchone():
+                    is_commission_payment = True
+                else:
+                    cursor.execute("SELECT id FROM upline_commissions WHERE id = ?", (actual_id,))
+                    if cursor.fetchone():
+                        is_commission_payment = False
+                    else:
+                        conn.close()
+                        return "Commission record not found", 404
+
+            if is_commission_payment:
+                # ===== PROCESS AGENT COMMISSION PAYMENT (CP-) =====
+                cursor.execute(
+                    """
+                    SELECT cp.*, pl.agent_id as listing_agent_id
+                    FROM commission_payments cp
+                    LEFT JOIN property_listings pl ON cp.listing_id = pl.id
+                    WHERE cp.id = ?
+                """,
+                    (actual_id,),
+                )
+
+                payment = cursor.fetchone()
+                if not payment:
+                    conn.close()
+                    return f"Commission payment {record_id} not found", 404
+
+                agent_id = payment[2]
+                listing_id = payment[1]
+                amount = payment[3]
+                listing_agent_id = payment[12] if len(payment) > 12 else None
+
+                # Update commission_payments
+                cursor.execute(
+                    """
+                    UPDATE commission_payments 
+                    SET payment_status = 'paid',
+                        payment_date = ?,
+                        payment_method = ?,
+                        transaction_id = ?,
+                        notes = ?,
+                        updated_at = ?,
+                        paid_by = ?
+                    WHERE id = ?
+                """,
+                    (
+                        datetime.now().strftime("%Y-%m-%d"),
+                        payment_method,
+                        transaction_id,
+                        notes,
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        session["user_id"],
+                        actual_id,
+                    ),
+                )
+
+                # If agent's own commission, update property_listings
+                if listing_agent_id and agent_id == listing_agent_id:
+                    cursor.execute(
+                        """
+                        UPDATE property_listings 
+                        SET commission_status = 'paid'
+                        WHERE id = ?
+                    """,
+                        (listing_id,),
+                    )
+                    print(f"✅ Updated property_listings commission status for listing {listing_id}")
+                    
+                    # Create notification for agent's own commission
+                    notification_title = "💸 Agent Commission Paid"
+                    notification_message = f"Your own commission of RM{amount:,.2f} has been paid. Method: {payment_method}, Ref: {transaction_id or 'N/A'}"
+                    
+                    cursor.execute(
+                        """
+                        INSERT INTO agent_notifications 
+                        (agent_id, notification_type, title, message, priority, 
+                         created_at, expires_at, is_read, related_id, related_type)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            agent_id,
+                            "commission_paid",
+                            notification_title,
+                            notification_message,
+                            "normal",
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S"),
+                            0,
+                            actual_id,
+                            "commission_payment",
+                        ),
+                    )
+                
+                # ⚠️ IMPORTANT: DO NOT create/update commission_payments for upline here!
+                # Upline payments should be processed separately with UC- prefix
+
+                success_msg = f"Payment {record_id} marked as paid successfully!"
+
+            else:
+                # ===== PROCESS UPLINE COMMISSION (UC-) =====
+                cursor.execute(
+                    """
+                    SELECT uc.*, pl.agent_id as selling_agent_id
+                    FROM upline_commissions uc
+                    LEFT JOIN property_listings pl ON uc.listing_id = pl.id
+                    WHERE uc.id = ?
+                    """,
+                    (actual_id,),
+                )
+
+                commission = cursor.fetchone()
+                if not commission:
+                    conn.close()
+                    return f"Upline commission {record_id} not found", 404
+
+                upline_id = commission[3]
+                amount = commission[4]
+                status = commission[5]
+                listing_id = commission[1]
+                selling_agent_id = commission[12] if len(commission) > 12 else None
+
+                # === NEW: Check if direct or indirect upline ===
+                cursor.execute(
+                    """
+                    SELECT name, upline_id 
+                    FROM users 
+                    WHERE id = ?
+                    """,
+                    (selling_agent_id,)
+                )
+                selling_agent_data = cursor.fetchone()
+                selling_agent_name = selling_agent_data[0] if selling_agent_data else f"Agent {selling_agent_id}"
+                selling_agent_upline_id = selling_agent_data[1] if selling_agent_data else None
+
+                # Determine if direct or indirect
+                is_direct_upline = (selling_agent_upline_id == upline_id) if selling_agent_upline_id else False
+
+                # Get direct upline name for indirect notifications
+                direct_upline_name = None
+                if not is_direct_upline and selling_agent_upline_id:
+                    cursor.execute("SELECT name FROM users WHERE id = ?", (selling_agent_upline_id,))
+                    direct_upline_result = cursor.fetchone()
+                    direct_upline_name = direct_upline_result[0] if direct_upline_result else None
+
+                # Update upline_commissions
+                cursor.execute(
+                    """
+                    UPDATE upline_commissions 
+                    SET status = 'paid', 
+                        paid_at = ?,
+                        notes = ?,
+                        transaction_id = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        f"Payment method: {payment_method}",
+                        transaction_id,
+                        actual_id,
+                    ),
+                )
+
+                # === UPDATED: Create appropriate notification ===
+                if is_direct_upline:
+                    notification_title = "💰 Upline Commission Paid"
+                    notification_message = f"Your upline commission of RM{amount:,.2f} from {selling_agent_name} has been paid. Method: {payment_method}, Ref: {transaction_id or 'N/A'}"
+                else:
+                    notification_title = "💰 Indirect Upline Commission Paid"
+                    if direct_upline_name:
+                        notification_message = f"Your indirect upline commission of RM{amount:,.2f} from {selling_agent_name} (via {direct_upline_name}) has been paid. Method: {payment_method}, Ref: {transaction_id or 'N/A'}"
+                    else:
+                        notification_message = f"Your indirect upline commission of RM{amount:,.2f} from {selling_agent_name} has been paid. Method: {payment_method}, Ref: {transaction_id or 'N/A'}"
+
+                cursor.execute(
+                    """
+                    INSERT INTO agent_notifications 
+                    (agent_id, notification_type, title, message, priority, 
+                     created_at, expires_at, is_read, related_id, related_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        upline_id,
+                        'commission_paid',
+                        notification_title,
+                        notification_message,
+                        'normal',
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S'),
+                        0,
+                        actual_id,
+                        'upline_commission'
+                    ),
+                )
+
+                success_msg = f"Upline commission {record_id} marked as paid successfully!"
+
+            conn.commit()
+            conn.close()
+            return redirect(f"/admin/payments?success={success_msg}")
+
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            print(f"❌ Error marking commission as paid: {e}")
+            return redirect(f"/admin/payments?error=Payment+failed:+{str(e)}")
+
+    # ===== GET REQUEST - SHOW PAYMENT FORM =====
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+
+    # Determine record type if not already determined by prefix
+    if is_commission_payment is None:
+        # Auto-detect
+        cursor.execute("SELECT id FROM commission_payments WHERE id = ?", (actual_id,))
+        if cursor.fetchone():
+            is_commission_payment = True
+            print(f"🔍 GET: Auto-detected as COMMISSION PAYMENT: ID {actual_id}")
+        else:
+            cursor.execute(
+                "SELECT id FROM upline_commissions WHERE id = ?", (actual_id,)
+            )
+            if cursor.fetchone():
+                is_commission_payment = False
+                print(f"🔍 GET: Auto-detected as UPLINE COMMISSION: ID {actual_id}")
+            else:
+                conn.close()
+                return f"Commission record {record_id} not found", 404
+
+    if is_commission_payment:
+        # Agent commission payment form
+        cursor.execute(
+            """
+            SELECT cp.*, u.name, u.email, pl.property_address,
+                   CASE 
+                       WHEN cp.agent_id = pl.agent_id THEN 'Agent Own Commission'
+                       ELSE 'Upline Commission'
+                   END as payment_type_name
+            FROM commission_payments cp
+            JOIN users u ON cp.agent_id = u.id
+            LEFT JOIN property_listings pl ON cp.listing_id = pl.id
+            WHERE cp.id = ?
+        """,
+            (actual_id,),
+        )
+
+        payment = cursor.fetchone()
+        conn.close()
+
+        if not payment:
+            return f"Commission payment {record_id} not found", 404
+
+        return render_template("admin/mark_commission_paid.html", payment_id=record_id)
+
+    else:
+        # Upline commission form
+        cursor.execute(
+            """
+            SELECT uc.amount, uc.upline_id, uu.name as upline_name, uu.email,
+                   pl.property_address, pl.customer_name,
+                   CASE 
+                       WHEN uc.commission_type = 'direct' THEN 'Direct Upline Commission'
+                       ELSE 'Indirect Upline Commission'
+                   END as payment_type
+            FROM upline_commissions uc
+            JOIN users uu ON uc.upline_id = uu.id
+            LEFT JOIN property_listings pl ON uc.listing_id = pl.id
+            WHERE uc.id = ?
+        """,
+            (actual_id,),
+        )
+
+        commission = cursor.fetchone()
+        conn.close()
+
+        if not commission:
+            return f"Upline commission {record_id} not found", 404
+
+        (
+            amount,
+            upline_id,
+            upline_name,
+            upline_email,
+            property_address,
+            customer_name,
+            payment_type,
+        ) = commission
+
+        return render_template(
+            "admin/mark_upline_commission_paid.html",
+            record_id=record_id,
+            amount=amount,
+            upline_name=upline_name,
+            upline_email=upline_email,
+            property_address=property_address,
+            customer_name=customer_name,
+            payment_type=payment_type,
+        )
+
+# ============ BATCH PAYMENT PROCESSING ============
+
+
+@app.route("/admin/batch-payments", methods=["GET", "POST"])
+def batch_payments():
+    """Batch process multiple payments - SIMPLER WORKING VERSION"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+
+    if request.method == "POST":
+        # Get selected payment IDs
+        selected_payments = request.form.getlist("payment_ids")
+        payment_method = request.form.get("payment_method", "bank_transfer")
+        transaction_id = request.form.get("transaction_id", "")
+        notes = request.form.get("notes", "")
+
+        if not selected_payments:
+            conn.close()
+            return redirect("/admin/batch-payments?error=No payments selected")
+
+        # Process each selected payment
+        processed_count = 0
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        for payment_id in selected_payments:
+            try:
+                # Update payment record
+                cursor.execute(
+                    """
+                    UPDATE commission_payments 
+                    SET payment_status = 'paid',
+                        payment_date = ?,
+                        payment_method = ?,
+                        transaction_id = ?,
+                        notes = COALESCE(notes || ' | ', '') || ?,
+                        updated_at = ?,
+                        paid_by = ?
+                    WHERE id = ? AND payment_status = 'pending'
+                """,
+                    (
+                        today,
+                        payment_method,
+                        transaction_id,
+                        f"Batch processed on {today}",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        session["user_id"],
+                        payment_id,
+                    ),
+                )
+
+                # Update the property listing commission status
+                cursor.execute(
+                    """
+                    UPDATE property_listings 
+                    SET commission_status = 'paid'
+                    WHERE id = (
+                        SELECT listing_id FROM commission_payments WHERE id = ?
+                    )
+                """,
+                    (payment_id,),
+                )
+
+                processed_count += 1
+
+            except Exception as e:
+                print(f"Error processing payment {payment_id}: {e}")
+                continue
+
+        conn.commit()
+        conn.close()
+
+        if processed_count > 0:
+            return redirect(
+                f"/admin/payments?success={processed_count} payments processed successfully"
+            )
+        else:
+            return redirect("/admin/payments?error=No payments were processed")
+
+    # GET request - show batch payment page
+    # Get all pending payments
+    cursor.execute(
+        """
+        SELECT 
+            cp.id,
+            cp.commission_amount,
+            cp.created_at,
+            u.name as agent_name,
+            u.email as agent_email,
+            pl.customer_name,
+            pl.property_address,
+            pl.id as listing_id
+        FROM commission_payments cp
+        JOIN users u ON cp.agent_id = u.id
+        JOIN property_listings pl ON cp.listing_id = pl.id
+        WHERE cp.payment_status = 'pending'
+        ORDER BY cp.created_at ASC, u.name
+    """
+    )
+
+    pending_payments = cursor.fetchall()
+
+    # Calculate totals
+    total_amount = sum([p[1] for p in pending_payments]) if pending_payments else 0
+    total_count = len(pending_payments)
+
+    # Get today's date for default transaction ID
+    today_str = datetime.now().strftime("%Y%m%d")
+
+    conn.close()
+
+    # Create a simple HTML string without complex template syntax
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Batch Payment Processing</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .header {{ background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            .stats {{ display: flex; gap: 15px; margin: 20px 0; }}
+            .stat-card {{ background: white; padding: 15px; border-radius: 8px; flex: 1; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+            .stat-value {{ font-size: 1.8em; font-weight: bold; }}
+            .payment-list {{ background: white; padding: 20px; border-radius: 10px; margin: 20px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }}
+            th {{ background: #2c3e50; color: white; }}
+            .btn {{ padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }}
+            .btn-secondary {{ background: #6c757d; }}
+            .empty-state {{ text-align: center; padding: 40px 20px; color: #666; }}
+            .checkbox-cell {{ width: 50px; text-align: center; }}
+            input[type="checkbox"] {{ width: 18px; height: 18px; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>💰 Batch Payment Processing</h1>
+            <div>
+                <a href="/admin/payments" class="btn btn-secondary">← Back to Payments</a>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Pending Payments</div>
+                <div class="stat-value" style="color: #007bff;">{total_count}</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Total Amount</div>
+                <div class="stat-value" style="color: #28a745;">RM{total_amount:,.2f}</div>
+            </div>
+            <div class="stat-card">
+                <div style="font-size: 14px; color: #666;">Average Payment</div>
+                <div class="stat-value" style="color: #6f42c1;">RM{total_amount/total_count if total_count > 0 else 0:,.2f}</div>
+            </div>
+        </div>
+    """
+
+    if pending_payments:
+        html_content += f"""
+        <form method="POST">
+            <div class="payment-list">
+                <h2>Select Payments to Process ({total_count} available)</h2>
+                <button type="button" id="selectAllBtn" style="margin: 10px 0; padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 5px;">Select All</button>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="checkbox-cell"><input type="checkbox" id="selectAllCheckbox"></th>
+                            <th>Payment ID</th>
+                            <th>Agent</th>
+                            <th>Customer</th>
+                            <th>Amount</th>
+                            <th>Created Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """
+
+        for payment in pending_payments:
+            html_content += f"""
+                        <tr>
+                            <td class="checkbox-cell">
+                                <input type="checkbox" name="payment_ids" value="{payment[0]}" class="payment-checkbox" data-amount="{payment[1]}">
+                            </td>
+                            <td><strong>#{payment[0]}</strong></td>
+                            <td>
+                                <div>{payment[3]}</div>
+                                <small style="color: #666;">{payment[4]}</small>
+                            </td>
+                            <td>
+                                <div>{payment[5]}</div>
+                                <small style="color: #666;">{payment[6][:30]}{'...' if len(payment[6]) > 30 else ''}</small>
+                            </td>
+                            <td style="font-weight: bold; color: #28a745;">RM{payment[1]:,.2f}</td>
+                            <td>{payment[2][:10] if payment[2] else 'N/A'}</td>
+                        </tr>
+            """
+
+        html_content += f"""
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="payment-list">
+                <h2>Payment Details</h2>
+                
+                <div style="margin: 20px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Payment Method *</label>
+                    <select name="payment_method" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;" required>
+                        <option value="">Select method</option>
+                        <option value="bank_transfer" selected>Bank Transfer</option>
+                        <option value="check">Check</option>
+                        <option value="cash">Cash</option>
+                        <option value="paypal">PayPal</option>
+                    </select>
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Transaction/Reference ID</label>
+                    <input type="text" name="transaction_id" value="BATCH-{today_str}-001" 
+                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;"
+                           placeholder="e.g., BATCH-20240115-001">
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Notes (Optional)</label>
+                    <textarea name="notes" rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;" 
+                              placeholder="Add any notes about this batch payment...">Batch processed on {datetime.now().strftime('%Y-%m-%d')}</textarea>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                    <h3 style="margin-top: 0;">Batch Summary</h3>
+                    <div style="display: flex; gap: 20px;">
+                        <div style="text-align: center; flex: 1;">
+                            <div id="selectedCount" style="font-size: 24px; font-weight: bold; color: #007bff;">0</div>
+                            <div style="font-size: 14px; color: #666;">Selected Payments</div>
+                        </div>
+                        <div style="text-align: center; flex: 1;">
+                            <div id="selectedAmount" style="font-size: 24px; font-weight: bold; color: #28a745;">RM0.00</div>
+                            <div style="font-size: 14px; color: #666;">Total Amount</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <button type="submit" class="btn" id="processBtn" disabled>✅ Process Selected Payments</button>
+                    <button type="button" class="btn btn-secondary" onclick="clearSelection()">Clear Selection</button>
+                    <a href="/admin/payments" class="btn btn-secondary">Cancel</a>
+                </div>
+            </div>
+        </form>
+        
+        <script>
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+            const selectAllBtn = document.getElementById('selectAllBtn');
+            const paymentCheckboxes = document.querySelectorAll('.payment-checkbox');
+            const processBtn = document.getElementById('processBtn');
+            
+            function updateSummary() {{
+                const selectedCheckboxes = document.querySelectorAll('.payment-checkbox:checked');
+                const selectedCount = selectedCheckboxes.length;
+                
+                let totalAmount = 0;
+                selectedCheckboxes.forEach(cb => {{
+                    totalAmount += parseFloat(cb.getAttribute('data-amount')) || 0;
+                }});
+                
+                document.getElementById('selectedCount').textContent = selectedCount;
+                document.getElementById('selectedAmount').textContent = 'RM' + totalAmount.toLocaleString('en-US', {{minimumFractionDigits: 2}});
+                
+                processBtn.disabled = selectedCount === 0;
+                processBtn.textContent = selectedCount > 0 
+                    ? '✅ Process ' + selectedCount + ' Payment' + (selectedCount !== 1 ? 's' : '')
+                    : '✅ Process Selected Payments';
+                
+                if (selectedCount === paymentCheckboxes.length) {{
+                    selectAllCheckbox.checked = true;
+                    selectAllCheckbox.indeterminate = false;
+                }} else if (selectedCount > 0) {{
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = true;
+                }} else {{
+                    selectAllCheckbox.checked = false;
+                    selectAllCheckbox.indeterminate = false;
+                }}
+            }}
+            
+            selectAllCheckbox.addEventListener('change', function() {{
+                paymentCheckboxes.forEach(cb => {{
+                    cb.checked = this.checked;
+                }});
+                updateSummary();
+            }});
+            
+            selectAllBtn.addEventListener('click', function() {{
+                const allChecked = Array.from(paymentCheckboxes).every(cb => cb.checked);
+                paymentCheckboxes.forEach(cb => {{
+                    cb.checked = !allChecked;
+                }});
+                selectAllCheckbox.checked = !allChecked;
+                updateSummary();
+            }});
+            
+            paymentCheckboxes.forEach(cb => {{
+                cb.addEventListener('change', updateSummary);
+            }});
+            
+            function clearSelection() {{
+                paymentCheckboxes.forEach(cb => {{
+                    cb.checked = false;
+                }});
+                selectAllCheckbox.checked = false;
+                updateSummary();
+            }}
+            
+            document.querySelector('form').addEventListener('submit', function(e) {{
+                const selectedCount = document.querySelectorAll('.payment-checkbox:checked').length;
+                if (selectedCount === 0) {{
+                    e.preventDefault();
+                    alert('Please select at least one payment to process.');
+                    return false;
+                }}
+                
+                if (!confirm('Are you sure you want to process ' + selectedCount + ' payment' + (selectedCount !== 1 ? 's' : '') + '?')) {{
+                    e.preventDefault();
+                }}
+            }});
+            
+            updateSummary();
+        </script>
+        """
+    else:
+        html_content += f"""
+        <div class="empty-state">
+            <h3>✅ No Pending Payments!</h3>
+            <p>All commission payments have been processed. Great job!</p>
+            <div style="margin-top: 20px;">
+                <a href="/admin/payments" class="btn">Back to Payments</a>
+                <a href="/admin/dashboard" class="btn btn-secondary">Go to Dashboard</a>
+            </div>
+        </div>
+        """
+
+    html_content += """
+    </body>
+    </html>
+    """
+
+    return html_content
+
+
+@app.route("/download/<int:doc_id>")
+def download_document(doc_id):
+    """Download document"""
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents WHERE id = ?", (doc_id,))
+    doc = cursor.fetchone()
+    conn.close()
+
+    if doc and os.path.exists(doc[3]):
+        return send_file(doc[3], as_attachment=True, download_name=doc[2])
+    else:
+        return "File not found", 404
+
+
+@app.route("/admin/sync-payments")
+def sync_payments():
+    """Create payment records for approved but unpaid commissions (BOTH agent and upline)"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+
+    try:
+        messages = []
+        total_created = 0
+
+        # ============ 1. AGENT COMMISSION PAYMENTS ============
+        cursor.execute(
+            """
+            SELECT pl.id, pl.agent_id, pl.commission_amount, pl.approved_at
+            FROM property_listings pl
+            LEFT JOIN commission_payments cp ON pl.id = cp.listing_id AND cp.agent_id = pl.agent_id
+            WHERE pl.status = 'approved'
+              AND (pl.commission_status IS NULL OR pl.commission_status != 'paid')
+              AND cp.id IS NULL
+        """
+        )
+
+        pending_agent_commissions = cursor.fetchall()
+        agent_created = 0
+
+        for (
+            listing_id,
+            agent_id,
+            commission_amount,
+            approved_at,
+        ) in pending_agent_commissions:
+            # Check if payment already exists
+            cursor.execute(
+                "SELECT id FROM commission_payments WHERE listing_id = ? AND agent_id = ?",
+                (listing_id, agent_id),
+            )
+            if cursor.fetchone():
+                continue
+
+            # Get project name for notes
+            cursor.execute(
+                """
+                SELECT p.project_name, pl.customer_name
+                FROM property_listings pl
+                LEFT JOIN projects p ON pl.project_id = p.id
+                WHERE pl.id = ?
+            """,
+                (listing_id,),
+            )
+            project_info = cursor.fetchone()
+
+            project_name = project_info[0] if project_info else None
+            customer_name = (
+                project_info[1]
+                if project_info and project_info[1]
+                else f"listing #{listing_id}"
+            )
+
+            # Create agent notes
+            if project_name:
+                agent_notes = f"Agent commission for {project_name} - 95% of RM{commission_amount:,.2f}"
+            else:
+                agent_notes = f"Agent commission for {customer_name} - 95% of RM{commission_amount:,.2f}"
+
+            # Create agent payment record
+            cursor.execute(
+                """
+                INSERT INTO commission_payments 
+                (listing_id, agent_id, commission_amount, payment_status, created_at, updated_at, notes)
+                VALUES (?, ?, ?, 'pending', ?, ?, ?)
+            """,
+                (
+                    listing_id,
+                    agent_id,
+                    commission_amount * 0.95,
+                    approved_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    agent_notes,
+                ),
+            )
+
+            agent_created += 1
+
+        if agent_created > 0:
+            messages.append(f"Created {agent_created} agent payment(s)")
+            total_created += agent_created
+
+        # ============ 2. UPLINE COMMISSION PAYMENTS ============
+        # Find approved listings where agent has an upline, but no upline commission exists
+        # FIXED: Using NOT EXISTS to properly check for duplicates
+        cursor.execute(
+            """
+            SELECT 
+                pl.id as listing_id,
+                pl.agent_id,
+                u.upline_id,
+                pl.commission_amount,
+                pl.approved_at,
+                u.name as agent_name,
+                upline.name as upline_name,
+                p.project_name
+            FROM property_listings pl
+            JOIN users u ON pl.agent_id = u.id
+            LEFT JOIN users upline ON u.upline_id = upline.id
+            LEFT JOIN projects p ON pl.project_id = p.id
+            WHERE pl.status = 'approved'
+              AND u.upline_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM upline_commissions uc 
+                  WHERE uc.listing_id = pl.id 
+                    AND uc.upline_id = u.upline_id
+              )
+        """
+        )
+
+        pending_upline_commissions = cursor.fetchall()
+        upline_created = 0
+
+        for (
+            listing_id,
+            agent_id,
+            upline_id,
+            commission_amount,
+            approved_at,
+            agent_name,
+            upline_name,
+            project_name,
+        ) in pending_upline_commissions:
+
+            # Calculate upline commission (5% of agent's commission)
+            upline_commission = commission_amount * 0.05  # 5% upline share
+
+            # Create upline notes
+            if project_name:
+                upline_notes = f"Upline commission from agent {agent_name} for {project_name} - 5% of RM{commission_amount:,.2f}"
+            else:
+                upline_notes = f"Upline commission from agent {agent_name} - 5% of RM{commission_amount:,.2f}"
+
+            # Create upline commission record
+            cursor.execute(
+                """
+                INSERT INTO upline_commissions 
+                (listing_id, agent_id, upline_id, amount, status, notes, created_at)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?)
+            """,
+                (
+                    listing_id,
+                    agent_id,
+                    upline_id,
+                    upline_commission,
+                    upline_notes,
+                    approved_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            )
+
+            # Also create commission_payments record for upline
+            cursor.execute(
+                """
+                SELECT id FROM commission_payments 
+                WHERE listing_id = ? AND agent_id = ? AND commission_amount = ?
+            """,
+                (listing_id, upline_id, upline_commission),
+            )
+
+            if not cursor.fetchone():
+                # Create commission payment for upline
+                cursor.execute(
+                    """
+                    INSERT INTO commission_payments
+                    (listing_id, agent_id, commission_amount, payment_status, created_at, updated_at, notes)
+                    VALUES (?, ?, ?, 'pending', ?, ?, ?)
+                """,
+                    (
+                        listing_id,
+                        upline_id,
+                        upline_commission,
+                        approved_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        upline_notes,
+                    ),
+                )
+
+            upline_created += 1
+
+        if upline_created > 0:
+            messages.append(f"Created {upline_created} upline payment(s)")
+            total_created += upline_created
+
+        # ============ 3. UPDATE COMMISSION STATUSES ============
+        # Update commission status for approved listings
+        cursor.execute(
+            """
+            UPDATE property_listings 
+            SET commission_status = 'pending'
+            WHERE status = 'approved' 
+              AND (commission_status IS NULL OR commission_status = 'approved')
+        """
+        )
+
+        conn.commit()
+        conn.close()
+
+        if total_created > 0:
+            message = " | ".join(messages)
+            return redirect(f"/admin/payments?success={message}")
+        else:
+            return redirect(
+                "/admin/payments?info=No pending payments need to be created. All approved listings already have payment records."
+            )
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"Error in sync_payments: {e}")
+        return redirect(f"/admin/payments?error=Sync failed: {str(e)}")
+
+
+@app.route("/admin/fix-payments")
+def fix_payments():
+    """Quick fix for payment synchronization"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+
+    try:
+        # SQL to create missing payment records
+        cursor.execute(
+            """
+            INSERT INTO commission_payments (listing_id, agent_id, commission_amount, payment_status, created_at, updated_at)
+            SELECT 
+                pl.id,
+                pl.agent_id,
+                pl.commission_amount,
+                'pending',
+                pl.approved_at,
+                pl.approved_at
+            FROM property_listings pl
+            LEFT JOIN commission_payments cp ON pl.id = cp.listing_id
+            WHERE pl.status = 'approved' AND cp.id IS NULL
+        """
+        )
+
+        created = cursor.rowcount
+
+        # Update commission status
+        cursor.execute(
+            """
+            UPDATE property_listings 
+            SET commission_status = 'pending' 
+            WHERE status = 'approved' AND (commission_status IS NULL OR commission_status = 'approved')
+        """
+        )
+
+        conn.commit()
+        conn.close()
+
+        return redirect(
+            f"/admin/payments?success={created} payment records created. Refresh the batch payments page."
+        )
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return redirect(f"/admin/payments?error=Fix failed: {str(e)}")
+
+
+@app.route("/admin/create-project", methods=["GET", "POST"])
+def create_project():
+    """Create a new project"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    if request.method == "POST":
+        # Get form data
+        data = request.form
+        sale_type = data.get("sale_type", "sales")  # Default to sales
+        print(f"DEBUG: Form data received: {dict(request.form)}")
+
+        try:
+            conn = sqlite3.connect("real_estate.db")
+            cursor = conn.cursor()
+
+            # Debug check for table structure
+            cursor.execute("PRAGMA table_info(projects)")
+            columns = [col[1] for col in cursor.fetchall()]
+            print(f"DEBUG: Current columns in 'projects' table: {columns}")
+
+            # Check if project_sale_type column exists
+            if "project_sale_type" not in columns:
+                print("DEBUG: Adding 'project_sale_type' column to projects table...")
+                try:
+                    cursor.execute(
+                        'ALTER TABLE projects ADD COLUMN project_sale_type TEXT DEFAULT "sales"'
+                    )
+                    conn.commit()
+                    print("DEBUG: Column added successfully!")
+                except Exception as alter_error:
+                    print(f"DEBUG: Error adding column: {alter_error}")
+
+            # Get project_sale_type (default to 'sales' if not provided)
+            project_sale_type = data.get("project_sale_type", "sales")
+            print(f"DEBUG: Project sale type: {project_sale_type}")
+
+            # Get all required fields with defaults
+            project_name = data.get("name", "").strip()
+            description = data.get("description", "").strip()
+            location = data.get("location", "").strip()
+            project_type = data.get("project_type", "residential")
+            category = data.get("category", "condo")
+            commission_rate = float(data.get("project_commission", 3.0))
+
+            # WTP commission config fields
+            comm_dev_rate     = float(data.get("comm_dev_rate", 2.0))
+            comm_sst_rate     = float(data.get("comm_sst_rate", 8.0))
+            comm_company_pct  = float(data.get("comm_company_pct", 15.0))
+            comm_pic_pct      = float(data.get("comm_pic_pct", 10.0))
+            comm_agents_pct   = float(data.get("comm_agents_pct", 75.0))
+            comm_pic_rank     = data.get("comm_pic_rank", "REN")
+            comm_pic_agent_id = int(data.get("comm_pic_agent_id", 0)) or None
+            comm_pic_name     = data.get("comm_pic_name", "").strip() or None
+
+            # Validate required fields
+            if not project_name or not location:
+                flash("❌ Project Name and Location are required", "error")
+                return redirect("/admin/create-project")
+
+            print(f"DEBUG: Inserting project: {project_name}")
+            print(f"DEBUG: Commission rate: {commission_rate}")
+            print(f"DEBUG: Sale type: {project_sale_type}")
+
+            # Insert project - FIXED: using project_name instead of name
+            cursor.execute(
+                """
+                INSERT INTO projects 
+                (project_name, description, location, project_type, category,
+                 commission_rate, project_sale_type, created_by, status,
+                 comm_dev_rate, comm_sst_rate, comm_company_pct,
+                 comm_pic_pct, comm_agents_pct, comm_pic_rank,
+                 comm_pic_agent_id, comm_pic_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    project_name, description, location, project_type, category,
+                    commission_rate, project_sale_type, session["user_id"], "active",
+                    comm_dev_rate, comm_sst_rate, comm_company_pct,
+                    comm_pic_pct, comm_agents_pct, comm_pic_rank,
+                    comm_pic_agent_id, comm_pic_name,
+                ),
+            )
+
+            project_id = cursor.lastrowid
+            print(f"DEBUG: Project created with ID: {project_id}")
+
+            # Handle units
+            unit_counter = 1
+            units_added = 0
+            while f"unit_code_{unit_counter}" in data:
+                unit_code = data.get(f"unit_code_{unit_counter}", "").strip()
+                unit_type = data.get(f"unit_type_{unit_counter}", "").strip()
+                unit_price = data.get(f"unit_price_{unit_counter}", "").strip()
+                unit_size = data.get(f"unit_size_{unit_counter}", "").strip()
+                unit_commission = data.get(
+                    f"unit_commission_{unit_counter}", ""
+                ).strip()
+
+                if unit_code:
+                    # Convert empty strings to None
+                    price = float(unit_price) if unit_price else None
+                    size = float(unit_size) if unit_size else None
+                    commission = float(unit_commission) if unit_commission else None
+
+                    # ✅ UPDATED: Use correct column names that match database
+                    # unit_code stored in unit_type field (no unit_code column in schema)
+                    combined_type = (unit_code + ' – ' + unit_type).strip(' –') if unit_type else unit_code
+                    cursor.execute(
+                        """
+                        INSERT INTO project_units 
+                        (project_id, unit_type, base_price, square_feet, 
+                        commission_rate, quantity, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                        (
+                            project_id,
+                            combined_type,
+                            price,
+                            size,
+                            commission,
+                            1,
+                            "available",
+                        ),
+                    )
+                    units_added += 1
+                    print(f"DEBUG: Added unit: {unit_code}")
+
+                unit_counter += 1
+
+            print(f"DEBUG: Total units added: {units_added}")
+
+            conn.commit()
+            conn.close()
+            print("DEBUG: Database changes committed successfully")
+
+            flash(f'✅ Project "{project_name}" created successfully!', "success")
+            return redirect("/admin/projects")
+
+        except Exception as e:
+            print(f"DEBUG: ERROR occurred: {str(e)}")
+            import traceback
+
+            print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+            flash(f"❌ Error creating project: {str(e)}", "error")
+            return redirect("/admin/create-project")
+
+    # GET request - show form
+    _conn = get_db_connection()
+    _cur  = _conn.cursor()
+    _cur.execute("""SELECT id, name, agent_rank, commission_rate FROM users
+                    WHERE role='agent' ORDER BY name""")
+    _agents = [{"id": r[0], "name": r[1], "rank": r[2] or "REN", "rate": float(r[3] or 70)}
+               for r in _cur.fetchall()]
+    _conn.close()
+
+    _rank_label = {"ATL":"ATL (90%)", "TL":"TL (85%)", "ELITE":"Elite REN (80%)",
+                   "ASSOC":"Assoc REN (75%)", "REN":"REN (70%)"}
+    _agent_opts = '<option value="">-- Select PIC Agent --</option>'
+    for _ag in _agents:
+        _rd = _rank_label.get(_ag["rank"], _ag["rank"])
+        _agent_opts += (f'<option value="{_ag["id"]}" data-rank="{_ag["rank"]}" '
+                        f'data-name="{_ag["name"]}">{_ag["name"]} — {_rd}</option>')
+
+    return render_template("admin/create_project.html", agent_opts=_agent_opts)
+
+
+@app.route("/admin/edit-project/<int:project_id>", methods=["GET", "POST"])
+def edit_project(project_id):
+    """Edit project — renders templates/admin/edit_project.html"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, project_name, category, project_type, location, description,
+               status, commission_rate, created_by, created_at, updated_at,
+               project_sale_type,
+               COALESCE(comm_dev_rate, 2.0), COALESCE(comm_sst_rate, 8.0),
+               COALESCE(comm_company_pct, 15.0), COALESCE(comm_pic_pct, 10.0),
+               COALESCE(comm_agents_pct, 75.0), COALESCE(comm_pic_rank, 'REN'),
+               comm_pic_agent_id, COALESCE(comm_pic_name, '')
+        FROM projects WHERE id = ?
+    """, (project_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return "Project not found", 404
+
+    cursor.execute(
+        "SELECT * FROM project_units WHERE project_id = ? ORDER BY unit_type",
+        (project_id,)
+    )
+    existing_units = cursor.fetchall()
+
+    if request.method == "POST":
+        try:
+            data = request.form
+            cursor.execute("""
+                UPDATE projects SET
+                    project_name=?, category=?, project_type=?,
+                    location=?, description=?, commission_rate=?,
+                    comm_dev_rate=?, comm_sst_rate=?, comm_company_pct=?,
+                    comm_pic_pct=?, comm_agents_pct=?, comm_pic_rank=?,
+                    comm_pic_agent_id=?, comm_pic_name=?, updated_at=?
+                WHERE id=?
+            """, (
+                data["project_name"], data["category"], data["project_type"],
+                data.get("location", ""), data.get("description", ""),
+                float(data.get("project_commission", 0)),
+                float(data.get("comm_dev_rate", 2.0)),
+                float(data.get("comm_sst_rate", 8.0)),
+                float(data.get("comm_company_pct", 15.0)),
+                float(data.get("comm_pic_pct", 10.0)),
+                float(data.get("comm_agents_pct", 75.0)),
+                data.get("comm_pic_rank", "REN"),
+                int(data.get("comm_pic_agent_id", 0)) or None,
+                data.get("comm_pic_name", "").strip() or None,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), project_id,
+            ))
+            cursor.execute("DELETE FROM project_units WHERE project_id = ?", (project_id,))
+            n = 0
+            while f"unit_type_{n}" in data:
+                ut = data.get(f"unit_type_{n}")
+                if ut:
+                    sf  = data.get(f"square_feet_{n}")
+                    bp  = data.get(f"base_price_{n}")
+                    rp  = data.get(f"rental_price_{n}")
+                    cr  = data.get(f"unit_commission_{n}")
+                    qty = data.get(f"quantity_{n}", 1)
+                    cursor.execute("""
+                        INSERT INTO project_units
+                        (project_id, unit_type, square_feet, base_price, rental_price,
+                         commission_rate, quantity, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'available')
+                    """, (
+                        project_id, ut,
+                        int(sf) if sf else None,
+                        float(bp) if bp else None,
+                        float(rp) if rp else None,
+                        float(cr) if cr else None,
+                        int(qty) if qty else 1,
+                    ))
+                n += 1
+            conn.commit()
+            conn.close()
+            return redirect(f"/admin/project/{project_id}?success=Project updated successfully!")
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            return f"<h2>Error: {str(e)}</h2><a href='/admin/edit-project/{project_id}'>Try Again</a>"
+
+    # GET — load agents for PIC selector
+    agent_conn = get_db_connection()
+    agent_cur  = agent_conn.cursor()
+    agent_cur.execute("""SELECT id, name, agent_rank, commission_rate FROM users
+                         WHERE role='agent'
+                         ORDER BY name""")
+    agents = [{"id":r[0],"name":r[1],"rank":r[2] or "REN","rate":float(r[3] or 70)}
+              for r in agent_cur.fetchall()]
+    agent_conn.close()
+
+    curr_pic_id = int(row[18]) if row[18] else 0
+    rank_labels = {"ATL":"ATL (90%)","TL":"TL (85%)","ELITE":"Elite REN (80%)",
+                   "ASSOC":"Assoc REN (75%)","REN":"REN (70%)"}
+    agent_opts = '<option value="">-- Select PIC Agent --</option>'
+    for ag in agents:
+        sel = ' selected' if curr_pic_id and ag["id"] == curr_pic_id else ''
+        agent_opts += (f'<option value="{ag["id"]}" data-rank="{ag["rank"]}" '
+                       f'data-name="{ag["name"]}"{sel}>'
+                       f'{ag["name"]} — {rank_labels.get(ag["rank"], ag["rank"])}</option>')
+
+    units_data = []
+    for u in existing_units:
+        units_data.append({
+            "unit_type":       u[2] or "",
+            "square_feet":     u[3] or "",
+            "base_price":      u[4] or "",
+            "rental_price":    u[5] or "",
+            "commission_rate": u[6] or "",
+            "quantity":        u[7] or 1,
+        })
+
+    conn.close()
+
+    project = {
+        "id":               row[0],
+        "name":             row[1] or "",
+        "category":         row[2] or "condo",
+        "project_type":     row[3] or "residential",
+        "location":         row[4] or "",
+        "description":      row[5] or "",
+        "commission_rate":  row[7] or 3.0,
+        "comm_dev_rate":    row[12],
+        "comm_sst_rate":    row[13],
+        "comm_company_pct": row[14],
+        "comm_pic_pct":     row[15],
+        "comm_agents_pct":  row[16],
+        "comm_pic_rank":    row[17],
+        "comm_pic_name":    row[19] or "",
+    }
+
+    return render_template(
+        "admin/edit_project.html",
+        project=project,
+        agent_opts=agent_opts,
+        units_json=json.dumps(units_data),
+        curr_pic_id=curr_pic_id,
+    )
+
+@app.route("/admin/projects")
+def list_projects():
+    """List all projects — renders templates/admin/projects.html"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.id, p.project_name, p.category, p.project_type, p.location,
+               p.description, p.status, p.commission_rate, p.project_sale_type,
+               p.created_at, p.updated_at, u.name AS created_by_name,
+               COUNT(DISTINCT pu.id) AS unit_count,
+               CASE WHEN p.status = 'active' THEN 1 ELSE 0 END AS is_active,
+               SUM(pu.quantity) AS total_units
+        FROM projects p
+        LEFT JOIN users u ON p.created_by = u.id
+        LEFT JOIN project_units pu ON p.id = pu.project_id
+        GROUP BY p.id
+        ORDER BY p.status DESC, p.created_at DESC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    projects = []
+    active_count = 0
+    total_units_sum = 0
+    sales_count = 0
+
+    for r in rows:
+        is_active = bool(r[13]) if r[13] is not None else True
+        created_at = r[9]
+        created_date = (created_at[:10] if isinstance(created_at, str) and len(created_at) >= 10
+                        else str(created_at)[:10] if created_at else "N/A")
+        total_units = int(r[14]) if r[14] else 0
+        category = (r[2] or "N/A").lower()
+        project_type = (r[3] or "N/A").lower()
+
+        if is_active:
+            active_count += 1
+        total_units_sum += total_units
+        if r[8] == "sales":
+            sales_count += 1
+
+        projects.append({
+            "id":           r[0],
+            "name":         r[1] or "Unnamed",
+            "category":     category,
+            "project_type": project_type,
+            "location":     r[4] or "Not specified",
+            "commission":   r[7] or "N/A",
+            "sale_type":    r[8] or "sales",
+            "created_date": created_date,
+            "created_by":   r[11] or "Unknown",
+            "unit_count":   r[12] or 0,
+            "total_units":  total_units,
+            "is_active":    is_active,
+        })
+
+    return render_template(
+        "admin/projects.html",
+        projects=projects,
+        total_projects=len(projects),
+        active_count=active_count,
+        total_units_sum=total_units_sum,
+        sales_count=sales_count,
+    )
+
+@app.route("/admin/project/<int:project_id>")
+def view_project(project_id):
+    """View project details — renders templates/admin/project_detail.html"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.id, p.project_name, p.category, p.project_type, p.location,
+               p.description, p.status, p.commission_rate, p.project_sale_type,
+               p.created_at, p.updated_at, u.name AS created_by_name,
+               p.is_active,
+               COALESCE(p.comm_dev_rate, 2.0)     AS comm_dev_rate,
+               COALESCE(p.comm_sst_rate, 8.0)     AS comm_sst_rate,
+               COALESCE(p.comm_company_pct, 15.0) AS comm_company_pct,
+               COALESCE(p.comm_pic_pct, 10.0)     AS comm_pic_pct,
+               COALESCE(p.comm_agents_pct, 75.0)  AS comm_agents_pct,
+               COALESCE(p.comm_pic_rank, 'REN')   AS comm_pic_rank,
+               COALESCE(p.comm_pic_name, '')       AS comm_pic_name
+        FROM projects p
+        LEFT JOIN users u ON p.created_by = u.id
+        WHERE p.id = ?
+    """, (project_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return "Project not found", 404
+
+    cursor.execute(
+        "SELECT * FROM project_units WHERE project_id = ? ORDER BY unit_type",
+        (project_id,)
+    )
+    unit_rows = cursor.fetchall()
+    conn.close()
+
+    project = {
+        "id":               row[0],
+        "name":             row[1] or "Unnamed",
+        "category":         (row[2] or "N/A").lower(),
+        "project_type":     (row[3] or "N/A").lower(),
+        "location":         row[4] or "",
+        "description":      row[5] or "",
+        "status":           row[6] or "active",
+        "commission_rate":  row[7] or 0,
+        "sale_type":        row[8] or "sales",
+        "created_at":       (row[9] or "")[:10],
+        "updated_at":       (row[10] or "")[:10] if row[10] else "",
+        "created_by":       row[11] or "Unknown",
+        "is_active":        bool(row[12]) if row[12] is not None else True,
+        "comm_dev_rate":    row[13],
+        "comm_sst_rate":    row[14],
+        "comm_company_pct": row[15],
+        "comm_pic_pct":     row[16],
+        "comm_agents_pct":  row[17],
+        "comm_pic_rank":    row[18],
+        "comm_pic_name":    row[19],
+    }
+
+    price_label = "Sale Price" if project["sale_type"] == "sales" else "Monthly Rent"
+
+    units = []
+    for u in unit_rows:
+        price_val = u[5] if project["sale_type"] == "rental" and u[5] else u[4]
+        comm_val  = u[6] if u[6] else project["commission_rate"]
+        units.append({
+            "code":             u[11] if len(u) > 11 else "",
+            "unit_type":        u[2] or "",
+            "square_feet":      u[3] or "",
+            "price_display":    f"RM{price_val:,.2f}" if price_val else "N/A",
+            "commission_display": f"{comm_val}%" if comm_val else "N/A",
+            "quantity":         u[7] or 1,
+            "status":           u[8] or "available",
+        })
+
+    success = request.args.get("success", "")
+    return render_template(
+        "admin/project_detail.html",
+        project=project,
+        units=units,
+        price_label=price_label,
+        success=success,
+    )
+
+@app.route("/admin/toggle-project/<int:project_id>")
+def toggle_project(project_id):
+    """Toggle project active/inactive status - FIXED VERSION"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    conn = None
+    try:
+        conn = sqlite3.connect("real_estate.db")
+        cursor = conn.cursor()
+
+        print(f"\n🔄 TOGGLE REQUESTED for project {project_id}")
+
+        # 1. First ensure is_active column exists
+        try:
+            cursor.execute(
+                "ALTER TABLE projects ADD COLUMN is_active INTEGER DEFAULT 1"
+            )
+            conn.commit()
+            print("✅ Added is_active column (if missing)")
+        except Exception as e:
+            print(f"✓ Column check: {e}")
+
+        # 2. Get current is_active value
+        cursor.execute(
+            "SELECT project_name, is_active FROM projects WHERE id = ?", (project_id,)
+        )
+        project = cursor.fetchone()
+
+        if not project:
+            conn.close()
+            flash("Project not found", "error")
+            return redirect("/admin/projects")
+
+        project_name, current = project
+        print(f"✓ Found project: {project_name}, current is_active = {current}")
+
+        # Handle None/Null values
+        if current is None:
+            current = 1  # Default to active
+
+        # 3. Toggle the value
+        new_value = 0 if current == 1 else 1
+        print(f"✓ Changing is_active from {current} to {new_value}")
+
+        # 4. Update database
+        cursor.execute(
+            "UPDATE projects SET is_active = ? WHERE id = ?", (new_value, project_id)
+        )
+        rows_updated = cursor.rowcount
+
+        conn.commit()
+        conn.close()
+
+        print(f"✅ Updated {rows_updated} row(s)")
+
+        status_text = "activated" if new_value == 1 else "deactivated"
+        flash(f'Project "{project_name}" {status_text} successfully', "success")
+
+    except Exception as e:
+        print(f"❌ TOGGLE ERROR: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+        flash(f"Error: {str(e)}", "error")
+
+    return redirect("/admin/projects")
+
+
+@app.route("/admin/export-data")
+def export_data():
+    """Export data to CSV/Excel"""
+    if "user_id" not in session or session["user_role"] != "admin":
+        return redirect("/login")
+
+    export_type = request.args.get("type", "csv")
+
+    conn = sqlite3.connect("real_estate.db")
+    cursor = conn.cursor()
+
+    if export_type == "commissions":
+        # Export commission data
+        cursor.execute(
+            """
+            SELECT 
+                pl.id as listing_id,
+                pl.customer_name,
+                pl.customer_email,
+                pl.property_address,
+                pl.property_type,
+                pl.sale_price,
+                pl.commission_amount,
+                pl.status,
+                pl.submitted_at,
+                pl.approved_at,
+                u.name as agent_name,
+            FROM property_listings pl
+            JOIN users u ON pl.agent_id = u.id
+            ORDER BY pl.created_at DESC
+        """
+        )
+        data = cursor.fetchall()
+        filename = f"commissions_export_{datetime.now().strftime('%Y%m%d')}.csv"
+        csv_content = "Listing ID,Customer Name,Customer Email,Property Address,Property Type,Sale Price,Commission,Status,Submitted Date,Approved Date,Agent Name,Agent Tier\n"
+
+        for row in data:
+            # Escape commas in CSV
+            row_escaped = []
+            for item in row:
+                if item and "," in str(item):
+                    row_escaped.append(f'"{item}"')
+                else:
+                    row_escaped.append(str(item) if item else "")
+            csv_content += ",".join(row_escaped) + "\n"
+
+        response = app.response_class(
+            response=csv_content,
+            status=200,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+        return response
+
+    elif export_type == "agents":
+        # Export agent data
+        cursor.execute(
+            """
+            SELECT 
+                u.id,
+                u.name,
+                u.email,
+                u.created_at,
+                COUNT(pl.id) as total_listings,
+                SUM(CASE WHEN pl.status = 'approved' THEN pl.commission_amount ELSE 0 END) as total_commission
+            FROM users u
+            LEFT JOIN property_listings pl ON u.id = pl.agent_id
+            WHERE u.role = 'agent'
+            GROUP BY u.id
+            ORDER BY u.name
+        """
+        )
+        data = cursor.fetchall()
+        filename = f"agents_export_{datetime.now().strftime('%Y%m%d')}.csv"
+        csv_content = (
+            "Agent ID,Name,Email,Tier,Created Date,Total Listings,Total Commission\n"
+        )
+
+        for row in data:
+            row_escaped = []
+            for item in row:
+                if item and "," in str(item):
+                    row_escaped.append(f'"{item}"')
+                else:
+                    row_escaped.append(str(item) if item else "")
+            csv_content += ",".join(row_escaped) + "\n"
+
+        response = app.response_class(
+            response=csv_content,
+            status=200,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+        return response
+
+    elif export_type == "payments":
+        # Export payment data
+        cursor.execute(
+            """
+            SELECT 
+                cp.id,
+                cp.listing_id,
+                cp.agent_id,
+                cp.commission_amount,
+                cp.payment_status,
+                cp.payment_date,
+                cp.payment_method,
+                cp.transaction_id,
+                cp.created_at,
+                u.name as agent_name,
+                pl.customer_name
+            FROM commission_payments cp
+            JOIN users u ON cp.agent_id = u.id
+            JOIN property_listings pl ON cp.listing_id = pl.id
+            ORDER BY cp.created_at DESC
+        """
+        )
+        data = cursor.fetchall()
+        filename = f"payments_export_{datetime.now().strftime('%Y%m%d')}.csv"
+        csv_content = "Payment ID,Listing ID,Agent ID,Amount,Status,Payment Date,Payment Method,Transaction ID,Created Date,Agent Name,Customer Name\n"
+
+        for row in data:
+            row_escaped = []
+            for item in row:
+                if item and "," in str(item):
+                    row_escaped.append(f'"{item}"')
+                else:
+                    row_escaped.append(str(item) if item else "")
+            csv_content += ",".join(row_escaped) + "\n"
+
+        response = app.response_class(
+            response=csv_content,
+            status=200,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+        return response
+
+    conn.close()
+
+    # If no export type specified, show export options page
+    # Build stats and agent list for the export page
+    conn2 = get_db_connection()
+    conn2.row_factory = sqlite3.Row
+    try:
+        stats_row = conn2.execute("""
+            SELECT
+                COUNT(*) as approved,
+                COALESCE(SUM(CASE WHEN status='approved' THEN sale_price END),0) as total_sales,
+                COALESCE(SUM(CASE WHEN status='approved' THEN commission_amount END),0) as total_commissions
+            FROM property_listings
