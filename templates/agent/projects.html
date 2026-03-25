@@ -4,7 +4,8 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>My Projects</title>
-<style>*,*::before,*::after{box-sizing:border-box}
+<style>
+*,*::before,*::after{box-sizing:border-box}
 body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
 .topbar{background:#1a3a2a;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
 .topbar-title{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px}
@@ -17,55 +18,96 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
 .nav-bar a.nav-btn{background:#16a34a;color:white}
 .nav-bar a.nav-btn:hover{background:#15803d}
 .nav-bar a.nav-logout{color:#dc3545}
-@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}.nav-bar a:last-child{border-bottom:none}}
-.wrap{max-width:1400px;margin:0 auto;padding:16px}
-.card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
-.card-title{font-size:13px;font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:8px}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
-.scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
-.scard h3{margin:0 0 6px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
-.scard-val{font-size:1.4rem;font-weight:800;margin-bottom:2px}
-.scard small{font-size:11px;color:#888}
-.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
-table{width:100%;border-collapse:collapse;background:white;min-width:500px}
-th{background:#1a3a2a;color:white;padding:10px 12px;text-align:left;font-size:12px;white-space:nowrap}
-td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px;vertical-align:top}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:#f9fafb}
-.badge{padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
-.st-draft{background:#fef9c3;color:#854d0e}
-.st-submitted{background:#dbeafe;color:#1e40af}
-.st-approved{background:#dcfce7;color:#166534}
-.st-rejected{background:#fee2e2;color:#991b1b}
-.st-pending{background:#fef9c3;color:#854d0e}
-.st-paid{background:#dcfce7;color:#166534}
-.act-btn{display:inline-block;padding:5px 10px;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;margin:2px 0}
-.act-green{background:#16a34a;color:white}.act-teal{background:#0891b2;color:white}
-.act-purple{background:#7c3aed;color:white}.act-grey{background:#6c757d;color:white}
-.filter-wrap{background:white;border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
-.filter-wrap h3{margin:0 0 10px;font-size:14px;color:#444}
-.filter-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.filter-row select,.filter-row input{padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;flex:1;min-width:120px}
-.btn-go{padding:7px 14px;background:#16a34a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
-.btn-clr{padding:7px 12px;background:#6c757d;color:white;border:none;border-radius:6px;font-size:13px;text-decoration:none;display:inline-block;white-space:nowrap}
-.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
-.sec-hdr h2{margin:0;font-size:15px}
-.empty{padding:40px;text-align:center;background:white;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
-.empty h3{color:#666;margin-bottom:8px}.empty p{color:#888;margin:0 0 16px}
-.form-group{margin-bottom:14px}
-label{display:block;margin-bottom:5px;font-weight:600;color:#444;font-size:13px}
-input[type=text],input[type=email],input[type=number],input[type=date],input[type=tel],select,textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;font-size:14px;background:#fafafa;box-sizing:border-box}
-input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;background:white}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.btn-submit{background:#16a34a;color:white;padding:11px 24px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700}
-@media(max-width:900px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:640px){.wrap{padding:10px}.stats-grid{grid-template-columns:repeat(2,1fr);gap:8px}.scard{padding:12px}.scard-val{font-size:1.2rem}.filter-row{flex-direction:column;align-items:stretch}.filter-row select,.filter-row input,.btn-go,.btn-clr{width:100%}.form-row{grid-template-columns:1fr}td,th{padding:8px 10px!important;font-size:12px}}
+@media(max-width:640px){
+  .hamburger{display:block}
+  .nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}
+  .nav-bar.open{display:flex}
+  .nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}
+  .nav-bar a:last-child{border-bottom:none}
+}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+/* stats row */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.07);border-top:3px solid #ddd;text-align:center}
+.scard h3{margin:0 0 4px;font-size:10px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.scard-val{font-size:1.4rem;font-weight:800}
+/* section header */
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.sec-hdr h2{margin:0;font-size:15px;font-weight:700}
+/* project card */
+.proj-card{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px;overflow:hidden;border:1px solid #e5e7eb;transition:box-shadow .2s}
+.proj-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.12)}
+.proj-header{background:linear-gradient(135deg,#1a3a2a 0%,#166534 100%);padding:16px 20px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.proj-title{color:white;font-size:1.1rem;font-weight:800;margin:0 0 6px}
+.proj-tags{display:flex;flex-wrap:wrap;gap:5px}
+.ptag{background:rgba(255,255,255,.2);color:white;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600}
+.ptag.active{background:#22c55e}
+.ptag.inactive{background:#ef4444;opacity:.9}
+.proj-actions{flex-shrink:0}
+.btn-sale{background:#16a34a;color:white;padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:700;text-decoration:none;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.btn-sale:hover{background:#15803d}
+/* project body */
+.proj-body{padding:16px 20px}
+/* info grid */
+.proj-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.pi-item{}
+.pi-item .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;font-weight:700;margin-bottom:2px}
+.pi-item .val{font-size:13px;font-weight:700;color:#1a2a3a}
+/* developer banner */
+.dev-banner{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.dev-banner .di{flex:1;min-width:180px}
+.dev-banner .di .dname{font-weight:700;font-size:13px;color:#92400e}
+.dev-banner .di .dreg{font-size:11px;color:#b45309;margin-top:2px}
+/* units table */
+.units-mini{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px}
+.units-mini thead th{background:#f1f5f9;color:#64748b;padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;border-bottom:1px solid #e2e8f0}
+.units-mini tbody td{padding:7px 10px;border-bottom:1px solid #f0f0f0;color:#374151}
+.units-mini tbody tr:last-child td{border-bottom:none}
+.units-mini tbody tr:hover td{background:#f9fafb}
+/* my sales strip */
+.sales-strip{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.ss-item{}
+.ss-item .sv{font-size:1.1rem;font-weight:800;color:#166534}
+.ss-item .sl{font-size:10px;color:#6b7280;font-weight:600;text-transform:uppercase}
+/* docs section */
+.docs-section{margin-top:4px}
+.docs-toggle{background:none;border:1px solid #e5e7eb;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;color:#374151;cursor:pointer;display:flex;align-items:center;gap:6px;width:100%;justify-content:space-between;transition:background .15s}
+.docs-toggle:hover{background:#f9fafb}
+.docs-body{display:none;margin-top:8px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
+.docs-body.open{display:block}
+.doc-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #f0f0f0}
+.doc-item:last-child{border-bottom:none}
+.doc-icon{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.doc-pdf{background:#fee2e2}.doc-img{background:#dbeafe}.doc-word{background:#e0e7ff}
+.doc-excel{background:#dcfce7}.doc-default{background:#f3f4f6}
+.doc-info{flex:1}
+.doc-info .dn{font-size:12px;font-weight:700}
+.doc-info .dm{font-size:10px;color:#9ca3af;margin-top:1px}
+.btn-dl{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap}
+.no-docs{padding:16px;text-align:center;color:#9ca3af;font-size:12px}
+/* comm preview */
+.comm-preview{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 14px;font-size:12px;color:#166534;margin-bottom:12px}
+.comm-preview .cprow{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.comm-preview .cpi{white-space:nowrap}
+.comm-preview .cpi strong{font-size:13px}
+/* empty */
+.empty{padding:50px 20px;text-align:center;background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.empty h3{color:#6b7280;margin-bottom:8px}.empty p{color:#9ca3af;margin:0 0 16px}
+@media(max-width:640px){
+  .wrap{padding:10px}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .proj-info{grid-template-columns:1fr 1fr}
+  .sales-strip{gap:10px}
+}
 </style>
 </head>
 <body>
+
 <div class="topbar">
   <div class="topbar-title">&#127962; My Projects</div>
-  <div class="topbar-right"><button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button></div>
+  <div class="topbar-right">
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
+  </div>
 </div>
 <div class="nav-bar" id="mainNav">
   <a href="/agent/dashboard">&#128202; Dashboard</a>
@@ -79,58 +121,197 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;backgr
   <a href="/agent/profile">&#128100; Profile</a>
   <a href="/logout" class="nav-logout">&#128274; Logout</a>
 </div>
+
 <div class="wrap">
 
 {% if projects %}
-  {% for project in projects %}
-  <div class="card" style="margin-bottom:14px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="font-size:1.1rem;font-weight:800;color:#1a2a3a;margin-bottom:4px">{{ project.name }}</div>
-        <div>
-          <span class="badge" style="background:#f0fdf4;color:#166534">{{ (project.category or '')|title }}</span>
-          <span class="badge" style="background:#f0f9ff;color:#0c4a6e">{{ (project.project_type or '')|title }}</span>
-          <span class="badge st-{{ 'approved' if project.is_active else 'rejected' }}">{{ 'Active' if project.is_active else 'Inactive' }}</span>
-        </div>
+<!-- Stats row -->
+<div class="stats-row">
+  <div class="scard" style="border-top-color:#16a34a">
+    <h3>Total Projects</h3>
+    <div class="scard-val" style="color:#16a34a">{{ projects|length }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#2563eb">
+    <h3>My Sales</h3>
+    <div class="scard-val" style="color:#2563eb">{{ projects|sum(attribute='total_sales') }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#7c3aed">
+    <h3>My Commission</h3>
+    <div class="scard-val" style="color:#7c3aed;font-size:1rem">RM{{ "{:,.0f}".format(projects|sum(attribute='total_commission')) }}</div>
+  </div>
+  <div class="scard" style="border-top-color:#f59e0b">
+    <h3>Active</h3>
+    <div class="scard-val" style="color:#f59e0b">{{ projects|selectattr('sale_type')|list|length }}</div>
+  </div>
+</div>
+
+<div class="sec-hdr">
+  <h2>&#127962; All Active Projects</h2>
+  <a href="/agent/unified-submit" class="nav-btn" style="background:#16a34a;color:white;padding:7px 14px;border-radius:7px;text-decoration:none;font-size:13px;font-weight:700">&#10010; New Sale</a>
+</div>
+
+{% for p in projects %}
+<div class="proj-card">
+
+  <!-- Header -->
+  <div class="proj-header">
+    <div>
+      <div class="proj-title">{{ p.name }}</div>
+      <div class="proj-tags">
+        <span class="ptag">{{ p.category|title if p.category else 'Property' }}</span>
+        <span class="ptag">{{ p.type|title if p.type else '' }}</span>
+        <span class="ptag">{{ p.sale_type|title if p.sale_type else 'Sales' }}</span>
       </div>
-      <a href="/agent/unified-submit?project={{ project.id }}" class="act-btn act-green">&#10010; New Sale</a>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:14px">
-      <div style="background:#f8f9fa;border-radius:7px;padding:10px 12px">
-        <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">Location</div>
-        <div style="font-size:13px;font-weight:600">{{ project.location or '—' }}</div>
+    <div class="proj-actions">
+      <a href="/agent/unified-submit?project_id={{ p.id }}" class="btn-sale">&#10010; New Sale</a>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="proj-body">
+
+    <!-- Key info -->
+    <div class="proj-info">
+      <div class="pi-item">
+        <div class="lbl">&#128205; Location</div>
+        <div class="val">{{ p.location or '—' }}</div>
       </div>
-      <div style="background:#f8f9fa;border-radius:7px;padding:10px 12px">
-        <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">Commission</div>
-        <div style="font-size:13px;font-weight:600;color:#16a34a">{{ project.commission_rate or '—' }}%</div>
+      <div class="pi-item">
+        <div class="lbl">&#128176; Dev Comm Rate</div>
+        <div class="val" style="color:#16a34a">{{ p.commission_rate }}%</div>
       </div>
-      {% if project.units %}
-      {% for unit in project.units %}
-      <div style="background:#f8f9fa;border-radius:7px;padding:10px 12px">
-        <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:2px">{{ unit.unit_type }}</div>
-        <div style="font-size:13px;font-weight:600">{% if unit.base_price %}RM{{ "{:,.0f}".format(unit.base_price) }}{% elif unit.rental_price %}RM{{ "{:,.0f}".format(unit.rental_price) }}/mo{% else %}—{% endif %}</div>
-        <div style="font-size:11px;color:#888">{{ unit.square_feet or '' }}{% if unit.square_feet %} sqft{% endif %}</div>
+      <div class="pi-item">
+        <div class="lbl">&#127968; Type</div>
+        <div class="val">{{ p.type|title if p.type else '—' }}</div>
       </div>
-      {% endfor %}
+      <div class="pi-item">
+        <div class="lbl">&#128200; Sale Type</div>
+        <div class="val">{{ p.sale_type|title if p.sale_type else 'Sales' }}</div>
+      </div>
+    </div>
+
+    <!-- Commission preview -->
+    <div class="comm-preview">
+      <div style="font-weight:700;margin-bottom:5px;font-size:11px;text-transform:uppercase;letter-spacing:.05em">&#9889; Commission Preview</div>
+      <div class="cprow">
+        <div class="cpi">Dev Rate: <strong>{{ p.commission_rate }}%</strong></div>
+        <div class="cpi" style="color:#aaa">&#8594;</div>
+        <div class="cpi">Your cut (REN 70%): <strong>{{ (p.commission_rate * 0.70 * 0.75)|round(2) }}% of sale price</strong></div>
+        <div class="cpi" style="font-size:11px;color:#4b7a5a">Net of SST + Company + PIC splits</div>
+      </div>
+    </div>
+
+    {% if p.developer_name %}
+    <!-- Developer info -->
+    <div class="dev-banner">
+      <div style="font-size:18px">&#127970;</div>
+      <div class="di">
+        <div class="dname">{{ p.developer_name }}</div>
+        {% if p.developer_company_no %}
+        <div class="dreg">Reg: {{ p.developer_company_no }}</div>
+        {% endif %}
+      </div>
+      <div style="font-size:11px;color:#b45309;flex:2;min-width:160px">
+        &#9432; This developer info auto-fills into your OTP form when you select this project.
+      </div>
+    </div>
+    {% endif %}
+
+    {% if p.description %}
+    <div style="font-size:13px;color:#6b7280;margin-bottom:12px;padding:10px 12px;background:#f9fafb;border-radius:7px;border-left:3px solid #e5e7eb">
+      {{ p.description }}
+    </div>
+    {% endif %}
+
+    <!-- My sales for this project -->
+    {% if p.total_sales > 0 %}
+    <div class="sales-strip">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#166534">My Sales</div>
+      <div class="ss-item">
+        <div class="sv">{{ p.total_sales }}</div>
+        <div class="sl">Deal{{ 's' if p.total_sales != 1 }}</div>
+      </div>
+      <div class="ss-item">
+        <div class="sv">RM{{ "{:,.0f}".format(p.total_value) }}</div>
+        <div class="sl">Total Value</div>
+      </div>
+      <div class="ss-item">
+        <div class="sv">RM{{ "{:,.0f}".format(p.total_commission) }}</div>
+        <div class="sl">My Commission</div>
+      </div>
+      {% if p.last_sale_date %}
+      <div class="ss-item">
+        <div class="sv" style="font-size:.9rem">{{ p.last_sale_date }}</div>
+        <div class="sl">Last Sale</div>
+      </div>
       {% endif %}
     </div>
-    {% if project.description %}
-    <div style="margin-top:10px;font-size:13px;color:#666;line-height:1.6;padding-top:10px;border-top:1px solid #f0f0f0">{{ project.description }}</div>
+    {% else %}
+    <div style="padding:8px 12px;background:#f9fafb;border-radius:7px;font-size:12px;color:#9ca3af;margin-bottom:12px">
+      No sales on this project yet. <a href="/agent/unified-submit" style="color:#16a34a;font-weight:600">Submit your first sale &#8594;</a>
+    </div>
     {% endif %}
-  </div>
-  {% endfor %}
+
+    <!-- Documents section -->
+    <div class="docs-section" id="docs-{{ p.id }}">
+      {% set docs = project_docs.get(p.id, []) %}
+      <button class="docs-toggle" onclick="toggleDocs({{ p.id }})">
+        <span>&#128206; Documents &amp; Brochures
+          {% if docs %}
+          <span style="background:#e0e7ff;color:#4f46e5;padding:1px 7px;border-radius:999px;font-size:10px;margin-left:4px">{{ docs|length }}</span>
+          {% endif %}
+        </span>
+        <span id="docsArrow-{{ p.id }}" style="color:#9ca3af">&#9660;</span>
+      </button>
+      <div class="docs-body" id="docsBody-{{ p.id }}">
+        {% if docs %}
+        {% for doc in docs %}
+        {% set ext = doc.file_type or '' %}
+        <div class="doc-item">
+          <div class="doc-icon {{ 'doc-pdf' if ext=='pdf' else 'doc-img' if ext in ('jpg','jpeg','png') else 'doc-word' if ext in ('doc','docx') else 'doc-excel' if ext in ('xlsx','xls') else 'doc-default' }}">
+            {{ '📄' if ext=='pdf' else '🖼' if ext in ('jpg','jpeg','png') else '📝' if ext in ('doc','docx') else '📊' if ext in ('xlsx','xls') else '📁' }}
+          </div>
+          <div class="doc-info">
+            <div class="dn">{{ doc.doc_label or 'Document' }}</div>
+            <div class="dm">{{ doc.filename }}{% if doc.file_size %} &bull; {{ (doc.file_size / 1024)|round(1) }} KB{% endif %}</div>
+          </div>
+          <a href="/project-doc/{{ doc.id }}" target="_blank" class="btn-dl">&#8681; Download</a>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="no-docs">&#128206; No documents uploaded yet for this project.</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div><!-- /proj-body -->
+</div><!-- /proj-card -->
+{% endfor %}
+
 {% else %}
 <div class="empty">
   <div style="font-size:40px;margin-bottom:12px">&#127962;</div>
   <h3>No Projects Found</h3>
   <p>No active projects are available right now.</p>
+  <a href="/agent/unified-submit" class="nav-btn" style="background:#16a34a;color:white;padding:9px 18px;border-radius:7px;text-decoration:none;font-size:13px;font-weight:700;display:inline-block">&#10010; New Sale</a>
 </div>
 {% endif %}
-</div>
+
+</div><!-- /wrap -->
+
 <script>
+function toggleDocs(pid) {
+  var body  = document.getElementById('docsBody-' + pid);
+  var arrow = document.getElementById('docsArrow-' + pid);
+  var open  = body.classList.toggle('open');
+  arrow.innerHTML = open ? '&#9650;' : '&#9660;';
+}
 function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
 document.addEventListener('DOMContentLoaded',function(){
-  document.querySelectorAll('#mainNav a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});});
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
 });
 </script>
 </body>

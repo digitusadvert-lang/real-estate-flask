@@ -89,6 +89,8 @@
     <div style="display:flex;align-items:center;gap:10px">
         <a href="/admin/export-data?type=payments" style="color:#a8c8ff;font-size:12px;text-decoration:none">&#128228; Export</a>
         <a href="/admin/sync-payments" style="color:#a8c8ff;font-size:12px;text-decoration:none">&#128260; Sync</a>
+        <a href="/admin/repair-payments" onclick="return confirm('Backfill any approved listings missing a payment record?')" style="color:#ffd080;font-size:12px;text-decoration:none;border:1px solid #ffd080;padding:3px 8px;border-radius:5px">&#128295; Repair</a>
+        <a href="/admin/repair-wtp-commissions" onclick="return confirm('Recalculate and backfill missing WTP Gen1/Gen2 upline commissions for all approved listings?')" style="color:#a8ffd0;font-size:12px;text-decoration:none;border:1px solid #a8ffd0;padding:3px 8px;border-radius:5px">&#9889; Repair WTP</a>
         <button class="hamburger" onclick="toggleNav()">&#9776;</button>
     </div>
 </div>
@@ -116,29 +118,34 @@
 <!-- Stats -->
 <div class="stats-grid">
     <div class="scard" style="border-top-color:#6f42c1">
-        <h3>Total Payments</h3>
+        <h3>Total Records</h3>
         <div class="scard-val" style="color:#6f42c1">{{ agent_payments|length + upline_payments|length }}</div>
         <small>{{ agent_payments|length }} agent + {{ upline_payments|length }} upline</small>
     </div>
     <div class="scard" style="border-top-color:#28a745">
-        <h3>Total Paid</h3>
+        <h3>Total Paid Out</h3>
         <div class="scard-val" style="color:#28a745">RM{{ "{:,.0f}".format(stats[1] or 0) }}</div>
+        <small>Agent + upline combined</small>
     </div>
     <div class="scard" style="border-top-color:#fd7e14">
-        <h3>Pending</h3>
+        <h3>Total Pending</h3>
         <div class="scard-val" style="color:#fd7e14">RM{{ "{:,.0f}".format(total_pending_correct or 0) }}</div>
+        <small>Awaiting payment</small>
+    </div>
+    <div class="scard" style="border-top-color:#007bff">
+        <h3>Agent Pending</h3>
+        <div class="scard-val" style="color:#007bff">RM{{ "{:,.0f}".format(total_agent_pending or 0) }}</div>
+        <small>Agent personal payouts</small>
+    </div>
+    <div class="scard" style="border-top-color:#6f42c1">
+        <h3>Upline Pending</h3>
+        <div class="scard-val" style="color:#6f42c1">RM{{ "{:,.0f}".format(total_upline_pending or 0) }}</div>
+        <small>Override / WTP payouts</small>
     </div>
     <div class="scard" style="border-top-color:#17a2b8">
         <h3>Processing</h3>
         <div class="scard-val" style="color:#17a2b8">RM{{ "{:,.0f}".format(stats[3] or 0) }}</div>
-    </div>
-    <div class="scard" style="border-top-color:#007bff">
-        <h3>Agent Pending</h3>
-        <div class="scard-val" style="color:#007bff">RM{{ "{:,.0f}".format(total_agent_amount or 0) }}</div>
-    </div>
-    <div class="scard" style="border-top-color:#6f42c1">
-        <h3>Upline Pending</h3>
-        <div class="scard-val" style="color:#6f42c1">RM{{ "{:,.0f}".format(total_upline_amount or 0) }}</div>
+        <small>In progress</small>
     </div>
 </div>
 
@@ -181,9 +188,22 @@
     {% for p in agent_payments %}
     <tr>
         <td><strong>#{{ p[0] }}</strong></td>
-        <td><div class="listing-info"><strong>#{{ p[1] }}</strong>{% if p[12] %}<div class="project-name">{{ p[12] }}</div>{% endif %}{% if p[10] %}<div>{{ p[10][:30] }}</div>{% endif %}</div></td>
-        <td>{{ p[3] }}<br><small>{{ p[4] }}</small></td>
-        <td><strong>RM{{ "{:,.2f}".format(p[5] or 0) }}</strong></td>
+        <td>
+          <div class="listing-info">
+            <strong>#{{ p[1] }}</strong>
+            {% if p[12] %}<div class="project-name">{{ p[12] }}</div>{% endif %}
+            {% if p[11] %}<div>{{ p[11] }}</div>{% endif %}
+            {% if p[13] %}<div style="color:#888">Sale: RM{{ "{:,.0f}".format(p[13]|float) }}</div>{% endif %}
+          </div>
+        </td>
+        <td>
+          {{ p[3] }}<br><small>{{ p[4] }}</small>
+          {% if p[14] %}<br><span class="badge" style="background:#e3f2fd;color:#1565c0;margin-top:2px">{{ p[14] }} {{ p[15]|int if p[15] else '' }}%</span>{% endif %}
+        </td>
+        <td>
+          <strong style="color:#28a745">RM{{ "{:,.2f}".format(p[5] or 0) }}</strong>
+          {% if p[14] %}<br><small style="color:#888">Personal payout</small>{% endif %}
+        </td>
         <td><span class="badge st-{{ p[6] }}">{{ p[6]|title }}</span></td>
         <td><small>{{ p[7] if p[7] else 'Not paid' }}</small></td>
         <td>
@@ -211,7 +231,7 @@
         <p><strong>Listing:</strong> #{{ p[1] }}{% if p[12] %} — {{ p[12] }}{% endif %}</p>
     </div>
     <div class="pay-card-row">
-        <div><div style="font-size:11px;color:#888">Amount</div><strong>RM{{ "{:,.2f}".format(p[5] or 0) }}</strong></div>
+        <div><div style="font-size:11px;color:#888">Personal Payout</div><strong style="color:#28a745">RM{{ "{:,.2f}".format(p[5] or 0) }}</strong></div>
         <div><div style="font-size:11px;color:#888">Paid Date</div><small>{{ p[7] if p[7] else 'Not paid' }}</small></div>
     </div>
     <div class="pay-card-actions">
@@ -225,7 +245,11 @@
 </div>
 
 {% else %}
-<div class="empty"><h3>No agent payments found</h3></div>
+<div class="empty">
+    <h3>No agent payments found</h3>
+    <p style="color:#888;font-size:13px">If you have approved listings not appearing here, use Repair to backfill missing records.</p>
+    <a href="/admin/repair-payments" onclick="return confirm('Backfill missing payment records?')" class="act-btn act-pay" style="padding:8px 16px;font-size:13px">&#128295; Repair Missing Payments</a>
+</div>
 {% endif %}
 
 <!-- ── UPLINE PAYMENTS ── -->
@@ -249,7 +273,15 @@
         <td><div class="listing-info"><strong>#{{ p[1] }}</strong>{% if p[14] %}<div class="project-name">{{ p[14] }}</div>{% endif %}</div></td>
         <td>{{ p[3] or 'Unknown' }}<br><small>{{ p[4] or '' }}</small></td>
         <td>{{ p[11] or 'N/A' }}<br><small>{{ p[12] or '' }}</small></td>
-        <td>{% if p[15]=='indirect' %}<span class="type-tag type-indirect">Indirect</span>{% else %}<span class="type-tag type-direct">Direct</span>{% endif %} {{ p[16] or 0 }}%</td>
+        <td>
+          {% if p[15]=='pic' %}<span class="type-tag type-pic">PIC</span>
+          {% elif p[15]=='wtp_gen1' %}<span class="type-tag type-wtp">WTP Gen1</span>
+          {% elif p[15]=='wtp_gen2' %}<span class="type-tag type-wtp">WTP Gen2</span>
+          {% elif p[15]=='override' %}<span class="type-tag type-direct">Override</span>
+          {% elif p[15]=='indirect' %}<span class="type-tag type-indirect">Indirect</span>
+          {% else %}<span class="type-tag type-direct">Direct</span>{% endif %}
+          {{ p[16] or 0 }}%
+        </td>
         <td><strong>RM{{ "{:,.2f}".format(p[5] or 0) }}</strong></td>
         <td><span class="badge st-{{ p[6] }}">{{ p[6]|title }}</span></td>
         <td>
@@ -276,7 +308,13 @@
     <div class="pay-card-body">
         <p><strong>Upline:</strong> {{ p[3] or 'Unknown' }}</p>
         <p><strong>From:</strong> {{ p[11] or 'N/A' }}</p>
-        <p><strong>Type:</strong> {% if p[15]=='indirect' %}Indirect{% else %}Direct{% endif %} ({{ p[16] or 0 }}%)</p>
+        <p><strong>Type:</strong>
+          {% if p[15]=='pic' %}PIC
+          {% elif p[15] in ('wtp_gen1','wtp_gen2') %}{{ p[15]|upper }}
+          {% elif p[15]=='override' %}Override
+          {% elif p[15]=='indirect' %}Indirect
+          {% else %}Direct{% endif %}
+          ({{ p[16] or 0 }}%)</p>
     </div>
     <div class="pay-card-row">
         <div><div style="font-size:11px;color:#888">Amount</div><strong>RM{{ "{:,.2f}".format(p[5] or 0) }}</strong></div>

@@ -288,6 +288,10 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
           data-type="{{ p.project_type }}"
           data-saletype="{{ p.sale_type }}"
           data-units="{{ p.units | tojson | e }}"
+          data-developer="{{ p.developer_name or '' }}"
+          data-company-no="{{ p.developer_company_no or '' }}"
+          data-dev-phone="{{ p.developer_phone or '' }}"
+          data-dev-addr="{{ p.developer_address or '' }}"
         >{{ p.project_name }} — {{ p.location or p.category|title }}</option>
         {% endfor %}
       </select>
@@ -341,8 +345,8 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
         <input type="text" name="partyA_name" placeholder="Full legal name" value="{{ form.get('partyA_name','') }}">
       </div>
       <div class="form-group">
-        <label>NRIC / Passport No.</label>
-        <input type="text" name="partyA_ic" placeholder="XXXXXX-XX-XXXX" value="{{ form.get('partyA_ic','') }}">
+        <label id="partyAIcLbl">NRIC / Passport No.</label>
+        <input type="text" name="partyA_ic" id="partyA_ic" placeholder="XXXXXX-XX-XXXX" value="{{ form.get('partyA_ic','') }}">
       </div>
       <div class="form-group">
         <label>Phone Number</label>
@@ -387,8 +391,14 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
         <input type="text" name="np_project" placeholder="e.g. Nadi Bangsar" value="{{ form.get('np_project','') }}">
       </div>
       <div class="form-group">
-        <label>Developer Name</label>
-        <input type="text" name="np_developer" placeholder="Developer company" value="{{ form.get('np_developer','') }}">
+        <label>Developer Name
+          <span id="devAutoNote" style="font-size:11px;color:#16a34a;font-weight:400;margin-left:6px"></span>
+        </label>
+        <input type="text" name="np_developer" id="np_developer"
+               placeholder="Auto-filled when project selected"
+               value="{{ form.get('np_developer','') }}"
+               style="background:#f0fdf4;">
+        <small style="color:#16a34a">&#9432; Auto-filled from project. You can still edit if needed.</small>
       </div>
       <div class="form-group">
         <label>Unit / Lot No.</label>
@@ -396,7 +406,11 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
       </div>
       <div class="form-group">
         <label>Selling Price (RM)</label>
-        <input type="text" name="np_price" placeholder="e.g. 680,000.00" value="{{ form.get('np_price','') }}">
+        <input type="text" name="np_price" id="np_price" placeholder="e.g. 1,000,000.00" value="{{ form.get('np_price','') }}" oninput="calcGross('np')">
+      </div>
+      <div class="form-group">
+        <label>Developer Comm Rate (%)</label>
+        <input type="number" name="np_comm_rate" id="np_comm_rate" placeholder="e.g. 2" min="0.1" max="10" step="0.1" value="{{ form.get('np_comm_rate','2') }}" oninput="calcGross('np')">
       </div>
       <div class="form-group">
         <label>Booking Fee (RM)</label>
@@ -419,6 +433,18 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
         <input type="text" name="np_remarks" placeholder="Furniture package, rebate, etc." value="{{ form.get('np_remarks','') }}">
       </div>
     </div>
+    <!-- Gross Commission Preview -->
+    <div id="np_gross_preview" style="display:none;margin-top:12px;padding:14px 16px;background:#ecfdf5;border:1.5px solid #86efac;border-radius:8px;font-size:13px">
+      <div style="font-weight:700;color:#166534;margin-bottom:6px">💰 Gross Commission Preview (Challenge / Ranking Contribution)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;color:#1a3a2a">
+        <span>Sale Price: <strong id="np_prev_price">—</strong></span>
+        <span>×</span>
+        <span>Dev Rate: <strong id="np_prev_rate">—</strong></span>
+        <span>=</span>
+        <span style="font-size:1.1rem;font-weight:800;color:#16a34a">Gross: <strong id="np_prev_gross">—</strong></span>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:#4b7a5a">⚡ This gross amount will appear on your dashboard immediately after submission, counting towards your yearly target and rank promotion progress.</div>
+    </div>
   </div>
 
   <!-- STEP 5: SUB SALES -->
@@ -427,7 +453,7 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
     <div class="form-row three">
       <div class="form-group">
         <label>Purchase Price (RM)</label>
-        <input type="text" name="ss_price" placeholder="e.g. 550,000.00" value="{{ form.get('ss_price','') }}">
+        <input type="text" name="ss_price" id="ss_price" placeholder="e.g. 550,000.00" value="{{ form.get('ss_price','') }}" oninput="calcGross('ss')">
       </div>
       <div class="form-group span2">
         <label>Price in Words</label>
@@ -449,10 +475,26 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
         <label>SPA Target Date</label>
         <input type="date" name="ss_spa_date" value="{{ form.get('ss_spa_date','') }}">
       </div>
-      <div class="form-group span3">
+      <div class="form-group">
+        <label>Agent Comm Rate (%)</label>
+        <input type="number" name="ss_comm_rate" id="ss_comm_rate" placeholder="e.g. 2" min="0.1" max="5" step="0.1" value="{{ form.get('ss_comm_rate','2') }}" oninput="calcGross('ss')">
+      </div>
+      <div class="form-group span2">
         <label>Special Conditions (if any)</label>
         <input type="text" name="ss_special" placeholder="Leave blank if none" value="{{ form.get('ss_special','') }}">
       </div>
+    </div>
+    <!-- Gross Commission Preview -->
+    <div id="ss_gross_preview" style="display:none;margin-top:12px;padding:14px 16px;background:#ecfdf5;border:1.5px solid #86efac;border-radius:8px;font-size:13px">
+      <div style="font-weight:700;color:#166534;margin-bottom:6px">💰 Gross Commission Preview (Challenge / Ranking Contribution)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;color:#1a3a2a">
+        <span>Sale Price: <strong id="ss_prev_price">—</strong></span>
+        <span>×</span>
+        <span>Comm Rate: <strong id="ss_prev_rate">—</strong></span>
+        <span>=</span>
+        <span style="font-size:1.1rem;font-weight:800;color:#16a34a">Gross: <strong id="ss_prev_gross">—</strong></span>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:#4b7a5a">⚡ This gross amount will appear on your dashboard immediately after submission.</div>
     </div>
   </div>
 
@@ -462,7 +504,7 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
     <div class="form-row three">
       <div class="form-group">
         <label>Monthly Rent (RM)</label>
-        <input type="text" name="rn_rent" placeholder="e.g. 2,500.00" value="{{ form.get('rn_rent','') }}">
+        <input type="text" name="rn_rent" id="rn_rent" placeholder="e.g. 2,500.00" value="{{ form.get('rn_rent','') }}" oninput="calcGross('rn')">
       </div>
       <div class="form-group">
         <label>Security Deposit (RM)</label>
@@ -511,9 +553,24 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
         <label>Key / Access Card Deposit</label>
         <input type="text" name="rn_key_dep" placeholder="e.g. 200.00" value="{{ form.get('rn_key_dep','') }}">
       </div>
-      <div class="form-group span3">
+      <div class="form-group">
+        <label>Comm (Months of Rent)</label>
+        <input type="number" name="rn_comm_months" id="rn_comm_months" placeholder="e.g. 1" min="0.5" max="3" step="0.5" value="{{ form.get('rn_comm_months','1') }}" oninput="calcGross('rn')">
+      </div>
+      <div class="form-group span2">
         <label>Special Conditions / Inclusions</label>
         <input type="text" name="rn_special" placeholder="e.g. Air-con servicing by landlord, no pets" value="{{ form.get('rn_special','') }}">
+      </div>
+    </div>
+    <!-- Gross Commission Preview -->
+    <div id="rn_gross_preview" style="display:none;margin-top:12px;padding:14px 16px;background:#ecfdf5;border:1.5px solid #86efac;border-radius:8px;font-size:13px">
+      <div style="font-weight:700;color:#166534;margin-bottom:6px">💰 Gross Commission Preview</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;color:#1a3a2a">
+        <span>Monthly Rent: <strong id="rn_prev_rent">—</strong></span>
+        <span>×</span>
+        <span>Comm Months: <strong id="rn_prev_months">—</strong></span>
+        <span>=</span>
+        <span style="font-size:1.1rem;font-weight:800;color:#16a34a">Gross: <strong id="rn_prev_gross">—</strong></span>
       </div>
     </div>
   </div>
@@ -727,6 +784,11 @@ function setType(t, init) {
   var cfg = TYPE_CFG[t];
   document.getElementById('partyATitle').textContent = cfg.partyA;
   document.getElementById('partyALbl').textContent   = cfg.partyA.split('/')[0].trim();
+  // Swap IC label and placeholder for NP type (Developer = company, not person)
+  var icLbl = document.getElementById('partyAIcLbl');
+  var icInp = document.getElementById('partyA_ic');
+  if (icLbl) icLbl.textContent = (t === 'np') ? 'Company Reg. No. (SSM)' : 'NRIC / Passport No.';
+  if (icInp) icInp.placeholder = (t === 'np') ? 'e.g. 123456-X' : 'XXXXXX-XX-XXXX';
   document.getElementById('partyBTitle').textContent = cfg.partyB;
   document.getElementById('partyBLbl').textContent   = cfg.partyB.split('/')[0].trim();
   document.getElementById('ws1lbl').textContent      = cfg.ws1;
@@ -806,13 +868,20 @@ function updateActBar() {
   var cfg = TYPE_CFG[curType];
   var a = cfg.partyA.split('/')[0].trim();
   var b = cfg.partyB.split('/')[0].trim();
+  // NP type: show "Submit to Admin" at stage 0 (before signing) — OTP flow
+  var npSubmitBtn = (curType === 'np')
+    ? '<button type="button" class="btn-submit-approval" onclick="submitForApproval()" style="background:#7c3aed">&#128203; Submit OTP to Admin</button>'
+    : '';
+
   var html = {
     0: '<button type="button" class="btn-draft" onclick="doSave(\'draft\')">💾 Save Draft</button>'
      + '<button type="button" class="btn-draft" onclick="printOTP()" style="background:#1a3a2a">&#128438; Print OTP</button>'
+     + npSubmitBtn
      + '<button type="button" class="btn-send"  onclick="openSendModal(\'pA\')">📤 Send to ' + a + ' →</button>',
     1: '<button type="button" class="btn-done"  onclick="partyDone(\'pA\')">✓ Done – Return to Agent</button>',
     2: '<button type="button" class="btn-draft" onclick="doSave(\'save\')">💾 Save</button>'
      + '<button type="button" class="btn-draft" onclick="printOTP()" style="background:#1a3a2a">&#128438; Print OTP</button>'
+     + (curType === 'np' ? npSubmitBtn : '')
      + '<button type="button" class="btn-send"  onclick="openSendModal(\'pB\')">📤 Send to ' + b + ' →</button>',
     3: '<button type="button" class="btn-done"  onclick="partyDone(\'pB\')">✓ Done – Return to Agent</button>',
     4: '<button type="button" class="btn-draft" onclick="printOTP()">🖨 Print</button>'
@@ -1296,6 +1365,37 @@ function fillFromProject(sel) {
   var ptype    = opt.getAttribute('data-type')     || '';
   var saletype = opt.getAttribute('data-saletype') || 'sales';
 
+  // Auto-fill developer fields from project data
+  var devName   = opt.getAttribute('data-developer')  || '';
+  var devCompNo = opt.getAttribute('data-company-no') || '';
+  var devPhone  = opt.getAttribute('data-dev-phone')  || '';
+  var devAddr   = opt.getAttribute('data-dev-addr')   || '';
+
+  // Fill np_developer field (New Project section)
+  var npDevEl = document.querySelector('[name="np_developer"]');
+  if (npDevEl) { npDevEl.value = devName; }
+
+  // Fill np_project field
+  var npProjEl = document.querySelector('[name="np_project"]');
+  if (npProjEl && !npProjEl.value) npProjEl.value = name;
+
+  // For NP type: Party A = Developer — auto-fill if fields are empty
+  if (devName) {
+    var pA_name = document.querySelector('[name="partyA_name"]');
+    var pA_ic   = document.querySelector('[name="partyA_ic"]');
+    var pA_phone= document.querySelector('[name="partyA_phone"]');
+    var pA_addr = document.querySelector('[name="partyA_addr"]');
+    if (pA_name  && !pA_name.value)  pA_name.value  = devName;
+    if (pA_phone && !pA_phone.value && devPhone) pA_phone.value = devPhone;
+    if (pA_addr  && !pA_addr.value  && devAddr)  pA_addr.value  = devAddr;
+    // Auto-fill company reg no into partyA_ic for NP type
+    var pA_ic = document.querySelector('[name="partyA_ic"]');
+    if (pA_ic && !pA_ic.value && devCompNo) pA_ic.value = devCompNo;
+    // Show a note that these were auto-filled
+    var devNote = document.getElementById('devAutoNote');
+    if (devNote) devNote.textContent = '(auto-filled from project)';
+  }
+
   // Auto-fill address from project location
   var addrEl = document.getElementById('f_prop_address');
   if (addrEl && !addrEl.value) addrEl.value = location;
@@ -1474,6 +1574,53 @@ window.addEventListener('load', function(){
 });
 
 // ── SUBMIT FOR APPROVAL ──
+function calcGross(t) {
+  var price = 0, rate = 0, gross = 0;
+  if (t === 'np') {
+    var pEl = document.getElementById('np_price');
+    var rEl = document.getElementById('np_comm_rate');
+    if (!pEl || !rEl) return;
+    price = parseFloat((pEl.value || '0').replace(/,/g,'').replace(/RM/gi,'')) || 0;
+    rate  = parseFloat(rEl.value || '2') || 2;
+    gross = price * (rate / 100);
+    var prev = document.getElementById('np_gross_preview');
+    if (prev) {
+      prev.style.display = (price > 0) ? 'block' : 'none';
+      document.getElementById('np_prev_price').textContent = 'RM ' + price.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+      document.getElementById('np_prev_rate').textContent  = rate + '%';
+      document.getElementById('np_prev_gross').textContent = 'RM ' + gross.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+    }
+  } else if (t === 'ss') {
+    var pEl = document.getElementById('ss_price');
+    var rEl = document.getElementById('ss_comm_rate');
+    if (!pEl || !rEl) return;
+    price = parseFloat((pEl.value || '0').replace(/,/g,'').replace(/RM/gi,'')) || 0;
+    rate  = parseFloat(rEl.value || '2') || 2;
+    gross = price * (rate / 100);
+    var prev = document.getElementById('ss_gross_preview');
+    if (prev) {
+      prev.style.display = (price > 0) ? 'block' : 'none';
+      document.getElementById('ss_prev_price').textContent = 'RM ' + price.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+      document.getElementById('ss_prev_rate').textContent  = rate + '%';
+      document.getElementById('ss_prev_gross').textContent = 'RM ' + gross.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+    }
+  } else if (t === 'rn') {
+    var rentEl   = document.getElementById('rn_rent');
+    var monthsEl = document.getElementById('rn_comm_months');
+    if (!rentEl || !monthsEl) return;
+    var rent   = parseFloat((rentEl.value || '0').replace(/,/g,'').replace(/RM/gi,'')) || 0;
+    var months = parseFloat(monthsEl.value || '1') || 1;
+    gross = rent * months;
+    var prev = document.getElementById('rn_gross_preview');
+    if (prev) {
+      prev.style.display = (rent > 0) ? 'block' : 'none';
+      document.getElementById('rn_prev_rent').textContent   = 'RM ' + rent.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+      document.getElementById('rn_prev_months').textContent = months + ' month(s)';
+      document.getElementById('rn_prev_gross').textContent  = 'RM ' + gross.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});
+    }
+  }
+}
+
 function submitForApproval() {
   var subId = document.getElementById('h_id').value;
   if (!subId) {

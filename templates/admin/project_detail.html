@@ -1,253 +1,362 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>{{ project.name }} — Project Detail</title>
-    <style>
-        *,*::before,*::after { box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; margin: 0; background: #f0f2f5; color: #1a2a3a; }
-        .topbar { background: #2c3e50; color: white; padding: 12px 16px; display: flex;
-                  align-items: center; justify-content: space-between; gap: 8px;
-                  position: sticky; top: 0; z-index: 100; }
-        .topbar-title { font-size: 1rem; font-weight: 700; max-width: 55%; overflow: hidden;
-                        text-overflow: ellipsis; white-space: nowrap; }
-        .topbar-right { display: flex; align-items: center; gap: 10px; }
-        .topbar-right a { color: #a8c8ff; text-decoration: none; font-size: 13px; white-space: nowrap; }
-        .hamburger { display: none; background: none; border: none; color: white;
-                     font-size: 22px; cursor: pointer; padding: 2px 6px; }
-        .nav-bar { background: white; padding: 10px 16px; display: flex; flex-wrap: wrap;
-                   gap: 4px; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
-        .nav-bar a { color: #007bff; text-decoration: none; font-weight: 600; font-size: 13px;
-                     padding: 5px 10px; border-radius: 6px; white-space: nowrap; }
-        .nav-bar a:hover { background: #f0f7ff; }
-        .nav-bar a.nav-btn { background: #2563eb; color: white; }
-        .nav-bar a.nav-logout { color: #dc3545; }
-        .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
-        .card { background: white; border-radius: 10px; padding: 20px;
-                box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
-        .card-title { font-size: 14px; font-weight: 700; color: #1a2a3a; margin-bottom: 16px;
-                      padding-bottom: 10px; border-bottom: 2px solid #f0f0f0;
-                      display: flex; align-items: center; gap: 8px; }
-        /* project header card */
-        .proj-header-card { background: linear-gradient(135deg, #667eea, #764ba2);
-                            color: white; border-radius: 10px; padding: 20px;
-                            margin-bottom: 16px; display: flex; justify-content: space-between;
-                            align-items: flex-start; flex-wrap: wrap; gap: 12px; }
-        .proj-header-card h1 { margin: 0 0 8px; font-size: 1.3rem; }
-        .proj-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        /* badges */
-        .badge { padding: 4px 10px; border-radius: 10px; font-size: 11px; font-weight: 700;
-                 display: inline-block; margin-right: 4px; }
-        .badge-white { background: rgba(255,255,255,.25); color: white; }
-        .badge-active   { background: #d4edda; color: #155724; }
-        .badge-inactive { background: #e2e3e5; color: #383d41; }
-        /* info grid */
-        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .info-item dt { font-size: 11px; color: #888; text-transform: uppercase;
-                        letter-spacing: .06em; margin-bottom: 3px; font-weight: 600; }
-        .info-item dd { font-size: 14px; font-weight: 600; color: #1a2a3a; margin: 0; }
-        /* commission */
-        .comm-big { font-size: 2.8rem; font-weight: 900; color: #2563eb;
-                    text-align: center; padding: 12px 0 4px; }
-        .comm-sub { text-align: center; font-size: 12px; color: #888; margin-bottom: 12px; }
-        .comm-splits { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
-        .split-box { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; text-align: center; }
-        .split-val { font-size: 1.2rem; font-weight: 800; }
-        .split-lbl { font-size: 11px; color: #888; margin-top: 2px; }
-        /* action buttons */
-        .act-btn { display: inline-block; padding: 8px 16px; border-radius: 6px; font-size: 13px;
-                   font-weight: 600; text-decoration: none; border: none; cursor: pointer;
-                   white-space: nowrap; }
-        .act-blue   { background: #007bff; color: white; }
-        .act-yellow { background: #ffc107; color: #000; }
-        .act-green  { background: #28a745; color: white; }
-        .act-orange { background: #fd7e14; color: white; }
-        .act-grey   { background: #6c757d; color: white; }
-        /* table */
-        .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px;
-                    box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-        table { width: 100%; border-collapse: collapse; background: white; min-width: 480px; }
-        th { background: #2c3e50; color: white; padding: 10px 12px; text-align: left;
-             font-size: 12px; white-space: nowrap; }
-        td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
-        tr:last-child td { border-bottom: none; }
-        tr:hover td { background: #fafbfc; }
-        .empty-table { padding: 40px; text-align: center; color: #888; }
-        /* flash */
-        .flash-s { background: #d4edda; color: #155724; padding: 10px 14px; border-radius: 8px;
-                   margin-bottom: 14px; font-size: 13px; border-left: 4px solid #28a745; }
-        /* mobile */
-        @media(max-width:640px) {
-            .hamburger { display: block; }
-            .nav-bar { display: none; flex-direction: column; align-items: stretch;
-                       padding: 8px 12px; gap: 2px; }
-            .nav-bar.open { display: flex; }
-            .nav-bar a { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
-            .nav-bar a:last-child { border-bottom: none; }
-            .wrap { padding: 10px; }
-            .proj-header-card { flex-direction: column; }
-            .info-grid { grid-template-columns: 1fr; }
-            .comm-splits { grid-template-columns: repeat(3,1fr); }
-            .proj-header-actions { width: 100%; }
-            .act-btn { font-size: 12px; padding: 7px 12px; }
-            td,th { padding: 8px 10px; font-size: 12px; }
-        }
-    </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>{{ project.name }} — Project Detail</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:8px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+/* hero banner */
+.hero{background:linear-gradient(135deg,#4f2d9e 0%,#7c3aed 60%,#a855f7 100%);border-radius:14px;padding:28px 30px;margin-bottom:18px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.hero-left h1{color:white;margin:0 0 8px;font-size:1.6rem;font-weight:800}
+.hero-tags{display:flex;flex-wrap:wrap;gap:6px}
+.htag{background:rgba(255,255,255,.2);color:white;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.htag.active{background:#22c55e;color:white}
+.htag.inactive{background:#ef4444;color:white}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn-edit{background:#f59e0b;color:white;padding:8px 18px;border:none;border-radius:7px;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.btn-toggle{padding:8px 18px;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.btn-deactivate{background:#ef4444;color:white}
+.btn-activate{background:#22c55e;color:white}
+/* grid layout */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+/* cards */
+.card{background:white;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#7a8fa0;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid #f0f0f0;display:flex;align-items:center;gap:7px}
+/* info grid */
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.info-item{}
+.info-item .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;font-weight:700;margin-bottom:3px}
+.info-item .val{font-size:14px;font-weight:700;color:#1a2a3a}
+/* commission display */
+.comm-rate{text-align:center;font-size:3rem;font-weight:900;color:#7c3aed;line-height:1;margin:10px 0 4px}
+.comm-subtitle{text-align:center;font-size:12px;color:#888;margin-bottom:14px}
+.comm-split{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.split-box{text-align:center;padding:10px 8px;border-radius:8px;background:#f9fafb;border:1px solid #e5e7eb}
+.split-box .spct{font-size:1.3rem;font-weight:800}
+.split-box .slbl{font-size:10px;color:#888;margin-top:2px;font-weight:600;text-transform:uppercase}
+.pic-box{background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:10px}
+/* developer section */
+.dev-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dev-badge{display:inline-flex;align-items:center;gap:5px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;color:#92400e;margin-bottom:10px}
+/* units table */
+.tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid #e5e7eb}
+table{width:100%;border-collapse:collapse;min-width:500px}
+thead th{background:#1e293b;color:white;padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+tbody td{padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#f9fafb}
+.st-available{color:#16a34a;font-weight:700}
+.st-sold{color:#dc2626;font-weight:700}
+.st-reserved{color:#d97706;font-weight:700}
+/* doc upload */
+.upload-form{display:flex;gap:10px;flex-wrap:wrap;padding:14px;background:#f8fafc;border:1.5px dashed #cbd5e1;border-radius:8px;margin-bottom:14px;align-items:flex-end}
+.upload-form .fg{display:flex;flex-direction:column;gap:4px;flex:1;min-width:150px}
+.upload-form label{font-size:12px;font-weight:600;color:#555}
+.upload-form input[type=text],.upload-form input[type=file]{padding:7px 10px;border:1px solid #dde;border-radius:6px;font-size:13px;background:white;width:100%}
+.btn-upload{background:#16a34a;color:white;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap;height:36px}
+/* doc list */
+.doc-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid #f0f0f0}
+.doc-row:last-child{border-bottom:none}
+.doc-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.doc-pdf{background:#fee2e2}
+.doc-img{background:#dbeafe}
+.doc-word{background:#e0e7ff}
+.doc-excel{background:#dcfce7}
+.doc-default{background:#f3f4f6}
+.doc-info{flex:1}
+.doc-info .dname{font-size:13px;font-weight:700;color:#1a2a3a}
+.doc-info .dmeta{font-size:11px;color:#9ca3af;margin-top:2px}
+.doc-actions{display:flex;gap:6px}
+.btn-dl{background:#eff6ff;color:#2563eb;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn-del{background:#fff1f2;color:#dc2626;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer}
+.empty-docs{padding:24px;text-align:center;color:#9ca3af;font-size:13px}
+/* flash */
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+.flash-success{background:#dcfce7;color:#166534;border-left:4px solid #16a34a}
+.flash-error{background:#fee2e2;color:#991b1b;border-left:4px solid #dc2626}
+/* sales stats */
+.stat-mini{display:flex;flex-direction:column;align-items:center;padding:12px 8px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb}
+.stat-mini .sv{font-size:1.4rem;font-weight:800;color:#1a2a3a}
+.stat-mini .sl{font-size:10px;color:#888;margin-top:3px;text-transform:uppercase;font-weight:600}
+@media(max-width:768px){
+  .grid2,.grid3{grid-template-columns:1fr}
+  .hamburger{display:block}
+  .nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px}
+  .nav-bar.open{display:flex}
+  .hero{flex-direction:column}
+  .comm-split{grid-template-columns:1fr 1fr 1fr}
+  .info-grid{grid-template-columns:1fr 1fr}
+}
+</style>
 </head>
 <body>
 
 <div class="topbar">
-    <div class="topbar-title">&#127962; {{ project.name }}</div>
-    <div class="topbar-right">
-        <a href="/admin/projects">&#8592; Projects</a>
-        <a href="/admin/edit-project/{{ project.id }}">&#9999; Edit</a>
-        <button class="hamburger" onclick="toggleNav()">&#9776;</button>
-    </div>
+  <div class="topbar-title">&#127962; Project Detail</div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <a href="/admin/projects" style="color:#a8c8ff;text-decoration:none;font-size:13px">&#8592; Projects</a>
+    <button class="hamburger" onclick="toggleNav()">&#9776;</button>
+  </div>
 </div>
 <div class="nav-bar" id="mainNav">
-    <a href="/admin/dashboard">&#128202; Dashboard</a>
-    <a href="/admin/projects">&#127962; Projects</a>
-    <a href="/admin/create-project" class="nav-btn">&#10010; New</a>
-    <a href="/admin/agents">&#128101; Agents</a>
-    <a href="/admin/payments">&#9993; Payments</a>
-    <a href="/admin/commissions">&#128176; Commissions</a>
-    <a href="/admin/agent-performance">&#128200; Performance</a>
-    <a href="/admin/commission-calculator">&#9889; Calc</a>
-    <a href="/admin/settings">&#9881; Settings</a>
-    <a href="/logout" class="nav-logout">&#128274; Logout</a>
+  <a href="/admin/dashboard">&#128202; Dashboard</a>
+  <a href="/admin/projects">&#127962; Projects</a>
+  <a href="/admin/create-project" class="nav-btn">&#10010; New Project</a>
+  <a href="/admin/agents">&#128101; Agents</a>
+  <a href="/admin/add-agent" style="background:#16a34a;color:white;border-radius:6px;padding:5px 10px;">&#10010; Add Agent</a>
+  <a href="/admin/payments">&#9993; Payments</a>
+  <a href="/admin/commissions">&#128176; Commissions</a>
+  <a href="/admin/unified-submissions">&#128203; Submissions</a>
+  <a href="/admin/agent-performance">&#128200; Performance</a>
+  <a href="/admin/commission-calculator">&#9889; Calc</a>
+  <a href="/admin/settings">&#9881; Settings</a>
+  <a href="/logout" style="color:#dc3545;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;text-decoration:none">&#128274; Logout</a>
 </div>
 
 <div class="wrap">
 
-{% if success %}
-<div class="flash-s">&#10003; {{ success }}</div>
-{% endif %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="flash flash-{{ cat }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
 
-<!-- Project Header -->
-<div class="proj-header-card">
-    <div>
-        <h1>{{ project.name }}</h1>
-        <div>
-            <span class="badge badge-white">{{ project.category|title }}</span>
-            <span class="badge badge-white">{{ project.project_type|title }}</span>
-            <span class="badge badge-white">{{ project.sale_type|title }}</span>
-            <span class="badge {{ 'badge-active' if project.is_active else 'badge-inactive' }}">
-                {{ 'Active' if project.is_active else 'Inactive' }}
-            </span>
-        </div>
+{% if success %}<div class="flash flash-success">&#10003; {{ success }}</div>{% endif %}
+
+<!-- HERO BANNER -->
+<div class="hero">
+  <div class="hero-left">
+    <h1>{{ project.name }}</h1>
+    <div class="hero-tags">
+      <span class="htag">{{ project.category|title }}</span>
+      <span class="htag">{{ project.project_type|title }}</span>
+      <span class="htag">{{ project.sale_type|title }}</span>
+      <span class="htag {{ 'active' if project.is_active else 'inactive' }}">
+        {{ 'Active' if project.is_active else 'Inactive' }}
+      </span>
     </div>
-    <div class="proj-header-actions">
-        <a href="/admin/edit-project/{{ project.id }}" class="act-btn act-yellow">&#9999; Edit Project</a>
-        {% if project.is_active %}
-        <a href="/admin/toggle-project/{{ project.id }}" class="act-btn act-orange"
-           onclick="return confirm('Deactivate this project?')">&#9208; Deactivate</a>
-        {% else %}
-        <a href="/admin/toggle-project/{{ project.id }}" class="act-btn act-green"
-           onclick="return confirm('Activate this project?')">&#9654; Activate</a>
-        {% endif %}
-    </div>
+  </div>
+  <div class="hero-actions">
+    <a href="/admin/edit-project/{{ project.id }}" class="btn-edit">&#9998; Edit Project</a>
+    <a href="/admin/toggle-project/{{ project.id }}" class="btn-toggle {{ 'btn-deactivate' if project.is_active else 'btn-activate' }}"
+       onclick="return confirm('{{ 'Deactivate' if project.is_active else 'Activate' }} this project?')">
+      {{ '&#9646;&#9646; Deactivate' if project.is_active else '&#9654; Activate' }}
+    </a>
+  </div>
 </div>
 
-<!-- Info + Commission side by side -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+<!-- ROW 1: Project Info + Commission Structure -->
+<div class="grid2">
 
-    <div class="card">
-        <div class="card-title">&#128203; Project Information</div>
-        <div class="info-grid">
-            <dl class="info-item"><dt>Location</dt><dd>{{ project.location or '—' }}</dd></dl>
-            <dl class="info-item"><dt>Default Commission</dt><dd>{{ project.commission_rate }}%</dd></dl>
-            <dl class="info-item"><dt>Status</dt><dd>{{ project.status|title }}</dd></dl>
-            <dl class="info-item"><dt>Sale Type</dt><dd>{{ project.sale_type|title }}</dd></dl>
-            <dl class="info-item"><dt>Created</dt><dd>{{ project.created_at }}</dd></dl>
-            <dl class="info-item"><dt>By</dt><dd>{{ project.created_by }}</dd></dl>
-            {% if project.updated_at %}
-            <dl class="info-item"><dt>Last Updated</dt><dd>{{ project.updated_at }}</dd></dl>
-            {% endif %}
+  <!-- Project Information -->
+  <div class="card">
+    <div class="card-title">&#128203; Project Information</div>
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="lbl">Location</div>
+        <div class="val">{{ project.location or '—' }}</div>
+      </div>
+      <div class="info-item">
+        <div class="lbl">Default Commission</div>
+        <div class="val">{{ project.commission_rate }}%</div>
+      </div>
+      <div class="info-item">
+        <div class="lbl">Status</div>
+        <div class="val" style="color:{{ '#16a34a' if project.is_active else '#dc2626' }}">
+          {{ 'Active' if project.is_active else 'Inactive' }}
         </div>
-        {% if project.description %}
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #f0f0f0">
-            <dt style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.06em;font-weight:600">Description</dt>
-            <dd style="margin:4px 0 0;font-size:13px;color:#444;line-height:1.6">{{ project.description }}</dd>
-        </div>
-        {% endif %}
+      </div>
+      <div class="info-item">
+        <div class="lbl">Sale Type</div>
+        <div class="val">{{ project.sale_type|title }}</div>
+      </div>
+      <div class="info-item">
+        <div class="lbl">Created</div>
+        <div class="val">{{ project.created_at }}</div>
+      </div>
+      <div class="info-item">
+        <div class="lbl">By</div>
+        <div class="val">{{ project.created_by }}</div>
+      </div>
+      {% if project.updated_at %}
+      <div class="info-item" style="grid-column:1/-1">
+        <div class="lbl">Last Updated</div>
+        <div class="val">{{ project.updated_at }}</div>
+      </div>
+      {% endif %}
+      {% if project.description %}
+      <div class="info-item" style="grid-column:1/-1;margin-top:4px;padding-top:10px;border-top:1px solid #f0f0f0">
+        <div class="lbl">Description</div>
+        <div class="val" style="font-weight:400;color:#444;font-size:13px">{{ project.description }}</div>
+      </div>
+      {% endif %}
     </div>
+  </div>
 
-    <div class="card">
-        <div class="card-title">&#128200; Commission Structure</div>
-        <div class="comm-big">{{ project.comm_dev_rate }}%</div>
-        <div class="comm-sub">Developer Rate &nbsp;&bull;&nbsp; SST: {{ project.comm_sst_rate }}%</div>
-        <div class="comm-splits">
-            <div class="split-box">
-                <div class="split-val" style="color:#6f42c1">{{ project.comm_company_pct }}%</div>
-                <div class="split-lbl">Company</div>
-            </div>
-            <div class="split-box">
-                <div class="split-val" style="color:#007bff">{{ project.comm_pic_pct }}%</div>
-                <div class="split-lbl">PIC</div>
-            </div>
-            <div class="split-box">
-                <div class="split-val" style="color:#28a745">{{ project.comm_agents_pct }}%</div>
-                <div class="split-lbl">Agents</div>
-            </div>
-        </div>
-        {% if project.comm_pic_name %}
-        <div style="margin-top:12px;background:#f8f9fa;border-radius:7px;padding:10px 12px;font-size:13px">
-            <strong>PIC:</strong> {{ project.comm_pic_name }}
-            <span style="color:#888;font-size:12px">({{ project.comm_pic_rank }})</span>
-        </div>
-        {% endif %}
-        <div style="margin-top:12px">
-            <div style="font-size:11px;color:#888;margin-bottom:4px">Commission Rules</div>
-            <ul style="font-size:12px;color:#666;margin:0;padding-left:16px;line-height:1.8">
-                <li>Default rate for all sales in this project</li>
-                <li>Unit-specific rates override this default</li>
-                <li>Net = Gross &divide; (1 + SST%)</li>
-            </ul>
-        </div>
+  <!-- Commission Structure -->
+  <div class="card">
+    <div class="card-title">&#128200; Commission Structure</div>
+    <div class="comm-rate">{{ project.comm_dev_rate }}%</div>
+    <div class="comm-subtitle">Developer Rate &bull; SST: {{ project.comm_sst_rate }}%</div>
+    <div class="comm-split">
+      <div class="split-box">
+        <div class="spct" style="color:#7c3aed">{{ project.comm_company_pct }}%</div>
+        <div class="slbl">Company</div>
+      </div>
+      <div class="split-box">
+        <div class="spct" style="color:#2563eb">{{ project.comm_pic_pct }}%</div>
+        <div class="slbl">PIC</div>
+      </div>
+      <div class="split-box">
+        <div class="spct" style="color:#16a34a">{{ project.comm_agents_pct }}%</div>
+        <div class="slbl">Agents</div>
+      </div>
     </div>
-
+    {% if project.comm_pic_name %}
+    <div class="pic-box">
+      <strong>PIC:</strong> {{ project.comm_pic_name }}
+      <span style="background:#e0e7ff;color:#4f46e5;padding:1px 8px;border-radius:4px;font-size:11px;font-weight:700;margin-left:6px">{{ project.comm_pic_rank }}</span>
+    </div>
+    {% endif %}
+    <div style="font-size:12px;color:#888;line-height:1.8">
+      <strong style="color:#444;font-size:11px;text-transform:uppercase;letter-spacing:.05em">Commission Rules</strong>
+      <ul style="margin:4px 0 0;padding-left:16px">
+        <li>Default rate for all sales in this project</li>
+        <li>Unit-specific rates override this default</li>
+        <li>Net = Gross &divide; (1 + SST%)</li>
+      </ul>
+    </div>
+  </div>
 </div>
 
-<!-- Units Table -->
-<div class="card">
-    <div class="card-title">&#127968; Project Units ({{ units|length }} unit{{ 's' if units|length != 1 else '' }})</div>
-    <div class="tbl-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>Unit Code</th>
-                <th>Unit Type</th>
-                <th>Size (sqft)</th>
-                <th>{{ price_label }}</th>
-                <th>Commission</th>
-                <th>Qty</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% if units %}
-            {% for unit in units %}
-            <tr>
-                <td>{{ unit.code or '—' }}</td>
-                <td>{{ unit.unit_type or '—' }}</td>
-                <td>{{ unit.square_feet or '—' }}</td>
-                <td>{{ unit.price_display }}</td>
-                <td>{{ unit.commission_display }}</td>
-                <td>{{ unit.quantity }}</td>
-                <td><span style="color:{{ '#28a745' if unit.status == 'available' else '#dc3545' }};font-weight:600">
-                    {{ unit.status|title }}</span></td>
-            </tr>
-            {% endfor %}
-        {% else %}
-            <tr><td colspan="7" class="empty-table">
-                No units defined yet.
-                <a href="/admin/edit-project/{{ project.id }}">Add units by editing this project.</a>
-            </td></tr>
-        {% endif %}
-        </tbody>
-    </table>
+<!-- ROW 2: Developer Info -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">&#127968; Developer Information</div>
+  {% if project.developer_name %}
+  <div class="dev-badge">&#127970; Developer on Record</div>
+  <div class="dev-grid">
+    <div class="info-item">
+      <div class="lbl">Company / Developer Name</div>
+      <div class="val">{{ project.developer_name }}</div>
     </div>
+    <div class="info-item">
+      <div class="lbl">Registration No. (SSM)</div>
+      <div class="val">{{ project.developer_company_no or '—' }}</div>
+    </div>
+    <div class="info-item">
+      <div class="lbl">Phone</div>
+      <div class="val">{{ project.developer_phone or '—' }}</div>
+    </div>
+    <div class="info-item">
+      <div class="lbl">Address</div>
+      <div class="val" style="font-size:13px;font-weight:400;color:#444">{{ project.developer_address or '—' }}</div>
+    </div>
+  </div>
+  <div style="margin-top:12px;padding:10px 12px;background:#f0fdf4;border-radius:7px;font-size:12px;color:#166534;border:1px solid #bbf7d0">
+    &#9432; This developer info auto-fills into the OTP form when agents select this project.
+  </div>
+  {% else %}
+  <div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px">
+    <div style="font-size:28px;margin-bottom:8px">&#127970;</div>
+    No developer info set.
+    <a href="/admin/edit-project/{{ project.id }}" style="color:#2563eb;font-weight:600;margin-left:6px">Edit project to add developer details &#8594;</a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ROW 3: Project Units -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">&#127968; Project Units ({{ units|length }} unit{{ 's' if units|length != 1 }})</div>
+  {% if units %}
+  <div class="tbl-wrap">
+  <table>
+    <thead><tr>
+      <th>Unit Code</th><th>Unit Type</th><th>Size (sqft)</th>
+      <th>{{ price_label }}</th><th>Commission</th><th>Qty</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+    {% for u in units %}
+    <tr>
+      <td>{{ u.code or '—' }}</td>
+      <td><strong>{{ u.unit_type }}</strong></td>
+      <td>{{ u.square_feet or '—' }}</td>
+      <td>{{ u.price_display }}</td>
+      <td>{{ u.commission_display }}</td>
+      <td>{{ u.quantity }}</td>
+      <td><span class="st-{{ u.status }}">{{ u.status|title }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px">No units configured.</div>
+  {% endif %}
+</div>
+
+<!-- ROW 4: Document Upload + List -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">&#128206; Project Documents &amp; Brochures
+    <span style="background:#e0e7ff;color:#4f46e5;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;margin-left:6px">{{ project_docs|length }} file{{ 's' if project_docs|length != 1 }}</span>
+  </div>
+
+  <!-- Upload form -->
+  <form method="POST" action="/admin/project/{{ project.id }}/upload-doc" enctype="multipart/form-data" class="upload-form">
+    <div class="fg">
+      <label>Document Label</label>
+      <input type="text" name="label" placeholder="e.g. Brochure, Floor Plan, Sales Kit" value="Brochure">
+    </div>
+    <div class="fg" style="flex:2">
+      <label>File (PDF, Word, Excel, JPG, PNG — max 10MB)</label>
+      <input type="file" name="file" accept=".pdf,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png" required>
+    </div>
+    <button type="submit" class="btn-upload">&#8679; Upload</button>
+  </form>
+
+  <!-- Document list -->
+  {% if project_docs %}
+  <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+    {% for doc in project_docs %}
+    {% set ext = doc.file_type or '' %}
+    <div class="doc-row">
+      <div class="doc-icon {{ 'doc-pdf' if ext=='pdf' else 'doc-img' if ext in ('jpg','jpeg','png') else 'doc-word' if ext in ('doc','docx') else 'doc-excel' if ext in ('xlsx','xls') else 'doc-default' }}">
+        {{ '📄' if ext=='pdf' else '🖼' if ext in ('jpg','jpeg','png') else '📝' if ext in ('doc','docx') else '📊' if ext in ('xlsx','xls') else '📁' }}
+      </div>
+      <div class="doc-info">
+        <div class="dname">{{ doc.doc_label or 'Document' }}</div>
+        <div class="dmeta">
+          {{ doc.filename }}
+          {% if doc.file_size %} &bull; {{ (doc.file_size / 1024)|round(1) }} KB{% endif %}
+          &bull; {{ doc.uploaded_at[:10] if doc.uploaded_at else '' }}
+        </div>
+      </div>
+      <div class="doc-actions">
+        <a href="/project-doc/{{ doc.id }}" target="_blank" class="btn-dl">&#128065; View / Download</a>
+        <form method="POST" action="/admin/project/{{ project.id }}/delete-doc/{{ doc.id }}" style="display:inline" onsubmit="return confirm('Delete \'{{ doc.filename }}\'?')">
+          <button type="submit" class="btn-del">&#128465; Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-docs">
+    <div style="font-size:32px;margin-bottom:8px">&#128206;</div>
+    No documents uploaded yet.<br>
+    <span style="font-size:12px">Upload brochures, floor plans, sales kits or any agent reference files above.</span>
+  </div>
+  {% endif %}
 </div>
 
 </div><!-- /wrap -->
@@ -255,9 +364,9 @@
 <script>
 function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
 document.addEventListener('DOMContentLoaded',function(){
-    document.querySelectorAll('#mainNav a').forEach(function(a){
-        a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
-    });
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
 });
 </script>
 </body>

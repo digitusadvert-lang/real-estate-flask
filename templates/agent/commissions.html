@@ -82,10 +82,26 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;backgr
 <div class="wrap">
 
 <div class="stats-grid">
-  <div class="scard" style="border-top-color:#16a34a"><h3>Total</h3><div class="scard-val" style="color:#16a34a">{{ total_count }}</div></div>
-  <div class="scard" style="border-top-color:#f59e0b"><h3>Pending</h3><div class="scard-val" style="color:#f59e0b">{{ pending_count }}</div></div>
-  <div class="scard" style="border-top-color:#2563eb"><h3>Own Payments</h3><div class="scard-val" style="color:#2563eb">{{ own_payments_count }}</div></div>
-  <div class="scard" style="border-top-color:#7c3aed"><h3>All Payments</h3><div class="scard-val" style="color:#7c3aed">{{ total_payments_count }}</div></div>
+  <div class="scard" style="border-top-color:#16a34a">
+    <h3>Approved Comm</h3>
+    <div class="scard-val" style="color:#16a34a">RM{{ "{:,.0f}".format(total_approved|float) }}</div>
+    <small>{{ total_count }} deal{{ 's' if total_count != 1 }}</small>
+  </div>
+  <div class="scard" style="border-top-color:#f59e0b">
+    <h3>Pending Payout</h3>
+    <div class="scard-val" style="color:#f59e0b">RM{{ "{:,.0f}".format(total_pending|float) }}</div>
+    <small>Approved, not yet paid</small>
+  </div>
+  <div class="scard" style="border-top-color:#2563eb">
+    <h3>Own Paid</h3>
+    <div class="scard-val" style="color:#2563eb">RM{{ "{:,.0f}".format(total_own_paid|float) }}</div>
+    <small>{{ own_payments_count }} payment{{ 's' if own_payments_count != 1 }}</small>
+  </div>
+  <div class="scard" style="border-top-color:#7c3aed">
+    <h3>Total Earned</h3>
+    <div class="scard-val" style="color:#7c3aed">RM{{ "{:,.0f}".format(total_earnings|float) }}</div>
+    <small>Own + upline</small>
+  </div>
 </div>
 
 <div class="filter-wrap">
@@ -118,14 +134,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;backgr
   <tbody>
     {% for comm in commissions_list %}
     <tr>
-      <td style="color:#888;font-weight:700">#{{ comm[0] }}</td>
-      <td>{{ comm[1][:10] if comm[1] else '—' }}</td>
-      <td><strong>{{ comm[2] or '—' }}</strong>{% if comm[3] %}<br><small style="color:#888">{{ comm[3][:30] }}</small>{% endif %}</td>
-      <td>RM{{ "%.2f"|format(comm[4]|float if comm[4] else 0) }}</td>
-      <td><strong style="color:#16a34a">RM{{ "%.2f"|format(comm[5]|float if comm[5] else 0) }}</strong></td>
-      <td><span class="badge" style="background:#dcfce7;color:#166534">{{ comm[6] or 'Own' }}</span></td>
-      <td><span class="badge st-{{ comm[7] or 'pending' }}">{{ (comm[7] or 'pending')|title }}</span></td>
-      <td style="color:#888">{{ comm[8] or '—' }}</td>
+      <td style="color:#888;font-weight:700">#{{ comm.id }}</td>
+      <td>{{ (comm.approved_at or comm.created_at or '')[:10] or '—' }}</td>
+      <td>
+        <strong>{{ comm.customer_name or '—' }}</strong>
+        {% if comm.project_name %}<br><small style="color:#888">{{ comm.project_name }}</small>{% endif %}
+      </td>
+      <td>RM{{ "{:,.2f}".format(comm.sale_price|float) }}</td>
+      <td><strong style="color:#16a34a">RM{{ "{:,.2f}".format(comm.commission_amount|float) }}</strong></td>
+      <td><span class="badge" style="background:#dcfce7;color:#166534">Own</span></td>
+      <td><span class="badge st-{{ comm.status or 'pending' }}">{{ (comm.status or 'pending')|title }}</span></td>
+      <td style="color:#888">—</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -140,7 +159,37 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;backgr
 {% endif %}
 
 {% else %}
-<div class="empty"><h3>No commissions found</h3><p>{{ empty_message }}</p><a href="/agent/unified-submit" class="act-btn act-green" style="padding:9px 18px;font-size:13px">&#10010; New Sale</a></div>
+<div class="empty">
+  <h3>No approved commissions yet</h3>
+  <p>Commissions appear here once admin approves your submissions.</p>
+  <a href="/agent/unified-submissions" class="act-btn act-grey" style="padding:9px 18px;font-size:13px;margin-right:8px">&#128203; My Submissions</a>
+  <a href="/agent/unified-submit" class="act-btn act-green" style="padding:9px 18px;font-size:13px">&#10010; New Sale</a>
+</div>
+{% endif %}
+
+{% if recent_sales %}
+<div class="sec-hdr" style="margin-top:8px"><h2>&#128200; All Recent Submissions</h2></div>
+<div class="tbl-wrap"><table>
+  <thead><tr><th>#</th><th>Customer</th><th>Sale Price</th><th>My Commission</th><th>Project</th><th>Status</th><th>Date</th></tr></thead>
+  <tbody>
+    {% for sale in recent_sales %}
+    <tr>
+      <td style="color:#888;font-weight:700">#{{ sale.id }}</td>
+      <td><strong>{{ sale.customer_name or '—' }}</strong></td>
+      <td>RM{{ "{:,.2f}".format(sale.sale_price|float) }}</td>
+      <td>
+        <strong style="color:{{ '#16a34a' if sale.status=='approved' else '#ea580c' }}">
+          RM{{ "{:,.2f}".format(sale.commission_amount|float) }}
+        </strong>
+        <br><small style="color:#aaa">{% if sale.status=='approved' %}Confirmed{% elif sale.status=='submitted' %}Pending approval{% else %}{{ sale.status|title }}{% endif %}</small>
+      </td>
+      <td>{% if sale.project_name %}<span class="badge" style="background:#f0fdf4;color:#166534">{{ sale.project_name }}</span>{% else %}<span style="color:#aaa">—</span>{% endif %}</td>
+      <td><span class="badge st-{{ sale.status }}">{{ sale.status|title }}</span></td>
+      <td>{{ (sale.created_at or '')[:10] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
 {% endif %}
 
 {% if recent_payments %}
@@ -151,7 +200,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#16a34a;backgr
     {% for payment in recent_payments %}
     <tr>
       <td>{{ payment.get('payment_date') or payment.get('created_at','')[:10] }}</td>
-      <td><strong style="color:#16a34a">RM{{ "%.2f"|format((payment.get('commission_amount') or 0)|float) }}</strong></td>
+      <td><strong style="color:#16a34a">RM{{ "%.2f"|format((payment.get('amount') or payment.get('commission_amount') or 0)|float) }}</strong></td>
       <td>{% if payment.get('is_upline_payment') %}<span class="badge" style="background:#dcfce7;color:#166534">Upline</span>{% else %}<span class="badge" style="background:#dbeafe;color:#1e40af">Own</span>{% endif %}</td>
       <td><span class="badge st-{{ payment.get('payment_status','pending') }}">{{ payment.get('payment_status','pending')|title }}</span></td>
       <td style="color:#888">{{ payment.get('transaction_id') or '—' }}</td>

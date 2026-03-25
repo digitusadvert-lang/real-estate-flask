@@ -50,12 +50,12 @@
             <h3>{{ record_id }}</h3>
         </div>
 
-        <div class="amount-box">RM{{ "{:,.2f}".format(amount or 0) }}</div>
+        <div class="amount-box">RM<span id="amountDisplay">{{ "{:,.2f}".format(amount or 0) }}</span></div>
 
         <div class="details-box">
             <div class="detail-row">
                 <span class="detail-label">Recipient</span>
-                <span>{{ upline_name }} ({{ upline_email }})</span>
+                <span id="recipientName">{{ upline_name }}</span><span> ({{ upline_email }})</span>
             </div>
             {% if property_address %}
             <div class="detail-row">
@@ -75,7 +75,7 @@
             </div>
         </div>
 
-        <form method="POST" onsubmit="return confirm('Confirm payment of RM{{ \"{:,.2f}\".format(amount or 0) }} to {{ upline_name }}?')">
+        <form method="POST" id="payForm" onsubmit="return confirmPay()">
             <label for="payment_method">Payment Method *</label>
             <select name="payment_method" id="payment_method" required>
                 <option value="">-- Select Payment Method --</option>
@@ -98,5 +98,12 @@
         </form>
     </div>
 </div>
+<script>
+function confirmPay(){
+    var amt  = document.getElementById('amountDisplay').textContent;
+    var name = document.getElementById('recipientName').textContent;
+    return confirm('Confirm payment of ' + amt + ' to ' + name + '?');
+}
+</script>
 </body>
 </html>

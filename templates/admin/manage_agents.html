@@ -113,6 +113,7 @@ tr:hover td{background:#f9fafb}
 <!-- Agent Table -->
 <div class="sec-hdr">
   <h2>👥 All Agents ({{ agents|length }})</h2>
+  <a href="/admin/add-agent" style="background:#16a34a;color:white;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:700;font-size:13px">➕ Add Agent</a>
 </div>
 
 {% if agents %}
@@ -202,7 +203,7 @@ tr:hover td{background:#f9fafb}
     </td>
     <td>
       <div style="display:flex;flex-direction:column;gap:4px">
-        <a href="/admin/agent/{{ a.id }}" class="btn-sm btn-view">👁 View</a>
+        <button onclick="viewAgent({{ a.id }})" class="btn-sm btn-view" style="cursor:pointer;border:none">👁 View</button>
         <a href="/admin/edit-agent/{{ a.id }}" class="btn-sm btn-edit">✏ Edit</a>
       </div>
     </td>
@@ -230,5 +231,142 @@ document.addEventListener('DOMContentLoaded',function(){
   });
 });
 </script>
+
+<!-- ── Slide-in Agent Detail Panel ── -->
+<style>
+.ag-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;display:none}
+.ag-overlay.open{display:block}
+.ag-panel{position:fixed;top:0;right:-440px;width:420px;max-width:100vw;height:100vh;background:white;z-index:901;box-shadow:-4px 0 24px rgba(0,0,0,.15);transition:right .28s cubic-bezier(.4,0,.2,1);overflow-y:auto;padding:24px 22px}
+.ag-panel.open{right:0}
+.ag-panel-close{position:absolute;top:14px;right:14px;background:#f3f4f6;border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#374151}
+.ag-panel-close:hover{background:#e5e7eb}
+.ag-name{font-size:1.2rem;font-weight:800;color:#0c2340;margin:0 0 3px}
+.ag-email{font-size:13px;color:#6b7280;margin-bottom:16px}
+.rank-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.rank-icon{font-size:26px}
+.rank-name{font-size:15px;font-weight:800}
+.rank-pct{font-family:monospace;font-size:20px;font-weight:900;margin-left:auto}
+.prog-bg{background:#e9ecef;border-radius:999px;height:8px;margin:6px 0 4px}
+.prog-fg{height:8px;border-radius:999px;transition:width .4s}
+.prog-next{font-size:12px;color:#777;margin-bottom:14px}
+.ag-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.ag-item{background:#f8f9fa;border-radius:8px;padding:10px 12px}
+.ag-item-lbl{font-size:10px;color:#888;margin-bottom:3px;text-transform:uppercase;font-weight:700;letter-spacing:.05em}
+.ag-item-val{font-size:13px;font-weight:800;color:#0c2340}
+.ag-override{background:#eff6ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#1e40af;margin-bottom:14px;line-height:1.6}
+.ag-actions{display:flex;gap:8px;margin-bottom:16px}
+.ag-btn{flex:1;padding:9px 14px;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;text-align:center;display:inline-block}
+.ag-btn-edit{background:#0c2340;color:white}
+.ag-btn-rank{background:#6f42c1;color:white}
+.ag-btn:hover{opacity:.88}
+.ag-recent-title{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:#9ca3af;margin-bottom:8px}
+.ag-listing{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:12px}
+.ag-listing:last-child{border-bottom:none}
+.ag-listing .ls-cust{flex:1;font-weight:600;color:#1a2a3a}
+.ag-listing .ls-price{color:#16a34a;font-weight:700;white-space:nowrap}
+.ag-listing .ls-badge{padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap}
+.ls-approved{background:#dcfce7;color:#166534}
+.ls-submitted{background:#dbeafe;color:#1e40af}
+.ls-draft{background:#fef9c3;color:#854d0e}
+.ls-rejected{background:#fee2e2;color:#991b1b}
+.ag-loading{text-align:center;color:#9ca3af;padding:40px 0;font-size:13px}
+.ag-err{text-align:center;color:#ef4444;padding:20px 0;font-size:13px}
+</style>
+
+<div class="ag-overlay" id="agOverlay" onclick="closeAgPanel()"></div>
+<div class="ag-panel" id="agPanel">
+  <button class="ag-panel-close" onclick="closeAgPanel()">✕</button>
+  <div id="agPanelContent"><div class="ag-loading">Loading agent data…</div></div>
+</div>
+
+<script>
+const RANK_ICONS_MAP  = {REN:'🟣','Assoc REN':'🔵','Elite REN':'⭐',TL:'🏅',ATL:'👑'};
+const RANK_COLOR_MAP  = {REN:'#4a1ea8','Assoc REN':'#0055b3','Elite REN':'#7a4f00',TL:'#0a5c30',ATL:'#7a3300'};
+
+function viewAgent(agentId) {
+  document.getElementById('agPanelContent').innerHTML = '<div class="ag-loading">⏳ Loading…</div>';
+  document.getElementById('agPanel').classList.add('open');
+  document.getElementById('agOverlay').classList.add('open');
+
+  fetch('/admin/agent-detail/' + agentId)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { document.getElementById('agPanelContent').innerHTML = '<div class="ag-err">⚠ ' + d.error + '</div>'; return; }
+      renderAgPanel(d);
+    })
+    .catch(() => {
+      document.getElementById('agPanelContent').innerHTML = '<div class="ag-err">Failed to load agent data.</div>';
+    });
+}
+
+function renderAgPanel(d) {
+  const rank  = d.agent_rank || 'REN';
+  const pct   = d.commission_rate || 70;
+  const color = RANK_COLOR_MAP[rank] || '#333';
+  const icon  = RANK_ICONS_MAP[rank] || '🟣';
+  const cumul = parseFloat(d.cumulative_gross || 0);
+  const prog  = d.progress_pct || 0;
+  const fmt   = n => 'RM ' + parseFloat(n).toLocaleString('en-MY', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const fmtShort = n => 'RM ' + parseFloat(n).toLocaleString('en-MY', {maximumFractionDigits:0});
+
+  // Recent listings
+  let recentHTML = '';
+  if (d.recent_listings && d.recent_listings.length) {
+    recentHTML = '<div class="ag-recent-title">Recent Listings</div>';
+    d.recent_listings.forEach(l => {
+      recentHTML += `<div class="ag-listing">
+        <div class="ls-cust">${l.customer || '—'}<div style="font-size:10px;color:#9ca3af">${l.project} · ${l.date}</div></div>
+        <div class="ls-price">${fmtShort(l.sale_price)}</div>
+        <span class="ls-badge ls-${l.status}">${l.status}</span>
+      </div>`;
+    });
+  }
+
+  // Override note
+  const overrideNote = d.direct_downlines > 0
+    ? `<strong>Override earnings:</strong> This agent earns the gap between their ${pct}% and each downline's rank % × team gross.`
+    : `<strong>Commission:</strong> This agent earns ${pct}% on every personal deal. Build a downline to earn override income.`;
+
+  document.getElementById('agPanelContent').innerHTML = `
+    <p class="ag-name">${d.name}</p>
+    <p class="ag-email">${d.email}</p>
+
+    <div class="rank-row">
+      <span class="rank-icon">${icon}</span>
+      <span class="rank-name" style="color:${color}">${rank}</span>
+      <span class="rank-pct" style="color:${color}">${pct}%</span>
+    </div>
+    <div style="font-size:12px;color:#888;margin-bottom:4px">Progress to next rank</div>
+    <div class="prog-bg"><div class="prog-fg" style="width:${prog}%;background:${color}"></div></div>
+    <div class="prog-next">${fmtShort(cumul)} → ${fmtShort(d.next_thresh)} (${d.next_rank})</div>
+
+    <div class="ag-grid">
+      <div class="ag-item"><div class="ag-item-lbl">Cumulative Gross</div><div class="ag-item-val">${fmtShort(cumul)}</div></div>
+      <div class="ag-item"><div class="ag-item-lbl">Direct Upline</div><div class="ag-item-val">${d.upline_name}<br><span style="font-size:10px;color:#888">${d.upline_rank}</span></div></div>
+      <div class="ag-item"><div class="ag-item-lbl">Direct Downlines</div><div class="ag-item-val">${d.direct_downlines} agent(s)</div></div>
+      <div class="ag-item"><div class="ag-item-lbl">Listings</div><div class="ag-item-val">${d.total_listings} total · ${d.approved_listings} approved</div></div>
+      <div class="ag-item"><div class="ag-item-lbl">Total Sales Value</div><div class="ag-item-val">${fmtShort(d.total_sales_value)}</div></div>
+      <div class="ag-item"><div class="ag-item-lbl">Commission Earned</div><div class="ag-item-val">${fmtShort(d.total_commission)}</div></div>
+      <div class="ag-item"><div class="ag-item-lbl">Joined</div><div class="ag-item-val">${d.created_at}</div></div>
+    </div>
+
+    <div class="ag-override">${overrideNote}</div>
+
+    <div class="ag-actions">
+      <a href="/admin/edit-agent/${d.id}" class="ag-btn ag-btn-edit">✏️ Edit Agent</a>
+      <a href="/admin/set-agent-rank?agent_id=${d.id}&redirect_to=/admin/agents" class="ag-btn ag-btn-rank">🏅 Set Rank</a>
+    </div>
+
+    ${recentHTML}
+  `;
+}
+
+function closeAgPanel() {
+  document.getElementById('agPanel').classList.remove('open');
+  document.getElementById('agOverlay').classList.remove('open');
+}
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeAgPanel(); });
+</script>
+
 </body>
 </html>

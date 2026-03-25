@@ -146,6 +146,83 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
 </div>
 {% endif %}
 
+<!-- WTP Commission Breakdown Panel -->
+{% if linked %}
+<div class="section" style="border-left:4px solid #16a34a">
+  <div class="sec-title"><span class="sec-num" style="background:#16a34a">💰</span> WTP Commission Breakdown</div>
+  {% set sale_p = linked.sale_price|float %}
+  {% set _notes = linked.notes or '' %}
+  {% if 'comm_rate:' in _notes %}
+    {% set _after_rate = _notes.split('comm_rate:')[1] %}
+    {% set comm_r = _after_rate.split('|')[0].strip()|float %}
+  {% else %}
+    {% set comm_r = 2.0 %}
+  {% endif %}
+  {% if sub_type == 'rn' %}
+    {# For rental, comm_rate = commission months #}
+    {% set gross = sale_p * comm_r %}
+    {% set rate_label = comm_r|string + ' month(s) of rent' %}
+  {% else %}
+    {% set gross = sale_p * (comm_r / 100) %}
+    {% set rate_label = comm_r|string + '%' %}
+  {% endif %}
+  {% set sst_rate = 8.0 %}
+  {% set nett = gross / (1 + sst_rate / 100) %}
+  {% set sst_amt = gross - nett %}
+  {% set company_pct = 15.0 %}
+  {% set pic_pct = 10.0 %}
+  {% set agents_pct = 75.0 %}
+  {% set company_amt = nett * (company_pct / 100) %}
+  {% set pic_amt     = nett * (pic_pct / 100) %}
+  {% set agent_pool  = nett * (agents_pct / 100) %}
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px">
+    <div style="background:#f0fdf4;border-radius:7px;padding:10px 12px;border:1px solid #bbf7d0">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#166534;margin-bottom:3px">Sale Price</div>
+      <div style="font-size:1rem;font-weight:800;color:#15803d">RM{{ "{:,.2f}".format(sale_p) }}</div>
+    </div>
+    <div style="background:#f0fdf4;border-radius:7px;padding:10px 12px;border:1px solid #bbf7d0">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#166534;margin-bottom:3px">Dev Comm Rate</div>
+      <div style="font-size:1rem;font-weight:800;color:#15803d">{{ rate_label }}</div>
+    </div>
+    <div style="background:#dcfce7;border-radius:7px;padding:10px 12px;border:1px solid #86efac">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#166534;margin-bottom:3px">Gross Commission</div>
+      <div style="font-size:1.1rem;font-weight:900;color:#16a34a">RM{{ "{:,.2f}".format(gross) }}</div>
+      <div style="font-size:10px;color:#4b7a5a">Challenge / Ranking Contribution</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+    <div style="background:#fff7ed;border-radius:7px;padding:10px 12px;border:1px solid #fed7aa">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#9a3412;margin-bottom:3px">SST ({{ sst_rate|int }}%) Deducted</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#c2410c">−RM{{ "{:,.2f}".format(sst_amt) }}</div>
+    </div>
+    <div style="background:#f8fafc;border-radius:7px;padding:10px 12px;border:1px solid #e2e8f0">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#555;margin-bottom:3px">Nett Commission</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#1a2a3a">RM{{ "{:,.2f}".format(nett) }}</div>
+    </div>
+    <div style="background:#eff6ff;border-radius:7px;padding:10px 12px;border:1px solid #bfdbfe">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#1e40af;margin-bottom:3px">Company ({{ company_pct|int }}%)</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#1d4ed8">RM{{ "{:,.2f}".format(company_amt) }}</div>
+    </div>
+    <div style="background:#fdf4ff;border-radius:7px;padding:10px 12px;border:1px solid #e9d5ff">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#6b21a8;margin-bottom:3px">PIC ({{ pic_pct|int }}%)</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#7c3aed">RM{{ "{:,.2f}".format(pic_amt) }}</div>
+    </div>
+    <div style="background:#f0fdf4;border-radius:7px;padding:10px 12px;border:1px solid #86efac">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#166534;margin-bottom:3px">Agents Pool ({{ agents_pct|int }}%)</div>
+      <div style="font-size:0.95rem;font-weight:700;color:#16a34a">RM{{ "{:,.2f}".format(agent_pool) }}</div>
+      <div style="font-size:10px;color:#4b7a5a">TAIKO splits at approval →</div>
+    </div>
+  </div>
+  {% if linked.status != 'approved' %}
+  <div style="margin-top:10px;font-size:12px;color:#888;padding:8px 10px;background:#f8f9fa;border-radius:6px">
+    ⚡ <strong>Pending:</strong> TAIKO override engine will run at approval to split agent pool by rank. Commission above uses default SST 8% / Company 15% / PIC 10% / Agents 75% — override from project settings at approval.
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Section 1: Agent -->
 <div class="section">
   <div class="sec-title"><span class="sec-num">1</span> Agent Information</div>

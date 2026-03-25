@@ -22,7 +22,7 @@
     .info-box p{margin:0 0 4px}
     .form-group{margin-bottom:16px}
     label{display:block;margin-bottom:5px;font-weight:600;color:#444;font-size:13px}
-    input[type=text],input[type=email],input[type=password],input[type=number],select,textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;background:#fafafa}
+    input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],input[type=tel],select,textarea{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;background:#fafafa}
     input:focus,select:focus{outline:none;border-color:#007bff;box-shadow:0 0 0 2px rgba(0,123,255,.12);background:white}
     small{color:#777;font-size:12px;display:block;margin-top:4px}
     .btn-primary{background:#007bff;color:white;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600}
@@ -54,6 +54,9 @@
     .badge-admin{background:#fff3cd;color:#856404;padding:1px 7px;border-radius:4px;font-size:10px}
     .rh-toggle{font-size:13px;color:#007bff;cursor:pointer;background:none;border:none;padding:0;margin-top:14px}
     .rh-table-wrap{display:none;margin-top:10px}
+    /* Contact info grid */
+    .contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .contact-grid .form-group{margin-bottom:0}
     @media(max-width:640px){
         .hamburger{display:block}
         .nav-bar{display:none;flex-direction:column;align-items:stretch;padding:6px 12px}
@@ -62,6 +65,7 @@
         .wrap{padding:10px}
         .rank-grid{grid-template-columns:1fr}
         .rank-field:nth-child(3){grid-column:1}
+        .contact-grid{grid-template-columns:1fr}
     }
     </style>
 </head>
@@ -116,30 +120,43 @@
                 <label>Direct Upline</label>
                 <select name="upline_id">
                     <option value="">-- No Direct Upline (Top Level) --</option>
-                    {% for a in all_agents %}
-                        {% if a.id != agent.id %}
-                        <option value="{{ a.id }}" {% if a.id == agent.upline_id %}selected{% endif %}>
-                            {{ a.name }} ({{ a.email }}) — {{ a.agent_rank or 'REN' }}
-                        </option>
+                    {% for other_agent in all_agents %}
+                        {% if other_agent.id != agent.id %}
+                            <option value="{{ other_agent.id }}" {% if agent.upline_id == other_agent.id %}selected{% endif %}>{{ other_agent.name }} — {{ other_agent.agent_rank or 'REN' }}</option>
                         {% endif %}
                     {% endfor %}
                 </select>
-                <small>Upline&#39;s rank determines the override gap they earn on this agent&#39;s team gross.</small>
+                <small>Change upline assignment. The system will auto-resolve Upline 2 and recalculate override payouts.</small>
+            </div>
+
+            <div class="card-title" style="margin-top:18px">&#128220; Contact Information</div>
+            <div class="contact-grid">
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" name="phone_number" value="{{ agent.phone_number or '' }}" placeholder="e.g. +60123456789">
+                    <small>Include country code (e.g. +60 for Malaysia)</small>
+                </div>
+                <div class="form-group">
+                    <label>REN Number</label>
+                    <input type="text" name="ren_number" value="{{ agent.ren_number or '' }}" placeholder="e.g. REN12345">
+                    <small>Real Estate agent License/Registration number</small>
+                </div>
             </div>
             <div class="form-group">
-                <label>Password <span style="font-weight:400;color:#aaa">(leave blank to keep current)</span></label>
-                <input type="password" name="password" placeholder="Enter new password to change">
+                <label>REN Expiration Date</label>
+                <input type="date" name="ren_expiry_date" value="{{ agent.ren_expiry_date or '' }}">
+                <small>Date when REN license expires</small>
             </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
-                <button type="submit" class="btn-primary">&#128190; Save Basic Info</button>
-                <a href="/admin/agents" class="btn-secondary">Cancel</a>
+
+            <div style="margin-top:16px">
+                <button type="submit" class="btn-primary">&#10003; Save Changes</button>
             </div>
         </form>
     </div>
 
-    <!-- Rank Override -->
-    <div class="card" id="rank-section">
-        <div class="card-title">&#127973; TAIKO EA Rank Override</div>
+    <!-- Rank Management -->
+    <div class="card">
+        <div class="card-title">&#127973; Rank Management</div>
         <div class="rank-pills">
             <span class="rank-pill rp-REN {% if (agent.agent_rank or 'REN')=='REN' %}active{% endif %}" onclick="selectRank('REN',70,0,this)">&#128995; REN 70%</span>
             <span class="rank-pill rp-AssocREN {% if agent.agent_rank=='Assoc REN' %}active{% endif %}" onclick="selectRank('Assoc REN',75,30000,this)">&#128309; Assoc REN 75%</span>

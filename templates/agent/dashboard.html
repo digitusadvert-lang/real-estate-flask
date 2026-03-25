@@ -35,7 +35,7 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
 .welcome-card p{margin:0;font-size:13px;opacity:.85}
 .rank-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:999px;font-size:13px;font-weight:700;background:rgba(255,255,255,.15);margin-top:8px}
 /* ── STATS ── */
-.stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
 .scard{background:white;border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #ddd}
 .scard h3{margin:0 0 6px;font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .scard-val{font-size:1.3rem;font-weight:800;margin-bottom:2px}
@@ -44,7 +44,11 @@ body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
 .rank-card{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
 .rank-gross{font-size:2rem;font-weight:900;color:#16a34a;margin:6px 0}
 .prog-bg{background:#e5e7eb;border-radius:999px;height:8px;margin:8px 0 4px}
-.prog-fg{height:8px;border-radius:999px;background:linear-gradient(90deg,#16a34a,#0891b2);transition:width .4s}
+.prog-fg{height:8px;border-radius:999px;transition:width .4s}
+.prog-red{background:#ef4444}
+.prog-yellow{background:#eab308}
+.prog-orange{background:#f97316}
+.prog-green{background:#16a34a}
 .prog-meta{display:flex;justify-content:space-between;font-size:12px;color:#888}
 /* ── QUICK ACTIONS ── */
 .qgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
@@ -90,37 +94,52 @@ tr:hover td{background:#f9fafb}
 .btn-sm{display:inline-block;padding:5px 10px;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}
 .btn-green{background:#16a34a;color:white}
 .btn-teal{background:#0891b2;color:white}
+/* ── YEARLY STATS ── */
+.yrcard{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px;border-left:4px solid #16a34a}
+.yrcard-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.yrcard-gross{font-size:1.8rem;font-weight:900;color:#16a34a;line-height:1.1;margin:4px 0 2px}
+.yrcard-label{font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.yr-mini-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding-top:14px;border-top:1px solid #f0f0f0;margin-top:4px}
+.yr-mini{text-align:center}
+.yr-mini-val{font-size:1rem;font-weight:800;margin-bottom:2px}
+.yr-mini-lbl{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.05em}
+.yr-prog-wrap{margin:10px 0 4px}
+.yr-prog-meta{display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:4px}
+.yr-prog-bg{background:#e5e7eb;border-radius:999px;height:8px}
+.yr-prog-fg{height:8px;border-radius:999px;transition:width .4s}
 /* ── MOBILE ── */
-@media(max-width:900px){.stats-grid{grid-template-columns:repeat(3,1fr)}.qgrid{grid-template-columns:repeat(2,1fr)}.network-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.stats-grid{grid-template-columns:repeat(2,1fr)}.qgrid{grid-template-columns:repeat(2,1fr)}.network-grid{grid-template-columns:1fr}}
 @media(max-width:640px){
   .wrap{padding:10px}.stats-grid{grid-template-columns:repeat(2,1fr);gap:8px}
   .scard{padding:12px}.scard-val{font-size:1.1rem}
   .welcome-card{flex-direction:column}.rank-gross{font-size:1.5rem}
   .qgrid{grid-template-columns:repeat(2,1fr);gap:8px}
   td,th{padding:8px 10px!important;font-size:12px}
+  .yr-mini-grid{grid-template-columns:repeat(2,1fr)}
+  .yrcard-gross{font-size:1.4rem}
 }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="topbar-title">&#128202; Agent Dashboard</div>
+  <div class="topbar-title">📊 Agent Dashboard</div>
   <div class="topbar-right">
-    <a href="/agent/unified-submit">&#10010; New Sale</a>
-    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">&#9776;</button>
+    <a href="/agent/unified-submit">➕ New Sale</a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Menu">☰</button>
   </div>
 </div>
 <div class="nav-bar" id="mainNav">
-  <a href="/agent/dashboard">&#128202; Dashboard</a>
-  <a href="/agent/unified-submit" class="nav-btn">&#10010; New Sale</a>
-  <a href="/agent/unified-submissions">&#128203; Submissions</a>
-  <a href="/agent/commissions">&#128176; Commissions</a>
-  <a href="/agent/projects">&#127962; Projects</a>
-  <a href="/agent/my-downline">&#128101; My Downline</a>
-  <a href="/agent/forms-library">&#128193; Forms</a>
-  <a href="/agent/notifications">&#128276; Notifications</a>
-  <a href="/agent/profile">&#128100; Profile</a>
-  <a href="/logout" class="nav-logout">&#128274; Logout</a>
+  <a href="/agent/dashboard">📊 Dashboard</a>
+  <a href="/agent/unified-submit" class="nav-btn">➕ New Sale</a>
+  <a href="/agent/unified-submissions">📋 Submissions</a>
+  <a href="/agent/commissions">💰 Commissions</a>
+  <a href="/agent/projects">🏗️ Projects</a>
+  <a href="/agent/my-downline">👥 My Downline</a>
+  <a href="/agent/forms-library">📁 Forms</a>
+  <a href="/agent/notifications">🔔 Notifications</a>
+  <a href="/agent/profile">👤 Profile</a>
+  <a href="/logout" class="nav-logout">🔒 Logout</a>
 </div>
 
 <div class="wrap">
@@ -128,23 +147,23 @@ tr:hover td{background:#f9fafb}
 <!-- Welcome -->
 <div class="welcome-card">
   <div>
-    <h2>Welcome back, {{ user_name }}! &#128075;</h2>
+    <h2>Welcome back, {{ user_name }}! 👋</h2>
     <p>Here's your performance overview</p>
     {% if rank_progress %}
     {% set rcolors={'REN':'#6b7280','Assoc REN':'#2563eb','Elite REN':'#7c3aed','TL':'#ea580c','ATL':'#16a34a'} %}
     <div class="rank-pill">
-      {% if rank_progress.current_rank=='ATL' %}&#128081;
-      {% elif rank_progress.current_rank=='TL' %}&#127885;
-      {% elif rank_progress.current_rank=='Elite REN' %}&#11088;
-      {% elif rank_progress.current_rank=='Assoc REN' %}&#128309;
-      {% else %}&#128995;{% endif %}
-      {{ rank_progress.current_rank }} &bull; {{ rank_progress.commission_pct|int }}%
+      {% if rank_progress.current_rank=='ATL' %}👑
+      {% elif rank_progress.current_rank=='TL' %}🏅
+      {% elif rank_progress.current_rank=='Elite REN' %}⭐
+      {% elif rank_progress.current_rank=='Assoc REN' %}🔵
+      {% else %}🔵{% endif %}
+      {{ rank_progress.current_rank }} • {{ rank_progress.commission_pct|int }}%
     </div>
     {% endif %}
   </div>
   {% if unread_count > 0 %}
   <a href="/agent/notifications" style="background:rgba(255,255,255,.15);color:white;border-radius:8px;padding:8px 14px;text-decoration:none;font-size:13px;font-weight:600">
-    &#128276; {{ unread_count }} new notification{{ 's' if unread_count != 1 }}
+    🔔 {{ unread_count }} new notification{{ 's' if unread_count != 1 }}
   </a>
   {% endif %}
 </div>
@@ -152,16 +171,16 @@ tr:hover td{background:#f9fafb}
 <!-- Incomplete alert -->
 {% if incomplete_submissions %}
 <div class="alert-warn">
-  &#9888; <strong>{{ incomplete_submissions|length }} submission{{ 's' if incomplete_submissions|length != 1 }} missing documents.</strong>
+  ⚠️ <strong>{{ incomplete_submissions|length }} submission{{ 's' if incomplete_submissions|length != 1 }} missing documents.</strong>
   Upload documents to submit for approval.
-  <a href="/agent/submissions?status=draft">View all &rarr;</a>
+  <a href="/agent/submissions?status=draft">View all →</a>
 </div>
 {% endif %}
 
 <!-- Stats -->
 <div class="stats-grid">
   <div class="scard" style="border-top-color:#16a34a">
-    <h3>My Commission</h3>
+    <h3>Approved Payout</h3>
     <div class="scard-val" style="color:#16a34a">RM{{ "{:,.0f}".format(total_commission|float) }}</div>
     <small>{% if rank_progress %}{{ rank_progress.commission_pct|int }}% rate{% endif %}</small>
   </div>
@@ -170,46 +189,90 @@ tr:hover td{background:#f9fafb}
     <div class="scard-val" style="color:#0891b2">RM{{ "{:,.0f}".format(upline_earnings or 0) }}</div>
     <small>{{ downline_stats.upline_payments_count or 0 }} downline sale{{ 's' if downline_stats.upline_payments_count != 1 }}</small>
   </div>
-  <div class="scard" style="border-top-color:#f59e0b">
-    <h3>Pending</h3>
-    <div class="scard-val" style="color:#f59e0b">{{ pending_count }}</div>
-    <small>Awaiting approval</small>
-  </div>
   <div class="scard" style="border-top-color:#7c3aed">
-    <h3>Total Sales</h3>
+    <h3>Total Deals</h3>
     <div class="scard-val" style="color:#7c3aed">{{ total_sales }}</div>
-    <small>All time</small>
-  </div>
-  <div class="scard" style="border-top-color:#ea580c">
-    <h3>Project Sales</h3>
-    <div class="scard-val" style="color:#ea580c">{{ project_sales_count }}</div>
-    <small>{{ unique_projects_count }} projects</small>
+    <small>All time submissions</small>
   </div>
   <div class="scard" style="border-top-color:#2563eb">
     <h3>Paid Out</h3>
-    <div class="scard-val" style="color:#2563eb">RM{{ "{:,.0f}".format(total_paid or 0) }}</div>
+    <div class="scard-val" style="color:#2563eb">RM{{ "{:,.0f}".format(total_paid|float) }}</div>
     <small>Total paid</small>
   </div>
 </div>
 
-<!-- Rank Progress -->
+<!-- Ranking Progress Line -->
 {% if rank_progress %}
 <div class="rank-card">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
     <div style="flex:1;min-width:200px">
-      <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;letter-spacing:.06em">Cumulative Gross</div>
+      <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;letter-spacing:.06em">Ranking Progress</div>
       <div class="rank-gross">RM{{ "{:,.2f}".format(rank_progress.cumulative_gross) }}</div>
       {% if not rank_progress.is_top_rank %}
       <div class="prog-meta"><span>{{ rank_progress.current_rank }}</span><span>{{ rank_progress.next_rank }} (RM{{ "{:,.0f}".format(rank_progress.next_target) }})</span></div>
-      <div class="prog-bg"><div class="prog-fg" style="width:{{ rank_progress.progress_pct }}%"></div></div>
+      <div class="prog-bg">
+        <div class="prog-fg {% if rank_progress.cumulative_gross < 280000 %}prog-red{% elif rank_progress.cumulative_gross < 560000 %}prog-yellow{% elif rank_progress.cumulative_gross < 800000 %}prog-orange{% else %}prog-green{% endif %}" style="width:{{ rank_progress.progress_pct }}%"></div>
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#999;margin-bottom:4px">
+          <span>0k</span><span>100k</span><span>200k</span><span>300k</span><span>400k</span><span>500k</span><span>600k</span><span>700k</span><span>800k</span><span>1M</span>
+        </div>
+      </div>
       <div style="font-size:12px;color:#888">
         {% if rank_progress.remaining_to_next > 0 %}
-        <strong>RM{{ "{:,.0f}".format(rank_progress.remaining_to_next) }}</strong> more to <strong>{{ rank_progress.next_rank }}</strong> ({{ rank_progress.next_rank_pct|int }}%) &mdash; {{ rank_progress.progress_pct }}% there
+        <strong>RM{{ "{:,.0f}".format(rank_progress.remaining_to_next) }}</strong> more to <strong>{{ rank_progress.next_rank }}</strong> ({{ rank_progress.next_rank_pct|int }}%) — {{ rank_progress.progress_pct }}% there
         {% else %}&check; Promotion threshold reached!{% endif %}
       </div>
       {% else %}
-      <div style="background:#dcfce7;color:#166534;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;margin-top:8px">&#127942; Top Rank — Associate Team Leader</div>
+      <div style="background:#dcfce7;color:#166534;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;margin-top:8px">🏆 Top Rank — Associate Team Leader</div>
       {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Gross Submission Progress Line -->
+{% if yearly_stats %}
+<div class="rank-card">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div style="flex:1;min-width:200px">
+      <div style="font-size:11px;color:#888;text-transform:uppercase;font-weight:600;letter-spacing:.06em">{{ current_year }} Gross Submission (GC)</div>
+      <div class="rank-gross">RM{{ "{:,.2f}".format(yearly_stats.gross_comm_submitted|float) }}</div>
+      <div class="prog-meta"><span>Current Year</span><span>Progress</span></div>
+      <div class="prog-bg">
+        <div class="prog-fg {% if yearly_stats.gross_comm_submitted < 280000 %}prog-red{% elif yearly_stats.gross_comm_submitted < 560000 %}prog-yellow{% elif yearly_stats.gross_comm_submitted < 800000 %}prog-orange{% else %}prog-green{% endif %}" style="width:{{ [yearly_stats.gross_comm_submitted / 1000000 * 100, 100]|min|int }}%"></div>
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#999;margin-bottom:4px">
+          <span>0k</span><span>100k</span><span>200k</span><span>300k</span><span>400k</span><span>500k</span><span>600k</span><span>700k</span><span>800k</span><span>1M</span>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#888;margin-top:8px">
+        <span style="color:#16a34a;font-weight:700">{{ yearly_stats.approved_count }} approved</span> • 
+        <span style="color:#f59e0b;font-weight:700">{{ yearly_stats.pending_count }} pending</span> • 
+        <span>{{ yearly_stats.total_deals }} deal{{ 's' if yearly_stats.total_deals != 1 }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Stats Mini Grid -->
+{% if yearly_stats %}
+<div class="card" style="border-left:4px solid #16a34a">
+  <div class="card-title">📊 Year-to-Date Summary</div>
+  <div class="yr-mini-grid">
+    <div class="yr-mini">
+      <div class="yr-mini-lbl">Total Sales Value</div>
+      <div class="yr-mini-val" style="color:#1a2a3a">RM{{ "{:,.0f}".format(yearly_stats.total_sales_value|float) }}</div>
+    </div>
+    <div class="yr-mini">
+      <div class="yr-mini-lbl">Gross Submission</div>
+      <div class="yr-mini-val" style="color:#16a34a">RM{{ "{:,.0f}".format(yearly_stats.gross_comm_approved|float) }}</div>
+    </div>
+    <div class="yr-mini">
+      <div class="yr-mini-lbl">All-Time Paid</div>
+      <div class="yr-mini-val" style="color:#2563eb">RM{{ "{:,.0f}".format(total_paid|float) }}</div>
     </div>
   </div>
 </div>
@@ -217,43 +280,43 @@ tr:hover td{background:#f9fafb}
 
 <!-- Quick Actions -->
 <div class="qgrid">
-  <a href="/agent/unified-submit" class="qcard"><div class="qcard-icon">&#10133;</div><div class="qcard-text"><strong>New Sale</strong><small>Submit a property sale</small></div></a>
-  <a href="/agent/submissions" class="qcard"><div class="qcard-icon">&#128203;</div><div class="qcard-text"><strong>Submissions</strong><small>View all submissions</small></div></a>
-  <a href="/agent/commissions" class="qcard"><div class="qcard-icon">&#128176;</div><div class="qcard-text"><strong>Commissions</strong><small>Earnings & payments</small></div></a>
-  <a href="/agent/my-downline" class="qcard"><div class="qcard-icon">&#128101;</div><div class="qcard-text"><strong>My Downline</strong><small>{{ downline_stats.count }} agent{{ 's' if downline_stats.count != 1 }}</small></div></a>
+  <a href="/agent/unified-submit" class="qcard"><div class="qcard-icon">➕</div><div class="qcard-text"><strong>New Sale</strong><small>Submit a property sale</small></div></a>
+  <a href="/agent/submissions" class="qcard"><div class="qcard-icon">📋</div><div class="qcard-text"><strong>Submissions</strong><small>View all submissions</small></div></a>
+  <a href="/agent/commissions" class="qcard"><div class="qcard-icon">💰</div><div class="qcard-text"><strong>Commissions</strong><small>Earnings & payments</small></div></a>
+  <a href="/agent/my-downline" class="qcard"><div class="qcard-icon">👥</div><div class="qcard-text"><strong>My Downline</strong><small>{{ downline_stats.count }} agent{{ 's' if downline_stats.count != 1 }}</small></div></a>
 </div>
 
 <!-- Network -->
 <div class="network-grid">
   <!-- Upline -->
   <div class="card">
-    <div class="card-title">&#11014; My Upline</div>
+    <div class="card-title">⬆️ My Upline</div>
     {% if upline_info %}
     <div class="net-member">
-      <div class="net-avatar">&#128081;</div>
+      <div class="net-avatar">👑</div>
       <div style="flex:1">
         <div class="net-name">{{ upline_info.name }}</div>
         <div class="net-meta">{{ upline_info.email }}</div>
-        <div class="net-meta">{{ upline_info.rank }} &bull; {{ upline_info.commission_pct }}%</div>
+        <div class="net-meta">{{ upline_info.rank }} • {{ upline_info.commission_pct }}%</div>
         {% if rank_progress and upline_info.commission_pct %}
           {% set gap = upline_info.commission_pct|float - rank_progress.commission_pct|float %}
           {% if gap > 0 %}<span class="comm-badge">Override: {{ gap|int }}% of your team gross</span>
-          {% elif gap == 0 %}<span class="comm-badge wtp-badge">&#9889; WTP 2% (same rank)</span>{% endif %}
+          {% elif gap == 0 %}<span class="comm-badge wtp-badge">⚡ WTP 2% (same rank)</span>{% endif %}
         {% endif %}
       </div>
     </div>
     {% if upline_info.indirect_name %}
     <div class="net-member" style="margin-top:8px">
-      <div class="net-avatar">&#128100;</div>
+      <div class="net-avatar">👤</div>
       <div style="flex:1">
         <div class="net-name">{{ upline_info.indirect_name }}</div>
-        <div class="net-meta">Indirect upline &bull; {{ upline_info.indirect_rate }}% of your fund</div>
+        <div class="net-meta">Indirect upline • {{ upline_info.indirect_rate }}% of your fund</div>
       </div>
     </div>
     {% endif %}
     {% else %}
     <div style="text-align:center;padding:20px;color:#888">
-      <div style="font-size:28px;margin-bottom:8px">&#128081;</div>
+      <div style="font-size:28px;margin-bottom:8px">👑</div>
       <div style="font-size:13px;font-weight:600">Top Level Agent</div>
       <div style="font-size:12px;margin-top:4px">No upline assigned</div>
     </div>
@@ -263,21 +326,21 @@ tr:hover td{background:#f9fafb}
   <!-- Downline -->
   <div class="card">
     <div class="card-title" style="justify-content:space-between">
-      <span>&#11015; My Downline ({{ downline_stats.count }})</span>
-      <a href="/agent/my-downline" style="font-size:12px;color:#16a34a;text-decoration:none;font-weight:600">View all &rarr;</a>
+      <span>⬇️ My Downline ({{ downline_stats.count }})</span>
+      <a href="/agent/my-downline" style="font-size:12px;color:#16a34a;text-decoration:none;font-weight:600">View all →</a>
     </div>
     {% if downline_agents %}
     <div style="max-height:220px;overflow-y:auto">
       {% for agent in downline_agents %}
       <div class="net-member">
-        <div class="net-avatar">&#128100;</div>
+        <div class="net-avatar">👤</div>
         <div style="flex:1">
           <div class="net-name">{{ agent.name }}</div>
-          <div class="net-meta">{{ agent.agent_rank or 'REN' }} &bull; {{ agent.commission_pct|int if agent.commission_pct else '—' }}%</div>
+          <div class="net-meta">{{ agent.agent_rank or 'REN' }} • {{ agent.commission_pct|int if agent.commission_pct else '—' }}%</div>
           {% if rank_progress and agent.commission_pct %}
             {% set override_gap = rank_progress.commission_pct|float - agent.commission_pct|float %}
             {% if override_gap > 0 %}<span class="comm-badge">Override: {{ override_gap|int }}%</span>
-            {% elif override_gap == 0 %}<span class="comm-badge wtp-badge">&#9889; WTP 2%</span>{% endif %}
+            {% elif override_gap == 0 %}<span class="comm-badge wtp-badge">⚡ WTP 2%</span>{% endif %}
           {% endif %}
         </div>
       </div>
@@ -288,7 +351,7 @@ tr:hover td{background:#f9fafb}
     </div>
     {% else %}
     <div style="text-align:center;padding:20px;color:#888">
-      <div style="font-size:28px;margin-bottom:8px">&#128101;</div>
+      <div style="font-size:28px;margin-bottom:8px">👥</div>
       <div style="font-size:13px;font-weight:600">No Downline Yet</div>
       <div style="font-size:12px;margin-top:4px">Build your team to earn passive income</div>
     </div>
@@ -299,29 +362,29 @@ tr:hover td{background:#f9fafb}
 <!-- Incomplete Submissions -->
 {% if incomplete_submissions %}
 <div class="sec-hdr">
-  <h2>&#128203; Incomplete Submissions ({{ incomplete_submissions|length }})</h2>
-  <a href="/agent/submissions?status=draft" style="font-size:12px;color:#16a34a;text-decoration:none;font-weight:600">View all &rarr;</a>
+  <h2>📋 Incomplete Submissions ({{ incomplete_submissions|length }})</h2>
+  <a href="/agent/submissions?status=draft" style="font-size:12px;color:#16a34a;text-decoration:none;font-weight:600">View all →</a>
 </div>
 {% for sub in incomplete_submissions %}
 <div class="incomplete-item">
   <div>
     <strong style="font-size:13px">Submission #{{ sub.id }}</strong>
-    <div style="font-size:12px;color:#666;margin-top:2px">{{ sub.customer_name }} &bull; {{ sub.status|title }} &bull; {{ sub.created_at[:10] }}</div>
+    <div style="font-size:12px;color:#666;margin-top:2px">{{ sub.customer_name }} • {{ sub.status|title }} • {{ sub.created_at[:10] }}</div>
     <div style="margin-top:4px">
-      {% if sub.doc_count == 0 %}<span class="badge" style="background:#fee2e2;color:#991b1b">&#10060; No docs</span>
-      {% else %}<span class="badge" style="background:#fef9c3;color:#854d0e">&#9888; {{ sub.doc_count }}/3 docs</span>{% endif %}
+      {% if sub.doc_count == 0 %}<span class="badge" style="background:#fee2e2;color:#991b1b">❌ No docs</span>
+      {% else %}<span class="badge" style="background:#fef9c3;color:#854d0e">⚠️ {{ sub.doc_count }}/3 docs</span>{% endif %}
     </div>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap">
-    <a href="/agent/reupload-documents/{{ sub.id }}" class="btn-sm btn-green">&#128206; Upload Docs</a>
-    <a href="/agent/submission/{{ sub.id }}" class="btn-sm btn-teal">&#128065; View</a>
+    <a href="/agent/reupload-documents/{{ sub.id }}" class="btn-sm btn-green">📎 Upload Docs</a>
+    <a href="/agent/submission/{{ sub.id }}" class="btn-sm btn-teal">👁️ View</a>
   </div>
 </div>
 {% endfor %}
 {% endif %}
 
 <!-- Recent Sales -->
-<div class="sec-hdr" style="margin-top:8px"><h2>&#128200; Recent Sales</h2></div>
+<div class="sec-hdr" style="margin-top:8px"><h2>📈 Recent Sales</h2></div>
 <div class="tbl-wrap"><table>
   <thead><tr><th>#</th><th>Customer</th><th>Sale Price</th><th>Commission</th><th>Project</th><th>Status</th><th>Date</th></tr></thead>
   <tbody>
@@ -330,7 +393,7 @@ tr:hover td{background:#f9fafb}
       <td style="color:#888;font-weight:700">#{{ sale.id }}</td>
       <td>{{ sale.customer_name }}{% if sale.unit_type %}<br><small style="color:#888">{{ sale.unit_type }}</small>{% endif %}</td>
       <td>RM{{ "%.2f"|format(sale.sale_price|float) }}</td>
-      <td><strong style="color:{{ '#16a34a' if sale.status=='approved' else '#6c757d' }}">RM{{ "%.2f"|format(sale.commission_amount|float if sale.commission_amount else 0) }}</strong><br><small style="color:#aaa">{% if sale.status=='approved' and rank_progress %}{{ rank_progress.commission_pct|int }}% payout{% else %}Gross{% endif %}</small></td>
+      <td><strong style="color:{{ '#16a34a' if sale.status=='approved' else '#ea580c' }}">RM{{ "%.2f"|format(sale.commission_amount|float if sale.commission_amount else 0) }}</strong><br><small style="color:#aaa">{% if sale.status=='approved' %}Gross (ranking){% elif sale.status=='submitted' %}🟠 Pending approval{% else %}Gross{% endif %}</small></td>
       <td>{% if sale.project_name %}<span class="badge" style="background:#f0fdf4;color:#166534">{{ sale.project_name }}</span>{% else %}<span style="color:#aaa">—</span>{% endif %}</td>
       <td><span class="badge st-{{ sale.status }}">{{ sale.status|title }}</span></td>
       <td>{{ sale.created_at[:10] }}</td>
@@ -342,7 +405,7 @@ tr:hover td{background:#f9fafb}
 </table></div>
 
 <!-- Recent Payments -->
-<div class="sec-hdr"><h2>&#128176; Recent Payments</h2></div>
+<div class="sec-hdr"><h2>💰 Recent Payments</h2></div>
 <div class="tbl-wrap"><table>
   <thead><tr><th>Date</th><th>Amount</th><th>Type</th><th>Status</th><th>Reference</th><th>Project</th></tr></thead>
   <tbody>

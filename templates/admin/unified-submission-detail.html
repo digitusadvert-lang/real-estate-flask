@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Submission {{ sub.ref or sub.id[:8] }} – Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+@media(max-width:640px){
+  .hamburger{display:block}
+  .nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}
+  .nav-bar.open{display:flex}
+  .nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}
+}
+.wrap{max-width:960px;margin:0 auto;padding:16px}
+
+/* Page header */
+.page-hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.page-hdr h1{margin:0;font-size:1.2rem;font-weight:800;color:#1a2a3a;flex:1}
+.back-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;background:#6c757d;color:white;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none}
+.back-btn:hover{background:#565e64}
+
+/* Badges */
+.badge{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700}
+.t-np{background:#dbeafe;color:#1e40af}
+.t-ss{background:#f3e8ff;color:#6b21a8}
+.t-rn{background:#ffedd5;color:#9a3412}
+.stage-0{background:#e5e7eb;color:#374151}
+.stage-1{background:#fef9c3;color:#854d0e}
+.stage-2{background:#dcfce7;color:#166534}
+.stage-3{background:#dbeafe;color:#1e40af}
+.stage-4{background:#d1fae5;color:#065f46}
+
+/* Stage progress bar */
+.stage-track{display:flex;gap:0;margin-bottom:20px;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.stage-step{flex:1;padding:10px 6px;text-align:center;font-size:11px;font-weight:700;background:#e5e7eb;color:#9ca3af;position:relative}
+.stage-step.done{background:#2c3e50;color:white}
+.stage-step.active{background:#2563eb;color:white}
+.stage-step span{display:block;font-size:16px;margin-bottom:2px}
+
+/* Cards */
+.card{background:white;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px}
+.card-title{font-size:13px;font-weight:800;text-transform:uppercase;color:#6b7280;letter-spacing:.5px;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:6px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px}
+@media(max-width:560px){.grid-2{grid-template-columns:1fr}}
+.field label{font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;display:block;margin-bottom:3px}
+.field p{margin:0;font-size:14px;color:#1a2a3a;font-weight:500;word-break:break-word}
+.field p.mono{font-family:monospace;font-size:13px}
+.field p.empty-val{color:#d1d5db;font-style:italic}
+
+/* Signatures */
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:500px){.sig-grid{grid-template-columns:1fr}}
+.sig-card{border:1.5px dashed #e5e7eb;border-radius:8px;padding:12px;text-align:center}
+.sig-card.signed{border-color:#16a34a;background:#f0fdf4}
+.sig-card.unsigned{border-color:#d1d5db;background:#f9fafb}
+.sig-label{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:8px}
+.sig-img{max-width:100%;max-height:80px;border-radius:4px}
+.sig-ts{font-size:11px;color:#9ca3af;margin-top:6px}
+.sig-none{color:#d1d5db;font-size:13px;font-style:italic}
+
+/* Extra data */
+.extra-table{width:100%;border-collapse:collapse;font-size:13px}
+.extra-table td{padding:7px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+.extra-table td:first-child{font-weight:700;color:#6b7280;width:40%;white-space:nowrap}
+.extra-table tr:last-child td{border-bottom:none}
+
+/* Documents */
+.doc-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f5f5f5}
+.doc-item:last-child{border-bottom:none}
+.doc-icon{font-size:22px;flex-shrink:0}
+.doc-info{flex:1;min-width:0}
+.doc-info strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc-info span{font-size:11px;color:#9ca3af}
+.doc-dl{display:inline-block;padding:4px 10px;background:#2563eb;color:white;border-radius:5px;font-size:12px;font-weight:600;text-decoration:none;flex-shrink:0}
+.no-docs{text-align:center;color:#d1d5db;padding:20px;font-style:italic}
+
+/* Actions */
+.action-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.act-btn{display:inline-block;padding:8px 16px;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap}
+.act-blue{background:#2563eb;color:white}
+.act-green{background:#16a34a;color:white}
+.act-orange{background:#d97706;color:white}
+.act-red{background:#dc2626;color:white}
+.act-grey{background:#6c757d;color:white}
+.act-btn:hover{opacity:.88}
+
+/* Metadata footer */
+.meta-row{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:#9ca3af;margin-top:4px}
+.meta-row span strong{color:#6b7280}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">📋 Submission {{ sub.ref or sub.id[:8] }}</div>
+  <div class="topbar-right">
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions" class="nav-active">📋 Unified Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+</div>
+
+<div class="wrap">
+
+  {% set type_labels = {'np':'New Project','ss':'Sub Sales','rn':'Rental'} %}
+  {% set stage_labels = {0:'Draft',1:'Awaiting Party A',2:'Party A Signed',3:'Awaiting Party B',4:'Complete'} %}
+
+  <!-- Page header -->
+  <div class="page-hdr">
+    <a href="/admin/unified-submissions" class="back-btn">← Back</a>
+    <h1>{{ sub.ref or sub.id[:8] }}</h1>
+    <span class="badge t-{{ sub.sub_type }}">{{ type_labels.get(sub.sub_type,'—') }}</span>
+    <span class="badge stage-{{ sub.stage }}">{{ stage_labels.get(sub.stage,'—') }}</span>
+  </div>
+
+  <!-- Stage progress -->
+  <div class="stage-track">
+    {% set steps = [
+      (0, '✏️', 'Draft'),
+      (1, '📨', 'Await A'),
+      (2, '✅', 'A Signed'),
+      (3, '📨', 'Await B'),
+      (4, '🏁', 'Complete')
+    ] %}
+    {% for val, icon, label in steps %}
+    <div class="stage-step {% if sub.stage > val %}done{% elif sub.stage == val %}active{% endif %}">
+      <span>{{ icon }}</span>{{ label }}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Submission info -->
+  <div class="card">
+    <div class="card-title">🏷 Submission Info</div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Reference</label>
+        <p class="mono">{{ sub.ref or '—' }}</p>
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <p>{{ type_labels.get(sub.sub_type,'—') }}</p>
+      </div>
+      <div class="field">
+        <label>Agent</label>
+        <p>{{ sub.agent_name or '—' }}</p>
+      </div>
+      <div class="field">
+        <label>Agent Rank</label>
+        <p>{{ sub.agent_rank or '—' }}</p>
+      </div>
+      <div class="field">
+        <label>Transaction Price</label>
+        <p>{{ sub.price or '—' }}</p>
+      </div>
+      <div class="field">
+        <label>Stage</label>
+        <p>{{ stage_labels.get(sub.stage,'—') }}</p>
+      </div>
+    </div>
+    <div class="meta-row" style="margin-top:14px">
+      <span><strong>Created:</strong> {{ (sub.created_at or '')[:16] }}</span>
+      <span><strong>Updated:</strong> {{ (sub.updated_at or '')[:16] }}</span>
+      <span><strong>ID:</strong> <span style="font-family:monospace">{{ sub.id }}</span></span>
+    </div>
+  </div>
+
+  <!-- Property -->
+  <div class="card">
+    <div class="card-title">🏠 Property Details</div>
+    <div class="grid-2">
+      <div class="field" style="grid-column:1/-1">
+        <label>Address</label>
+        <p>{{ sub.prop_address or '—' }}</p>
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <p>{{ sub.prop_type or '—' }}</p>
+      </div>
+      <div class="field">
+        <label>State</label>
+        <p>{{ sub.prop_state or '—' }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Party A & B side by side -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">👤 Party A
+        {% if sub.sub_type == 'rn' %}<span style="font-weight:400;font-size:11px;color:#9ca3af">(Landlord)</span>
+        {% else %}<span style="font-weight:400;font-size:11px;color:#9ca3af">(Vendor/Developer)</span>{% endif %}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="field"><label>Name</label><p>{{ sub.partyA_name or '—' }}</p></div>
+        <div class="field"><label>IC / ID</label><p class="mono">{{ sub.partyA_ic or '—' }}</p></div>
+        <div class="field"><label>Phone</label><p>{{ sub.partyA_phone or '—' }}</p></div>
+        <div class="field"><label>Address</label><p>{{ sub.partyA_addr or '—' }}</p></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">👤 Party B
+        {% if sub.sub_type == 'rn' %}<span style="font-weight:400;font-size:11px;color:#9ca3af">(Tenant)</span>
+        {% else %}<span style="font-weight:400;font-size:11px;color:#9ca3af">(Purchaser)</span>{% endif %}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="field"><label>Name</label><p>{{ sub.partyB_name or '—' }}</p></div>
+        <div class="field"><label>IC / ID</label><p class="mono">{{ sub.partyB_ic or '—' }}</p></div>
+        <div class="field"><label>Phone</label><p>{{ sub.partyB_phone or '—' }}</p></div>
+        <div class="field"><label>Address</label><p>{{ sub.partyB_addr or '—' }}</p></div>
+      </div>
+    </div>
+
+  </div>
+  <!-- responsive stack on mobile -->
+  <style>@media(max-width:560px){div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}}</style>
+
+  <!-- Signatures -->
+  <div class="card">
+    <div class="card-title">✍️ Signatures</div>
+    {% if signatures %}
+    <div class="sig-grid">
+      {% for key, val in signatures.items() %}
+      <div class="sig-card {% if val %}signed{% else %}unsigned{% endif %}">
+        <div class="sig-label">{{ key | replace('_',' ') | title }}</div>
+        {% if val %}
+          {% if val.startswith('data:image') %}
+            <img class="sig-img" src="{{ val }}" alt="Signature"/>
+          {% else %}
+            <div style="font-size:13px;font-weight:600;color:#16a34a">✅ Signed</div>
+          {% endif %}
+          <div class="sig-ts">Collected</div>
+        {% else %}
+          <div class="sig-none">Awaiting signature…</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:#d1d5db;font-style:italic;text-align:center;padding:10px 0">No signature data recorded yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Extra data -->
+  {% if extra %}
+  <div class="card">
+    <div class="card-title">📎 Additional Info</div>
+    <table class="extra-table">
+      {% for key, val in extra.items() %}
+      <tr>
+        <td>{{ key | replace('_',' ') | title }}</td>
+        <td>{{ val if val else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Documents -->
+  <div class="card">
+    <div class="card-title">📁 Supporting Documents</div>
+    {% if docs %}
+      {% for doc in docs %}
+      <div class="doc-item">
+        <div class="doc-icon">
+          {% if doc.file_type and 'pdf' in doc.file_type %}📄
+          {% elif doc.file_type and 'image' in doc.file_type %}🖼
+          {% else %}📎{% endif %}
+        </div>
+        <div class="doc-info">
+          <strong>{{ doc.doc_label or doc.filename }}</strong>
+          <span>{{ doc.filename }} · {{ (doc.file_size // 1024) if doc.file_size else '?' }} KB · {{ (doc.uploaded_at or '')[:10] }}</span>
+        </div>
+        <a href="/uploads/{{ doc.filepath }}" target="_blank" class="doc-dl">⬇ View</a>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="no-docs">No documents uploaded for this submission.</div>
+    {% endif %}
+  </div>
+
+  <!-- Admin actions -->
+  <div class="card">
+    <div class="card-title">⚙️ Admin Actions</div>
+    <div class="action-row">
+      {% if sub.stage < 4 %}
+      <form method="POST" action="/admin/unified-submission/{{ sub.id }}/advance" style="display:inline">
+        <button type="submit" class="act-btn act-green">▶ Advance Stage</button>
+      </form>
+      {% endif %}
+      {% if sub.stage > 0 %}
+      <form method="POST" action="/admin/unified-submission/{{ sub.id }}/rollback" style="display:inline">
+        <button type="submit" class="act-btn act-orange">◀ Rollback Stage</button>
+      </form>
+      {% endif %}
+      <form method="POST" action="/admin/unified-submission/{{ sub.id }}/delete"
+            style="display:inline"
+            onsubmit="return confirm('Delete this submission permanently?')">
+        <button type="submit" class="act-btn act-red">🗑 Delete</button>
+      </form>
+      <a href="/admin/unified-submissions" class="act-btn act-grey">← Back to List</a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+</script>
+</body>
+</html>

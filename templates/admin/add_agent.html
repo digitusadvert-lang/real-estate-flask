@@ -22,7 +22,7 @@
     .form-group{margin-bottom:14px}
     label{display:block;margin-bottom:5px;font-weight:600;color:#444;font-size:13px}
     label.required::after{content:" *";color:#dc3545}
-    input[type=text],input[type=email],input[type=password],input[type=number],select{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;background:#fafafa}
+    input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],input[type=tel],select{width:100%;padding:9px 11px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-size:14px;background:#fafafa}
     input:focus,select:focus{outline:none;border-color:#007bff;box-shadow:0 0 0 2px rgba(0,123,255,.12);background:white}
     small{color:#777;font-size:12px;display:block;margin-top:4px}
     /* Rank options */
@@ -51,6 +51,14 @@
     .btn-secondary{background:#6c757d;color:white;padding:11px 22px;border:none;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700;text-decoration:none;display:inline-block}
     .btn-outline{background:white;color:#007bff;border:2px solid #007bff;padding:9px 18px;border-radius:7px;cursor:pointer;font-size:14px;font-weight:700;text-decoration:none;display:inline-block}
     .hint-note{font-size:11px;color:#888;margin-top:8px}
+    /* Agency tier ranks */
+    .rank-opt.agency-tier{border-color:#e0e0e0;background:#faf8ff}
+    .rank-opt.agency-tier:hover{border-color:#7c3aed;background:#f5f0ff}
+    .rank-opt.agency-tier.selected{border-color:#7c3aed;background:#f0e8ff}
+    .agency-badge{display:inline-block;background:#7c3aed;color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:6px;vertical-align:middle;letter-spacing:.04em}
+    .agency-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#7c3aed;margin:12px 0 6px;padding-bottom:4px;border-bottom:2px solid #e9d5ff}
+    /* Contact info grid */
+    .contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
     @media(max-width:640px){
         .hamburger{display:block}
         .nav-bar{display:none;flex-direction:column;align-items:stretch;padding:6px 12px}
@@ -60,6 +68,7 @@
         .form-layout{grid-template-columns:1fr}
         .form-actions{flex-direction:column;align-items:stretch}
         .btn-primary,.btn-secondary,.btn-outline{width:100%;text-align:center}
+        .contact-grid{grid-template-columns:1fr}
     }
     </style>
 </head>
@@ -96,6 +105,23 @@
             <div class="form-group">
                 <label class="required">Password</label>
                 <input type="password" name="password" placeholder="Minimum 6 characters" minlength="6" required>
+            </div>
+
+            <div class="card-title" style="margin-top:18px">&#128220; Contact Information</div>
+            <div class="form-group">
+                <label class="required">Phone Number</label>
+                <input type="tel" name="phone_number" placeholder="e.g. +60123456789" required>
+                <small>Include country code (e.g. +60 for Malaysia)</small>
+            </div>
+            <div class="form-group">
+                <label class="required">REN Number</label>
+                <input type="text" name="ren_number" placeholder="e.g. REN12345" required>
+                <small>Real Estate agent License/Registration number</small>
+            </div>
+            <div class="form-group">
+                <label class="required">REN Expiration Date</label>
+                <input type="date" name="ren_expiry_date" required>
+                <small>Date when REN license expires</small>
             </div>
         </div>
 
@@ -161,6 +187,28 @@
                 </div>
                 <span class="rank-opt-pct" style="color:#7a3300">90%</span>
             </div>
+
+            <div class="agency-section-label">&#127775; Agency Tier <span class="agency-badge">EXTERNAL</span></div>
+            <div class="rank-opt agency-tier" onclick="selectRank('Agency 93',93,0,null,this)" style="border-color:#e0e0e0">
+                <div class="rank-opt-left">
+                    <span class="rank-opt-icon">&#127970;</span>
+                    <div>
+                        <div class="rank-opt-name">Agency (93%) <span class="agency-badge">AGENCY</span></div>
+                        <div class="rank-opt-sub">External / partner agency agent &mdash; fixed 93% rate</div>
+                    </div>
+                </div>
+                <span class="rank-opt-pct" style="color:#7c3aed">93%</span>
+            </div>
+            <div class="rank-opt agency-tier" onclick="selectRank('Agency 95',95,0,null,this)" style="border-color:#e0e0e0">
+                <div class="rank-opt-left">
+                    <span class="rank-opt-icon">&#127968;</span>
+                    <div>
+                        <div class="rank-opt-name">Agency (95%) <span class="agency-badge">AGENCY</span></div>
+                        <div class="rank-opt-sub">Senior external / partner agency agent &mdash; fixed 95% rate</div>
+                    </div>
+                </div>
+                <span class="rank-opt-pct" style="color:#5b21b6">95%</span>
+            </div>
         </div>
 
         <!-- Payout preview -->
@@ -203,11 +251,13 @@
 
 <script>
 const RANK_INFO={
-    'REN':      {pct:70,min:0,      max:30000, color:'#4a1ea8',nextName:'Assoc REN'},
-    'Assoc REN':{pct:75,min:30000,  max:90000, color:'#0055b3',nextName:'Elite REN'},
-    'Elite REN':{pct:80,min:90000,  max:210000,color:'#7a4f00',nextName:'TL'},
-    'TL':       {pct:85,min:210000, max:450000,color:'#0a5c30',nextName:'ATL'},
-    'ATL':      {pct:90,min:450000, max:null,  color:'#7a3300',nextName:null},
+    'REN':       {pct:70, min:0,       max:30000,  color:'#4a1ea8', nextName:'Assoc REN', isAgency:false},
+    'Assoc REN': {pct:75, min:30000,   max:90000,  color:'#0055b3', nextName:'Elite REN', isAgency:false},
+    'Elite REN': {pct:80, min:90000,   max:210000, color:'#7a4f00', nextName:'TL',        isAgency:false},
+    'TL':        {pct:85, min:210000,  max:450000, color:'#0a5c30', nextName:'ATL',       isAgency:false},
+    'ATL':       {pct:90, min:450000,  max:null,   color:'#7a3300', nextName:null,         isAgency:false},
+    'Agency 93': {pct:93, min:0,       max:null,   color:'#7c3aed', nextName:null,         isAgency:true},
+    'Agency 95': {pct:95, min:0,       max:null,   color:'#5b21b6', nextName:null,         isAgency:true},
 };
 let curRank='REN';
 
@@ -220,13 +270,25 @@ function selectRank(rank,pct,min,max,el){
     const info=RANK_INFO[rank];
     document.getElementById('pct-display').textContent=pct+'%';
     document.getElementById('pct-display').style.color=info.color;
-    document.getElementById('pct-desc').innerHTML='Agent earns <strong>'+pct+'%</strong> of gross commission on every personal deal.<br>Uplines earn the gap% override on this agent\'s team gross.';
+    if(info.isAgency){
+        document.getElementById('pct-desc').innerHTML='<strong>Agency tier</strong> &mdash; fixed <strong>'+pct+'%</strong> payout. This rate does not change with cumulative gross.<br>Used for external / partner agency agents joining under your network.';
+        document.getElementById('pct-display').parentElement.style.borderLeftColor=info.color;
+    } else {
+        document.getElementById('pct-desc').innerHTML='Agent earns <strong>'+pct+'%</strong> of gross commission on every personal deal.<br>Uplines earn the gap% override on this agent\'s team gross.';
+        document.getElementById('pct-display').parentElement.style.borderLeftColor='#007bff';
+    }
     const elevated=rank!=='REN';
     document.getElementById('elevated-note').style.display=elevated?'block':'none';
     document.getElementById('reason-group').style.display=elevated?'block':'none';
     const ri=document.getElementById('reason-input');
     elevated?ri.setAttribute('required',''):ri.removeAttribute('required');
-    updateProgress();
+    // Agency tiers: hide progress bar, disable cumulative gross field
+    const isAgency=info.isAgency;
+    document.getElementById('cumulative_gross').disabled=isAgency;
+    document.getElementById('cumulative_gross').value=isAgency?'0':document.getElementById('cumulative_gross').value;
+    document.querySelector('.prog-bg').style.display=isAgency?'none':'block';
+    document.getElementById('prog-label').textContent=isAgency?'Agency tier — fixed rate, cumulative gross not applicable.':document.getElementById('prog-label').textContent;
+    if(!isAgency) updateProgress();
 }
 
 function updateProgress(){

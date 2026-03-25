@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Commission Calculator – Admin</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;background:#f0f2f5;color:#1a2a3a}
+.topbar{background:#2c3e50;color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:100}
+.topbar-title{font-size:1rem;font-weight:700}
+.topbar-right a{color:#a8c8ff;text-decoration:none;font-size:13px}
+.hamburger{display:none;background:none;border:none;color:white;font-size:22px;cursor:pointer;padding:2px 6px}
+.nav-bar{background:white;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nav-bar a{color:#007bff;text-decoration:none;font-weight:600;font-size:13px;padding:5px 10px;border-radius:6px;white-space:nowrap}
+.nav-bar a:hover{background:#f0f7ff}
+.nav-bar a.nav-btn{background:#2563eb;color:white}
+.nav-bar a.nav-active{background:#eff6ff;color:#1d4ed8}
+@media(max-width:640px){.hamburger{display:block}.nav-bar{display:none;flex-direction:column;align-items:stretch;padding:8px 12px;gap:2px}.nav-bar.open{display:flex}.nav-bar a{padding:10px 12px;font-size:14px;border-bottom:1px solid #f0f0f0}}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+.card{background:white;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px}
+.card h2{margin:0 0 16px;font-size:18px;color:#2c3e50}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;font-weight:700;color:#555;margin-bottom:6px}
+.form-group input,.form-group select{width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px}
+.btn{padding:10px 20px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}
+.btn:hover{background:#1d4ed8}
+.result{background:#f3f4f6;border-left:4px solid #2563eb;padding:14px;border-radius:6px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">⚡ Commission Calculator</div>
+  <div class="topbar-right">
+    <a href="/logout">🔒 Logout</a>
+    <button class="hamburger" onclick="toggleNav()">☰</button>
+  </div>
+</div>
+<div class="nav-bar" id="mainNav">
+  <a href="/admin/dashboard">📊 Dashboard</a>
+  <a href="/admin/projects">🏗 Projects</a>
+  <a href="/admin/create-project" class="nav-btn">➕ New Project</a>
+  <a href="/admin/agents">👥 Agents</a>
+  <a href="/admin/agent-hierarchy">🔗 Hierarchy</a>
+  <a href="/admin/payments">💳 Payments</a>
+  <a href="/admin/commissions">💰 Commissions</a>
+  <a href="/admin/unified-submissions">📋 Submissions</a>
+  <a href="/admin/agent-performance">📈 Performance</a>
+  <a href="/admin/commission-calculator" class="nav-active">⚡ Calc</a>
+  <a href="/admin/settings">⚙ Settings</a>
+  <a href="/admin/export-data">📤 Export</a>
+</div>
+
+<div class="wrap">
+<div class="card">
+  <h2>Quick Commission Calculator</h2>
+  <form id="calcForm">
+    <div class="form-group">
+      <label>Gross Amount (RM)</label>
+      <input type="number" id="gross" step="0.01" placeholder="e.g., 50000" required>
+    </div>
+    <div class="form-group">
+      <label>Dev Rate (%)</label>
+      <input type="number" id="devRate" step="0.1" placeholder="e.g., 3" required>
+    </div>
+    <div class="form-group">
+      <label>Agent Rank</label>
+      <select id="agentRank" required>
+        <option value="">Select rank...</option>
+        <option value="atl">ATL (90%)</option>
+        <option value="svp">SVP (85%)</option>
+        <option value="vp">VP (80%)</option>
+        <option value="md">MD (75%)</option>
+        <option value="sa">SA (70%)</option>
+        <option value="ren">REN (70%)</option>
+      </select>
+    </div>
+    <button type="button" class="btn" onclick="calculateCommission()">Calculate</button>
+  </form>
+  <div id="result"></div>
+</div>
+</div>
+
+<script>
+function toggleNav(){document.getElementById('mainNav').classList.toggle('open');}
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('#mainNav a').forEach(function(a){
+    a.addEventListener('click',function(){document.getElementById('mainNav').classList.remove('open');});
+  });
+});
+
+function calculateCommission() {
+  const gross = parseFloat(document.getElementById('gross').value);
+  const devRate = parseFloat(document.getElementById('devRate').value);
+  const rank = document.getElementById('agentRank').value;
+  
+  const rates = {atl:0.90, svp:0.85, vp:0.80, md:0.75, sa:0.70, ren:0.70};
+  const agentRate = rates[rank] || 0;
+  
+  const devCommission = gross * (devRate / 100);
+  const sst = devCommission * 0.06;
+  const netDevCommission = devCommission - sst;
+  const agentShare = netDevCommission * agentRate;
+  const picShare = netDevCommission * 0.20;
+  const companyShare = netDevCommission - agentShare - picShare;
+  
+  const resultHtml = `
+    <div class="result">
+      <p><strong>Dev Commission (Gross):</strong> RM${devCommission.toFixed(2)}</p>
+      <p><strong>SST (6%):</strong> RM${sst.toFixed(2)}</p>
+      <p><strong>Dev Commission (Net):</strong> RM${netDevCommission.toFixed(2)}</p>
+      <hr style="border:none;border-top:1px solid #ddd;margin:10px 0">
+      <p><strong>Agent (${(agentRate*100).toFixed(0)}%):</strong> RM${agentShare.toFixed(2)}</p>
+      <p><strong>PIC (20%):</strong> RM${picShare.toFixed(2)}</p>
+      <p><strong>Company:</strong> RM${companyShare.toFixed(2)}</p>
+    </div>
+  `;
+  document.getElementById('result').innerHTML = resultHtml;
+}
+</script>
+</body>
+</html>
